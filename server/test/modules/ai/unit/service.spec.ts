@@ -22,6 +22,8 @@ const buildMockMessageRepository = () => ({
 
 const buildMockAgentsService = () => ({
   CreateTable: jest.fn(),
+  CreateComponent: jest.fn(),
+  CreateQuery: jest.fn(),
 });
 
 const buildMockArtifactRepository = () => ({
@@ -33,13 +35,20 @@ const buildMockStepRepository = () => ({
   updateOne: jest.fn(),
 });
 
+// Defaults to one version so tests that don't care about appVersionId resolution (most of
+// them) don't all have to mock it individually; tests that do care override it. createdAt
+// is set explicitly (not left undefined) since resolveAppVersionId sorts by it.
+const buildMockVersionRepository = () => ({
+  getAllVersions: jest.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]),
+});
+
 const buildMockResponse = () => ({
   setHeader: jest.fn(),
   write: jest.fn(),
   end: jest.fn(),
 });
 
-// Builds an AiService with all 6 constructor dependencies mocked, any of which can be
+// Builds an AiService with all 7 constructor dependencies mocked, any of which can be
 // overridden. Centralizing this avoids repeating the full mock/constructor wiring in
 // every test (and having to update all of them whenever the constructor's shape changes).
 const buildService = (overrides: Partial<Record<string, any>> = {}) => {
@@ -49,6 +58,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const agentsService = overrides.agentsService ?? buildMockAgentsService();
   const artifactRepository = overrides.artifactRepository ?? buildMockArtifactRepository();
   const stepRepository = overrides.stepRepository ?? buildMockStepRepository();
+  const versionRepository = overrides.versionRepository ?? buildMockVersionRepository();
 
   const service = new AiService(
     aiUtilService as any,
@@ -56,10 +66,20 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     messageRepo as any,
     agentsService as any,
     artifactRepository as any,
-    stepRepository as any
+    stepRepository as any,
+    versionRepository as any
   );
 
-  return { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository };
+  return {
+    service,
+    aiUtilService,
+    conversationRepo,
+    messageRepo,
+    agentsService,
+    artifactRepository,
+    stepRepository,
+    versionRepository,
+  };
 };
 
 /** @group platform */
@@ -486,7 +506,7 @@ describe('AiService.approvePrd', () => {
     expect(response.end).toHaveBeenCalledTimes(1);
   });
 
-  it('fails an unsupported step type immediately, without spending any retries on it (ADR-0006)', async () => {
+  it('fails a step whose type has no handler immediately, without spending any retries on it (ADR-0006 defense-in-depth — all v1 STEP_TYPES have handlers as of this ticket, so this exercises the guard directly rather than a reachable-via-the-planner path)', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
 
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
@@ -496,25 +516,30 @@ describe('AiService.approvePrd', () => {
     messageRepo.createOne.mockResolvedValue({ id: 'failure-msg' });
 
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'Query the customers table' }])
+      // The mock stands in for the LLM, so it can return a type outside STEP_TYPES even
+      // though the real zod schema wouldn't let the model do this — verifying the
+      // SUPPORTED_STEP_TYPES guard itself still holds if that ever changes.
+      planToolCall([{ type: 'CreateWorkflow', description: 'Run a workflow' }])
     );
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
       messageId: 'ai-msg-1',
       order: 0,
-      type: 'CreateQuery',
-      description: 'Query the customers table',
+      type: 'CreateWorkflow',
+      description: 'Run a workflow',
       status: 'pending',
     });
 
     const response = buildMockResponse();
     await service.approvePrd('conv-1', 'PRD text', 'org-1', response as any);
 
-    // Only the plan-generation call happened — no per-step LLM call or CreateTable call for
-    // a step type this ticket doesn't implement yet.
+    // Only the plan-generation call happened — no per-step LLM call or agentsService call
+    // for a step type with no handler at all.
     expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(1);
     expect(agentsService.CreateTable).not.toHaveBeenCalled();
+    expect(agentsService.CreateComponent).not.toHaveBeenCalled();
+    expect(agentsService.CreateQuery).not.toHaveBeenCalled();
     expect(stepRepository.updateOne).toHaveBeenCalledWith(
       'step-1',
       expect.objectContaining({ status: 'failed', errorMessage: expect.stringContaining('Unsupported step type') })
@@ -556,6 +581,366 @@ describe('AiService.approvePrd', () => {
       'error',
       expect.objectContaining({ message: expect.any(String) })
     );
+    expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  const componentToolCall = (args: any) => ({ toolCalls: [{ toolName: 'createComponent', args }] });
+  const queryToolCall = (args: any) => ({ toolCalls: [{ toolName: 'createQuery', args }] });
+
+  it('resolves appVersionId from the conversation.appId (VersionRepository.getAllVersions, first version) and creates a Page component', async () => {
+    const {
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+      versionRepository,
+    } = buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+    versionRepository.getAllVersions.mockResolvedValue([
+      { id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'version-2', createdAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateComponent', description: 'Create the Orders page' }])
+    ).mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
+
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'CreateComponent',
+      description: 'Create the Orders page',
+      status: 'pending',
+    });
+    agentsService.CreateComponent.mockResolvedValue({ id: 'page-1', name: 'Orders' });
+    artifactRepository.createOne.mockResolvedValue({
+      id: 'artifact-1',
+      content: { id: 'page-1', name: 'Orders' },
+      identifier: 'page-1',
+    });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    expect(versionRepository.getAllVersions).toHaveBeenCalledWith('app-1');
+    expect(agentsService.CreateComponent).toHaveBeenCalledWith('version-1', 'org-1', 'Page', { name: 'Orders' });
+    expect(artifactRepository.createOne).toHaveBeenCalledWith(
+      expect.objectContaining({ content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+    );
+  });
+
+  it('picks the earliest-created version even when VersionRepository.getAllVersions returns them out of order', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository, versionRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+    // Deliberately reversed / unordered — getAllVersions itself doesn't sort.
+    versionRepository.getAllVersions.mockResolvedValue([
+      { id: 'version-newest', createdAt: '2026-03-01T00:00:00.000Z' },
+      { id: 'version-oldest', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'version-middle', createdAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateComponent', description: 'Create the Orders page' }])
+    ).mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'CreateComponent',
+      description: 'Create the Orders page',
+      status: 'pending',
+    });
+    agentsService.CreateComponent.mockResolvedValue({ id: 'page-1', name: 'Orders' });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    expect(agentsService.CreateComponent).toHaveBeenCalledWith('version-oldest', 'org-1', 'Page', { name: 'Orders' });
+  });
+
+  it('creates a query from a CreateQuery step', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List orders' }])
+    ).mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'table-uuid' }));
+
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'CreateQuery',
+      description: 'List orders',
+      status: 'pending',
+    });
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).toHaveBeenCalledWith('version-1', 'org-1', {
+      name: 'list_orders',
+      options: { operation: 'list_rows', table_id: 'table-uuid', list_rows: { limit: 100 } },
+    });
+  });
+
+  it('retries an unrecognized component type (the model can self-correct, unlike an unsupported Step type)', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateComponent', description: 'Create a page' }])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Form', name: 'x' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
+
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'CreateComponent',
+      description: 'Create a page',
+      status: 'pending',
+    });
+    agentsService.CreateComponent.mockResolvedValue({ id: 'page-1', name: 'Orders' });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    // Only called once — the first (Form) attempt never reached AgentsService at all.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(1);
+    expect(agentsService.CreateComponent).toHaveBeenCalledWith('version-1', 'org-1', 'Page', { name: 'Orders' });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-1',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
+  it('rejects a Table step whose pageId does not match any Page created in this plan, then succeeds once the retry references the real one', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateQuery', description: 'List orders' },
+        { type: 'CreateComponent', description: 'Add a table of orders to the page' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'tjdb-orders-uuid' }))
+      // Attempt 1: hallucinated pageId that doesn't match the real Page artifact below.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Table', pageId: 'made-up-page-id', title: 'Orders', queryName: 'list_orders' })
+      )
+      // Attempt 2 (retry): the real pageId.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Table', pageId: 'page-1', title: 'Orders', queryName: 'list_orders' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateQuery',
+        description: 'List orders',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a table of orders to the page',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' }).mockResolvedValueOnce({
+      id: 'component-1',
+      pageId: 'page-1',
+      type: 'Table',
+      queryName: 'list_orders',
+    });
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
+
+    // Real content is what the retry-vs-hallucination check reads from priorResults, so
+    // each succeeded step's Artifact needs its actual content, not a bare mock default.
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'query-1', name: 'list_orders' },
+        identifier: 'list_orders',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'component-1', pageId: 'page-1', type: 'Table', queryName: 'list_orders' },
+        identifier: 'component-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    // CreateComponent is called twice total: once for the Page, once for the Table's
+    // successful (second) attempt — the hallucinated-pageId attempt never reached it.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(2);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(2, 'version-1', 'org-1', 'Table', {
+      pageId: 'page-1',
+      title: 'Orders',
+      queryName: 'list_orders',
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-3',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
+  it('builds a working page end to end: CreateTable → CreateComponent(Page) → CreateQuery → CreateComponent(Table), each step referencing the real prior artifacts', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD: build me an app to track orders' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateTable', description: 'Create an orders table' },
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateQuery', description: 'List orders' },
+        { type: 'CreateComponent', description: 'Add a table of orders to the page' },
+      ])
+    )
+      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'tjdb-orders-uuid' }))
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Table', pageId: 'page-1', title: 'Orders', queryName: 'list_orders' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateTable',
+        description: 'Create an orders table',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateQuery',
+        description: 'List orders',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-4',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 3,
+        type: 'CreateComponent',
+        description: 'Add a table of orders to the page',
+        status: 'pending',
+      });
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-orders-uuid', table_name: 'orders' });
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' }).mockResolvedValueOnce({
+      id: 'component-1',
+      pageId: 'page-1',
+      type: 'Table',
+      queryName: 'list_orders',
+    });
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'artifact-1',
+        content: { id: 'tjdb-orders-uuid', table_name: 'orders' },
+        identifier: 'orders',
+      })
+      .mockResolvedValueOnce({ id: 'artifact-2', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'query-1', name: 'list_orders' },
+        identifier: 'list_orders',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
+        content: { id: 'component-1', pageId: 'page-1', type: 'Table', queryName: 'list_orders' },
+        identifier: 'component-1',
+      });
+
+    const response = buildMockResponse();
+    await service.approvePrd('conv-1', 'PRD: build me an app to track orders', 'org-1', response as any);
+
+    // The CreateQuery step's prompt includes the real table id CreateTable produced.
+    const queryStepPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[3][2];
+    expect(queryStepPromptBody.messages[0].content).toContain('tjdb-orders-uuid');
+
+    // The final CreateComponent(Table) step's prompt includes the real Page id and query name.
+    const tableStepPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[4][2];
+    expect(tableStepPromptBody.messages[0].content).toContain('page-1');
+    expect(tableStepPromptBody.messages[0].content).toContain('list_orders');
+
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(2, 'version-1', 'org-1', 'Table', {
+      pageId: 'page-1',
+      title: 'Orders',
+      queryName: 'list_orders',
+    });
+
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', { succeeded: 4, total: 4 });
     expect(response.end).toHaveBeenCalledTimes(1);
   });
 });

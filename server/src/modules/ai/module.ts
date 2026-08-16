@@ -13,6 +13,7 @@ import { ArtifactRepository } from './repositories/artifact.repository';
 import { StepRepository } from './repositories/step.repository';
 import { SubModule } from '@modules/app/sub-module';
 import { DataQueryRepository } from '@modules/data-queries/repository';
+import { DataSourcesRepository } from '@modules/data-sources/repository';
 import { AppHistoryModule } from '@modules/app-history/module';
 import { DataSourcesModule } from '@modules/data-sources/module';
 import { AppEnvironmentsModule } from '@modules/app-environments/module';
@@ -68,6 +69,7 @@ export class AiModule extends SubModule {
         ArtifactRepository,
         StepRepository,
         DataQueryRepository,
+        DataSourcesRepository,
         EventsService,
         PageService,
         PageHelperService,

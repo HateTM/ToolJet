@@ -9,6 +9,7 @@ import { AiConversationRepository } from './repositories/ai-conversation.reposit
 import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
 import { ArtifactRepository } from './repositories/artifact.repository';
 import { StepRepository } from './repositories/step.repository';
+import { VersionRepository } from '@modules/versions/repository';
 import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
 
@@ -84,11 +85,62 @@ const createTableTool = tool({
   }),
 });
 
+// v1 subset (ADR-0002 lists the full allow-list: Page, Table, Form, Button, Text,
+// TextInput, Container) — Form/Button/Text/TextInput/Container land in a later ticket.
+// Unlike an unsupported *Step* type (ADR-0006, which can never succeed since no handler
+// exists), an unsupported *component* type is retried: the model picks it per attempt, so
+// a later retry can self-correct to a supported one.
+const SUPPORTED_COMPONENT_TYPES = ['Page', 'Table'] as const;
+
+const CREATE_COMPONENT_SYSTEM_PROMPT = `You create one UI element for this step, based on the PRD and whatever earlier steps in this plan already created (listed below, if any).
+
+Call createComponent exactly once. Supported component types right now: Page, Table.
+- Page: give it a short, specific name.
+- Table: reference the id of a Page already created in this plan (from context below) to place it on, give it a title, and reference the name of a query already created in this plan (from context below) whose data it should display.
+Only reference pages/queries that actually appear in the context below — never invent an id or name.`;
+
+const createComponentTool = tool({
+  description: 'Create a Page, or a Table widget bound to an existing query on an existing Page.',
+  parameters: z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('Page'),
+      name: z.string().describe('Short page title, e.g. "Orders"'),
+    }),
+    z.object({
+      type: z.literal('Table'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this table on'),
+      title: z.string().describe('Table title shown in the UI'),
+      queryName: z.string().describe('name of an already-created query (from context) this table should display'),
+    }),
+  ]),
+});
+
+const CREATE_QUERY_SYSTEM_PROMPT = `You create one data query against a ToolJet DB table for this step, based on the PRD and the table(s) already created earlier in this plan (listed below).
+
+Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the real id of the ToolJet DB table to list rows from — that id must come from context below, never invented.`;
+
+const createQueryTool = tool({
+  description: 'Create a query that lists rows from an existing ToolJet DB table.',
+  parameters: z.object({
+    name: z
+      .string()
+      .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
+    table_id: z.string().describe('id of an already-created ToolJet DB table (from context)'),
+  }),
+});
+
+type StepExecutionContext = {
+  prd: string;
+  organizationId: string;
+  appVersionId: string;
+  priorResults: Array<{ type: StepType; artifact: Artifact }>;
+};
+
 @Injectable()
 export class AiService implements IAiService {
   private readonly logger = new Logger(AiService.name);
 
-  private readonly SUPPORTED_STEP_TYPES: StepType[] = ['CreateTable'];
+  private readonly SUPPORTED_STEP_TYPES: StepType[] = ['CreateTable', 'CreateComponent', 'CreateQuery'];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
 
   constructor(
@@ -97,7 +149,8 @@ export class AiService implements IAiService {
     private readonly aiConversationMessageRepository: AiConversationMessageRepository,
     private readonly agentsService: AgentsService,
     private readonly artifactRepository: ArtifactRepository,
-    private readonly stepRepository: StepRepository
+    private readonly stepRepository: StepRepository,
+    private readonly versionRepository: VersionRepository
   ) {}
 
   /**
@@ -184,13 +237,14 @@ export class AiService implements IAiService {
     response.setHeader('Connection', 'keep-alive');
 
     try {
+      const appVersionId = await this.resolveAppVersionId(conversation.appId);
       const steps = await this.generateStepPlan(prd, conversationId, prdMessage.id, organizationId);
 
       this.aiUtilService.sendSSE(response, 'plan', {
         steps: steps.map((step) => ({ id: step.id, type: step.type, description: step.description })),
       });
 
-      const succeededArtifacts: Artifact[] = [];
+      const context: StepExecutionContext = { prd, organizationId, appVersionId, priorResults: [] };
 
       for (let index = 0; index < steps.length; index++) {
         const step = steps[index];
@@ -201,10 +255,10 @@ export class AiService implements IAiService {
           description: step.description,
         });
 
-        const outcome = await this.executeStepWithRetry(step, prd, succeededArtifacts, organizationId);
+        const outcome = await this.executeStepWithRetry(step, context);
 
         if (outcome.success) {
-          succeededArtifacts.push(outcome.artifact);
+          context.priorResults.push({ type: step.type, artifact: outcome.artifact });
           this.aiUtilService.sendSSE(response, 'step-done', {
             step: index + 1,
             of: steps.length,
@@ -227,20 +281,37 @@ export class AiService implements IAiService {
         });
         this.aiUtilService.sendSSE(response, 'done', {
           message: failureMessage,
-          succeeded: succeededArtifacts.length,
+          succeeded: context.priorResults.length,
           total: steps.length,
         });
         response.end();
         return;
       }
 
-      this.aiUtilService.sendSSE(response, 'done', { succeeded: succeededArtifacts.length, total: steps.length });
+      this.aiUtilService.sendSSE(response, 'done', { succeeded: context.priorResults.length, total: steps.length });
       response.end();
     } catch (error) {
       this.logger.error(`[approvePrd] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
       this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Failed to build the plan' });
       response.end();
     }
+  }
+
+  /**
+   * Resolves "the" AppVersion an approved plan builds into — the app's earliest-created
+   * version, matching the intent of the human-triggered pages endpoint's convention
+   * (`pages.controller.ts`: `app.appVersions[0].id`). VersionRepository.getAllVersions
+   * doesn't sort its result, so sorting here (rather than trusting array order) is what
+   * actually makes "the first version" deterministic — the AI Builder doesn't yet
+   * distinguish draft/released versions, so this is simply the app's original version.
+   */
+  private async resolveAppVersionId(appId: string): Promise<string> {
+    const versions = await this.versionRepository.getAllVersions(appId);
+    if (!versions?.length) {
+      throw new Error('This app has no version to build into');
+    }
+    const sorted = [...versions].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return sorted[0].id;
   }
 
   /**
@@ -303,9 +374,7 @@ export class AiService implements IAiService {
   // fields directly instead of relying on narrowing to make them "exist".
   private async executeStepWithRetry(
     step: Step,
-    prd: string,
-    priorArtifacts: Artifact[],
-    organizationId: string
+    context: StepExecutionContext
   ): Promise<{ success: boolean; artifact?: Artifact; errorMessage?: string }> {
     if (!this.SUPPORTED_STEP_TYPES.includes(step.type)) {
       const errorMessage = `Unsupported step type "${step.type}" — not yet implemented`;
@@ -316,13 +385,7 @@ export class AiService implements IAiService {
     let lastError: string;
     for (let attempt = 1; attempt <= this.MAX_STEP_ATTEMPTS; attempt++) {
       try {
-        const { content, identifier, props } = await this.executeStep(
-          step,
-          prd,
-          priorArtifacts,
-          organizationId,
-          lastError
-        );
+        const { content, identifier, props } = await this.executeStep(step, context, lastError);
 
         const artifact = await this.artifactRepository.createOne({
           conversationId: step.conversationId,
@@ -350,46 +413,59 @@ export class AiService implements IAiService {
 
   private async executeStep(
     step: Step,
-    prd: string,
-    priorArtifacts: Artifact[],
-    organizationId: string,
+    context: StepExecutionContext,
     previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
     switch (step.type) {
       case 'CreateTable':
-        return this.executeCreateTableStep(step, prd, priorArtifacts, organizationId, previousError);
+        return this.executeCreateTableStep(step, context, previousError);
+      case 'CreateComponent':
+        return this.executeComponentStep(step, context, previousError);
+      case 'CreateQuery':
+        return this.executeQueryStep(step, context, previousError);
       default:
         throw new Error(`Unsupported step type "${step.type}"`);
     }
   }
 
-  private async executeCreateTableStep(
-    step: Step,
-    prd: string,
-    priorArtifacts: Artifact[],
-    organizationId: string,
-    previousError?: string
-  ): Promise<{ content: any; identifier: string; props: any }> {
-    const contextLines = [`PRD:\n${prd}`, `Step to build: ${step.description}`];
-    if (priorArtifacts.length) {
-      contextLines.push(
-        `Already created in this plan: ${priorArtifacts.map((artifact) => artifact.identifier).join(', ')} — avoid name collisions with these.`
+  /**
+   * Shared "PRD + this step's job + what earlier steps in this plan already built + what
+   * went wrong last attempt" preamble every per-step LLM call is grounded in. Prior results
+   * are serialized with their full Artifact.content (not just `identifier`) since later
+   * steps need real ids to reference — e.g. CreateQuery needs a CreateTable step's actual
+   * table id, not just its human-readable table_name.
+   */
+  private buildStepContextLines(step: Step, context: StepExecutionContext, previousError?: string): string {
+    const lines = [`PRD:\n${context.prd}`, `Step to build: ${step.description}`];
+    if (context.priorResults.length) {
+      const summary = context.priorResults
+        .map((result) => `- ${result.type} → ${JSON.stringify(result.artifact.content)}`)
+        .join('\n');
+      lines.push(
+        `Already created earlier in this plan (reference real ids/names from here, never invent one):\n${summary}`
       );
     }
     if (previousError) {
-      contextLines.push(`The previous attempt failed with: "${previousError}". Fix the issue and try again.`);
+      lines.push(`The previous attempt failed with: "${previousError}". Fix the issue and try again.`);
     }
+    return lines.join('\n\n');
+  }
 
+  private async executeCreateTableStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string
+  ): Promise<{ content: any; identifier: string; props: any }> {
     const result = await this.aiUtilService.AIGatewayGenerate(
       'openai',
       'approve-prd-create-table',
       {
         system: CREATE_TABLE_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: contextLines.join('\n\n') }],
+        messages: [{ role: 'user', content: this.buildStepContextLines(step, context, previousError) }],
         tools: { createTable: createTableTool },
         toolChoice: { type: 'tool', toolName: 'createTable' },
       },
-      organizationId
+      context.organizationId
     );
 
     const call = result?.toolCalls?.[0];
@@ -421,9 +497,100 @@ export class AiService implements IAiService {
       })),
     };
 
-    const created = await this.agentsService.CreateTable(organizationId, tableParams);
+    const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
 
     return { content: created, identifier: created.table_name, props: tableParams };
+  }
+
+  private async executeComponentStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      'openai',
+      'approve-prd-create-component',
+      {
+        system: CREATE_COMPONENT_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: this.buildStepContextLines(step, context, previousError) }],
+        tools: { createComponent: createComponentTool },
+        toolChoice: { type: 'tool', toolName: 'createComponent' },
+      },
+      context.organizationId
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== 'createComponent') {
+      throw new Error('The assistant did not produce a component definition');
+    }
+
+    const { type, ...props } = call.args as { type: string; [key: string]: any };
+    if (!(SUPPORTED_COMPONENT_TYPES as readonly string[]).includes(type)) {
+      // Retryable, unlike an unsupported Step type: the model chooses `type` per attempt.
+      throw new Error(
+        `Unsupported component type "${type}" — supported types are: ${SUPPORTED_COMPONENT_TYPES.join(', ')}`
+      );
+    }
+
+    // A Table only actually shows data if pageId/queryName are real — the tool schema
+    // can't enforce that (they're free-form strings), so it's checked here against what
+    // this plan has actually built so far. Without this, a hallucinated queryName would
+    // silently persist a Table whose `{{queries.<name>.data}}` binding resolves to nothing,
+    // rather than failing loud — retryable, same reasoning as the type check above.
+    if (type === 'Table') {
+      const pageExists = context.priorResults.some(
+        (result) =>
+          result.type === 'CreateComponent' &&
+          result.artifact.content?.id === props.pageId &&
+          result.artifact.content?.pageId === undefined
+      );
+      if (!pageExists) {
+        throw new Error(`pageId "${props.pageId}" does not match any Page created earlier in this plan`);
+      }
+      const queryExists = context.priorResults.some(
+        (result) => result.type === 'CreateQuery' && result.artifact.content?.name === props.queryName
+      );
+      if (!queryExists) {
+        throw new Error(`queryName "${props.queryName}" does not match any query created earlier in this plan`);
+      }
+    }
+
+    const created = await this.agentsService.CreateComponent(context.appVersionId, context.organizationId, type, props);
+
+    return { content: created, identifier: created.id, props: { type, ...props } };
+  }
+
+  private async executeQueryStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      'openai',
+      'approve-prd-create-query',
+      {
+        system: CREATE_QUERY_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: this.buildStepContextLines(step, context, previousError) }],
+        tools: { createQuery: createQueryTool },
+        toolChoice: { type: 'tool', toolName: 'createQuery' },
+      },
+      context.organizationId
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== 'createQuery') {
+      throw new Error('The assistant did not produce a query definition');
+    }
+
+    const args = call.args as { name: string; table_id: string };
+    const props = {
+      name: args.name,
+      options: { operation: 'list_rows', table_id: args.table_id, list_rows: { limit: 100 } },
+    };
+
+    const created = await this.agentsService.CreateQuery(context.appVersionId, context.organizationId, props);
+
+    return { content: created, identifier: created.name, props };
   }
 
   /**
