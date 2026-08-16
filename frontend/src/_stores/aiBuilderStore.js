@@ -17,6 +17,11 @@ const initialState = {
   isLoadingConversations: false,
   zeroState: null,
   isZeroStateLoading: false,
+  // Populated by the `plan` SSE event once approvePrd starts, then updated in place by
+  // step-progress/step-done/step-failed as execution proceeds. Each entry:
+  // { id, type, description, status: 'pending'|'running'|'succeeded'|'failed', artifact?, errorMessage? }
+  steps: [],
+  isApproving: false,
   error: null,
 };
 
@@ -34,6 +39,8 @@ const useAiBuilderStore = create(
             state.messages = [];
             state.streamingMessage = null;
             state.isSending = false;
+            state.steps = [];
+            state.isApproving = false;
             state.error = null;
           },
           false,
@@ -309,6 +316,101 @@ const useAiBuilderStore = create(
             },
             false,
             'aiBuilder/sendMessage/catch'
+          );
+        }
+      },
+
+      // Approves the current PRD and streams execution progress: `plan` seeds the step
+      // list, `step-progress`/`step-done`/`step-failed` update one step in place by its
+      // 1-based `step` index, and `done` carries a failure AiConversationMessage when
+      // execution stopped early (already-succeeded steps' Artifacts stay as they are).
+      approvePrd: async (prd) => {
+        const conversationId = get().currentConversationId;
+        if (!conversationId || !prd) return;
+
+        set(
+          (state) => {
+            state.isApproving = true;
+            state.steps = [];
+            state.error = null;
+          },
+          false,
+          'aiBuilder/approvePrd/start'
+        );
+
+        const onMessage = ({ data, type }) => {
+          if (type === 'plan') {
+            set(
+              (state) => {
+                state.steps = (data?.steps || []).map((step) => ({ ...step, status: 'pending' }));
+              },
+              false,
+              'aiBuilder/approvePrd/plan'
+            );
+          } else if (type === 'step-progress') {
+            set(
+              (state) => {
+                const step = state.steps[data.step - 1];
+                if (step) step.status = 'running';
+              },
+              false,
+              'aiBuilder/approvePrd/step-progress'
+            );
+          } else if (type === 'step-done') {
+            set(
+              (state) => {
+                const step = state.steps[data.step - 1];
+                if (step) {
+                  step.status = 'succeeded';
+                  step.artifact = data.artifact;
+                }
+              },
+              false,
+              'aiBuilder/approvePrd/step-done'
+            );
+          } else if (type === 'step-failed') {
+            set(
+              (state) => {
+                const step = state.steps[data.step - 1];
+                if (step) {
+                  step.status = 'failed';
+                  step.errorMessage = data.message;
+                }
+              },
+              false,
+              'aiBuilder/approvePrd/step-failed'
+            );
+          } else if (type === 'done') {
+            set(
+              (state) => {
+                if (data?.message) state.messages.push(data.message);
+                state.isApproving = false;
+              },
+              false,
+              'aiBuilder/approvePrd/done'
+            );
+          } else if (type === 'error') {
+            set(
+              (state) => {
+                state.error = data?.message || 'Failed to build the plan';
+                state.isApproving = false;
+              },
+              false,
+              'aiBuilder/approvePrd/error'
+            );
+          }
+        };
+
+        try {
+          await aiService.approvePrd({ conversationId, prd }, onMessage);
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to approve the plan');
+              state.isApproving = false;
+            },
+            false,
+            'aiBuilder/approvePrd/catch'
           );
         }
       },

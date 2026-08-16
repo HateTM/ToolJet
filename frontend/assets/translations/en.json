@@ -1025,7 +1025,8 @@
             "untitledConversation": "Untitled conversation",
             "defaultGreeting": "What would you like to build today?",
             "inputPlaceholder": "Describe the app you want to build...",
-            "send": "Send"
+            "send": "Send",
+            "approvePrd": "Approve and build"
         },
         "Sources": {
             "text": "Sources",

@@ -8,6 +8,8 @@ export interface IAiUtilService {
 
   AIGateway(provider: string, operation_id: string, prompt_body: any, organizationId: string): Promise<any>;
 
+  AIGatewayGenerate(provider: string, operation_id: string, prompt_body: any, organizationId: string): Promise<any>;
+
   createComponentfromSteps(
     steps: any,
     componentDatapath?: string

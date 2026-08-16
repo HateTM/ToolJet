@@ -17,6 +17,7 @@ export const aiService = {
   autoSort,
   getTokenUsage,
   fetchZeroState,
+  approvePrd,
 };
 
 function handleAITextResponse(response) {
@@ -50,9 +51,8 @@ async function voteMessage(messageId, voteType) {
   return fetch(`${config.apiUrl}/ai/conversation/vote-message`, requestOptions).then(handleResponse);
 }
 
-async function sendMessage(body, onMessage, isDocs = false) {
+async function postSSE(url, body, onMessage) {
   const fullResponse = [];
-  const url = isDocs ? `${config.apiUrl}/ai/conversation/docs-message` : `${config.apiUrl}/ai/conversation/message`;
   await fetchEventSource(url, {
     method: 'POST',
     headers: { ...authHeader(), 'Content-Type': 'application/json' },
@@ -94,6 +94,17 @@ async function sendMessage(body, onMessage, isDocs = false) {
   });
 
   return fullResponse;
+}
+
+async function sendMessage(body, onMessage, isDocs = false) {
+  const url = isDocs ? `${config.apiUrl}/ai/conversation/docs-message` : `${config.apiUrl}/ai/conversation/message`;
+  return postSSE(url, body, onMessage);
+}
+
+// body: { conversationId, prd }. SSE event contract (see AiService.approvePrd on the
+// backend): plan, step-progress, step-done, step-failed, done, error.
+async function approvePrd(body, onMessage) {
+  return postSSE(`${config.apiUrl}/ai/conversation/approve-prd`, body, onMessage);
 }
 
 async function getCopilotSuggestion(body) {

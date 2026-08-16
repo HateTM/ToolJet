@@ -1,6 +1,6 @@
 import { Logger, NotFoundException } from '@nestjs/common';
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+import { streamText, generateText } from 'ai';
 import { IAiUtilService } from './interfaces/IUtilService';
 import { AiConversationRepository } from './repositories/ai-conversation.repository';
 import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
@@ -52,6 +52,36 @@ export class AiUtilService implements IAiUtilService {
    * silently dropped.
    */
   async AIGateway(provider: string, operation_id: string, prompt_body: any, organizationId: string): Promise<any> {
+    const model = this.resolveModel(provider, operation_id, organizationId);
+
+    return streamText({
+      model,
+      ...prompt_body,
+    });
+  }
+
+  /**
+   * Non-streaming counterpart to `AIGateway`, for callers that need a resolved
+   * result (in particular tool calls) rather than a token stream — e.g. Step-plan
+   * generation and per-step prop-filling at `approvePrd` (ADR-0004), which need
+   * the model's structured tool-call output before they can proceed, not text
+   * to forward to a chat panel.
+   */
+  async AIGatewayGenerate(
+    provider: string,
+    operation_id: string,
+    prompt_body: any,
+    organizationId: string
+  ): Promise<any> {
+    const model = this.resolveModel(provider, operation_id, organizationId);
+
+    return generateText({
+      model,
+      ...prompt_body,
+    });
+  }
+
+  private resolveModel(provider: string, operation_id: string, organizationId: string) {
     if (!SUPPORTED_AI_PROVIDERS.includes(provider)) {
       throw new Error(`AIGateway: unsupported provider "${provider}"`);
     }
@@ -63,12 +93,7 @@ export class AiUtilService implements IAiUtilService {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const model = openaiProvider(process.env.AI_MODEL);
-
-    return streamText({
-      model,
-      ...prompt_body,
-    });
+    return openaiProvider(process.env.AI_MODEL);
   }
 
   async createComponentfromSteps(steps, componentDatapath?: string): Promise<any> {

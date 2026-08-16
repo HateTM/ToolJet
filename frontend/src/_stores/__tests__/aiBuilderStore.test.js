@@ -7,6 +7,7 @@ jest.mock('@/_services/ai.service', () => ({
     createConversation: jest.fn(),
     getConversation: jest.fn(),
     fetchZeroState: jest.fn(),
+    approvePrd: jest.fn(),
   },
 }));
 
@@ -212,5 +213,106 @@ describe('aiBuilderStore', () => {
 
     expect(getInitialState().zeroState).toEqual(zeroState);
     expect(getInitialState().isZeroStateLoading).toBe(false);
+  });
+
+  describe('approvePrd', () => {
+    beforeEach(() => {
+      useAiBuilderStore.setState({ currentConversationId: 'conv-1' });
+    });
+
+    it('does nothing without a current conversation', async () => {
+      useAiBuilderStore.setState({ currentConversationId: null });
+
+      await getInitialState().approvePrd('some PRD text');
+
+      expect(aiService.approvePrd).not.toHaveBeenCalled();
+    });
+
+    it('seeds the step list from the plan event, all pending', async () => {
+      aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+        onMessage({
+          type: 'plan',
+          data: { steps: [{ id: 'step-1', type: 'CreateTable', description: 'Create a customers table' }] },
+        });
+        return [];
+      });
+
+      await getInitialState().approvePrd('PRD text');
+
+      expect(aiService.approvePrd).toHaveBeenCalledWith(
+        { conversationId: 'conv-1', prd: 'PRD text' },
+        expect.any(Function)
+      );
+      expect(getInitialState().steps).toEqual([
+        { id: 'step-1', type: 'CreateTable', description: 'Create a customers table', status: 'pending' },
+      ]);
+      expect(getInitialState().isApproving).toBe(true);
+    });
+
+    it('updates the matching step in place as step-progress/step-done events arrive', async () => {
+      const artifact = { id: 'artifact-1', identifier: 'customers' };
+      aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+        onMessage({
+          type: 'plan',
+          data: { steps: [{ id: 'step-1', type: 'CreateTable', description: 'Create a table' }] },
+        });
+        onMessage({ type: 'step-progress', data: { step: 1, of: 1, description: 'Create a table' } });
+        onMessage({ type: 'step-done', data: { step: 1, of: 1, artifact } });
+        onMessage({ type: 'done', data: { succeeded: 1, total: 1 } });
+        return [];
+      });
+
+      await getInitialState().approvePrd('PRD text');
+
+      const state = getInitialState();
+      expect(state.steps[0]).toMatchObject({ status: 'succeeded', artifact });
+      expect(state.isApproving).toBe(false);
+    });
+
+    it('marks a step failed on step-failed and posts the failure message on done', async () => {
+      const failureMessage = { id: 'failure-msg', messageType: 'ai', content: 'The build stopped at step 1 of 1' };
+      aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+        onMessage({
+          type: 'plan',
+          data: { steps: [{ id: 'step-1', type: 'CreateQuery', description: 'Query orders' }] },
+        });
+        onMessage({ type: 'step-failed', data: { step: 1, of: 1, message: 'Unsupported step type "CreateQuery"' } });
+        onMessage({ type: 'done', data: { message: failureMessage, succeeded: 0, total: 1 } });
+        return [];
+      });
+
+      await getInitialState().approvePrd('PRD text');
+
+      const state = getInitialState();
+      expect(state.steps[0]).toMatchObject({
+        status: 'failed',
+        errorMessage: 'Unsupported step type "CreateQuery"',
+      });
+      expect(state.messages).toContainEqual(failureMessage);
+      expect(state.isApproving).toBe(false);
+    });
+
+    it('sets an error state and stops approving on an error event', async () => {
+      aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+        onMessage({ type: 'error', data: { message: 'Failed to generate a build plan' } });
+        return [];
+      });
+
+      await getInitialState().approvePrd('PRD text');
+
+      const state = getInitialState();
+      expect(state.error).toBe('Failed to generate a build plan');
+      expect(state.isApproving).toBe(false);
+    });
+
+    it('sets an error state when the underlying request rejects', async () => {
+      aiService.approvePrd.mockRejectedValue(new Error('network down'));
+
+      await getInitialState().approvePrd('PRD text');
+
+      const state = getInitialState();
+      expect(state.error).toBe('network down');
+      expect(state.isApproving).toBe(false);
+    });
   });
 });

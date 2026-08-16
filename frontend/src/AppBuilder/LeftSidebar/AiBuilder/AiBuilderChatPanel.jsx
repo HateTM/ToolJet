@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import cx from 'classnames';
 import { shallow } from 'zustand/shallow';
 import { useTranslation } from 'react-i18next';
-import { History, Plus, X, ArrowUp } from 'lucide-react';
+import { History, Plus, X, ArrowUp, Check, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
 import useAiBuilderStore from '@/_stores/aiBuilderStore';
@@ -86,6 +86,31 @@ const ZeroState = ({ zeroState, isZeroStateLoading, onSuggestionClick }) => {
   );
 };
 
+const StepStatusIcon = ({ status }) => {
+  if (status === 'running') return <Spinner size="small" />;
+  if (status === 'succeeded') return <Check width="14" height="14" className="tw-text-icon-success" />;
+  if (status === 'failed') return <X width="14" height="14" className="tw-text-icon-danger" />;
+  return <Circle width="10" height="10" className="tw-text-icon-weak" />;
+};
+
+const StepProgressList = ({ steps }) => (
+  <div className="tw-flex tw-flex-col tw-gap-2 tw-border-0 tw-border-b tw-border-solid tw-border-border-weak tw-px-3 tw-py-3">
+    {steps.map((step, index) => (
+      <div key={step.id ?? index} className="tw-flex tw-items-start tw-gap-2 tw-text-sm">
+        <div className="tw-mt-0.5 tw-flex tw-w-4 tw-flex-shrink-0 tw-items-center tw-justify-center">
+          <StepStatusIcon status={step.status} />
+        </div>
+        <div className="tw-flex tw-flex-col">
+          <span className="tw-text-text-default">{step.description}</span>
+          {step.status === 'failed' && step.errorMessage && (
+            <span className="tw-text-xs tw-text-text-danger">{step.errorMessage}</span>
+          )}
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 // Matches BaseLeftSidebar's `renderAIChat({ darkMode, onClose })` contract (see LeftSidebar.jsx's
 // renderPopoverContent 'tooljetai' case). `appId`/`conversationType` are bound by the caller
 // (AppBuilder.jsx), which is why they aren't part of that render-prop signature.
@@ -102,12 +127,15 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
     zeroState,
     isZeroStateLoading,
     conversations,
+    steps,
+    isApproving,
     error,
     fetchZeroState,
     listConversations,
     loadConversation,
     resetConversation,
     sendMessage,
+    approvePrd,
     clearError,
   ] = useAiBuilderStore(
     (state) => [
@@ -117,12 +145,15 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
       state.zeroState,
       state.isZeroStateLoading,
       state.conversations,
+      state.steps,
+      state.isApproving,
       state.error,
       state.fetchZeroState,
       state.listConversations,
       state.loadConversation,
       state.resetConversation,
       state.sendMessage,
+      state.approvePrd,
       state.clearError,
     ],
     shallow
@@ -164,6 +195,16 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
   const handleNewChat = () => {
     resetConversation();
     fetchZeroState();
+  };
+
+  const latestAiMessage = [...messages].reverse().find((message) => message.messageType !== 'user');
+  // Nothing to approve until there's a PRD reply, and once a plan exists this conversation's
+  // approval is already in flight or done — CONTEXT.md's "Approve" is one-way per PRD.
+  const canApprove = Boolean(latestAiMessage) && !streamingMessage && !isSending && steps.length === 0;
+
+  const handleApprove = () => {
+    if (!latestAiMessage || isApproving) return;
+    approvePrd(latestAiMessage.content);
   };
 
   const showZeroState = messages.length === 0 && !streamingMessage;
@@ -228,9 +269,23 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
             <ChatBubble key={message.id} message={message} />
           ))}
           {streamingMessage && <ChatBubble message={streamingMessage} />}
+          {canApprove && (
+            <Button
+              onClick={handleApprove}
+              variant="primary"
+              size="small"
+              className="tw-self-start"
+              disabled={isApproving}
+              data-cy="ai-builder-approve-prd-button"
+            >
+              {isApproving ? <Spinner size="small" /> : tAiBuilder(t, 'approvePrd', 'Approve and build')}
+            </Button>
+          )}
           <div ref={messagesEndRef} />
         </div>
       )}
+
+      {steps.length > 0 && <StepProgressList steps={steps} />}
 
       {error && (
         <div className="tw-flex tw-items-center tw-justify-between tw-bg-background-error-weak tw-px-3 tw-py-2 tw-text-xs tw-text-text-danger">

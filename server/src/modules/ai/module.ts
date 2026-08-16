@@ -10,6 +10,7 @@ import { DataQueriesModule } from '@modules/data-queries/module';
 import { AppPermissionsModule } from '@modules/app-permissions/module';
 import { ImportExportResourcesModule } from '@modules/import-export-resources/module';
 import { ArtifactRepository } from './repositories/artifact.repository';
+import { StepRepository } from './repositories/step.repository';
 import { SubModule } from '@modules/app/sub-module';
 import { DataQueryRepository } from '@modules/data-queries/repository';
 import { AppHistoryModule } from '@modules/app-history/module';
@@ -65,6 +66,7 @@ export class AiModule extends SubModule {
         UserRepository,
         FeatureAbilityFactory,
         ArtifactRepository,
+        StepRepository,
         DataQueryRepository,
         EventsService,
         PageService,

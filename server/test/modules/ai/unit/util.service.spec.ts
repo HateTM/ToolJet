@@ -6,6 +6,8 @@ const mockProviderFn = jest.fn().mockReturnValue(mockLanguageModel);
 const mockCreateOpenAI = jest.fn().mockReturnValue(mockProviderFn);
 const mockStreamTextResult = { textStream: (async function* () {})() };
 const mockStreamText = jest.fn().mockReturnValue(mockStreamTextResult);
+const mockGenerateTextResult = { toolCalls: [] };
+const mockGenerateText = jest.fn().mockResolvedValue(mockGenerateTextResult);
 
 jest.mock('@ai-sdk/openai', () => ({
   createOpenAI: (...args: unknown[]) => mockCreateOpenAI(...args),
@@ -13,6 +15,7 @@ jest.mock('@ai-sdk/openai', () => ({
 
 jest.mock('ai', () => ({
   streamText: (...args: unknown[]) => mockStreamText(...args),
+  generateText: (...args: unknown[]) => mockGenerateText(...args),
 }));
 
 import { NotFoundException } from '@nestjs/common';
@@ -98,6 +101,57 @@ describe('AiUtilService.AIGateway', () => {
 
     expect(mockCreateOpenAI).not.toHaveBeenCalled();
     expect(mockStreamText).not.toHaveBeenCalled();
+  });
+});
+
+/** @group platform */
+describe('AiUtilService.AIGatewayGenerate', () => {
+  const ORIGINAL_ENV = process.env;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGenerateText.mockResolvedValue(mockGenerateTextResult);
+    process.env = {
+      ...ORIGINAL_ENV,
+      OPENAI_BASE_URL: 'https://localai.internal/v1',
+      OPENAI_API_KEY: 'test-api-key',
+      AI_MODEL: 'llama-3-70b',
+    };
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('builds the same OpenAI-compatible provider as AIGateway but calls generateText, not streamText', async () => {
+    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const promptBody = {
+      system: 'You design table schemas.',
+      messages: [{ role: 'user', content: 'Create a customers table' }],
+      tools: { createTable: { description: 'create a table' } },
+      toolChoice: { type: 'tool', toolName: 'createTable' },
+    };
+
+    const result = await service.AIGatewayGenerate('openai', 'approve-prd-create-table', promptBody, 'org-1');
+
+    expect(mockCreateOpenAI).toHaveBeenCalledWith({
+      baseURL: 'https://localai.internal/v1',
+      apiKey: 'test-api-key',
+    });
+    expect(mockGenerateText).toHaveBeenCalledWith({ model: mockLanguageModel, ...promptBody });
+    expect(mockStreamText).not.toHaveBeenCalled();
+    expect(result).toBe(mockGenerateTextResult);
+  });
+
+  it('rejects unsupported providers without calling the AI SDK', async () => {
+    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+    await expect(service.AIGatewayGenerate('anthropic', 'approve-prd-plan', {}, 'org-1')).rejects.toThrow(
+      /unsupported provider/i
+    );
+
+    expect(mockCreateOpenAI).not.toHaveBeenCalled();
+    expect(mockGenerateText).not.toHaveBeenCalled();
   });
 });
 

@@ -30,13 +30,9 @@ export class AiController implements IAiController {
 
   @InitFeature(FEATURE_KEY.APPROVE_PRD)
   @Post('conversation/approve-prd')
-  async approvePrd(
-    @User() user,
-    @Param('conversationId') conversationId: string,
-    @Body() body,
-    @Res() response: Response
-  ) {
-    throw new NotFoundException();
+  async approvePrd(@User() user, @Body() body, @Res() response: Response) {
+    const { conversationId, prd } = body ?? {};
+    return await this.aiService.approvePrd(conversationId, prd, user.organizationId, response);
   }
 
   @InitFeature(FEATURE_KEY.REWIND_STEP)
