@@ -16,7 +16,7 @@ A `Conversation` whose purpose is building or modifying the `App` through the PR
 _Avoid_: Plan, spec, proposal
 
 **Approve** (a PRD):
-The user action that locks in a PRD and starts execution. Turns a plan into a queue of `Step`s. One-way: there's no "un-approve," only rewinding executed steps.
+The user action that locks in a PRD and starts execution. Generates the full ordered `Step` list once, from the PRD — the plan's shape doesn't change after this point, only each Step's concrete props get filled in as execution reaches it (see [ADR-0004](docs/adr/0004-fixed-step-plan-at-approve.md)). One-way: there's no "un-approve," only rewinding executed steps.
 
 **Step**:
 One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container) or creates a Query against a ToolJet DB table — see [ADR-0002](docs/adr/0002-generic-component-tool.md).
