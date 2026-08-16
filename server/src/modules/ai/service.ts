@@ -29,8 +29,15 @@ export class AiService implements IAiService {
     throw new Error('Method not implemented.');
   }
 
-  async getCreditsBalance(organizationId) {
-    throw new Error('Method not implemented.');
+  /**
+   * Self-hosted CE has no credit accounting: the `ai` feature is unconditionally
+   * enabled (see BASIC_PLAN_TERMS.features.ai) and usage is unlimited, so this
+   * never touches organization_ai_credit_history / selfhost_ai_credit_history.
+   */
+  async getCreditsBalance(organizationId): Promise<{ aiFeaturesEnabled: boolean; error?: string }> {
+    return {
+      aiFeaturesEnabled: true,
+    };
   }
 
   async listConversations(appId: string, userId: string, conversationType: string): Promise<any> {

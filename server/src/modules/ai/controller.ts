@@ -4,10 +4,11 @@ import { Response } from 'express';
 import { IAiController } from './interfaces/IController';
 import { InitFeature } from '@modules/app/decorators/init-feature.decorator';
 import { FEATURE_KEY } from './constants';
+import { AiService } from './service';
 
 @Controller('ai')
 export class AiController implements IAiController {
-  constructor() { }
+  constructor(private readonly aiService: AiService) {}
 
   @InitFeature(FEATURE_KEY.FETCH_ZERO_STATE)
   @Get('/zero-state')
@@ -64,7 +65,7 @@ export class AiController implements IAiController {
   @InitFeature(FEATURE_KEY.GET_CREDITS_BALANCE)
   @Get('/get-credits-balance')
   async getCreditsBalance(@User() user) {
-    throw new NotFoundException();
+    return await this.aiService.getCreditsBalance(user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.LIST_CONVERSATIONS)
