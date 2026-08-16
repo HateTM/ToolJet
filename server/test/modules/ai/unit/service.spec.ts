@@ -943,4 +943,368 @@ describe('AiService.approvePrd', () => {
     expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', { succeeded: 4, total: 4 });
     expect(response.end).toHaveBeenCalledTimes(1);
   });
+
+  it("a CreateTable step's Artifact content includes the table's real columns (not just id/table_name)", async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateTable', description: 'Create an orders table' }])
+    ).mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')));
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'CreateTable',
+      description: 'Create an orders table',
+      status: 'pending',
+    });
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'orders' });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    expect(artifactRepository.createOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: {
+          id: 'tjdb-uuid',
+          table_name: 'orders',
+          columns: [
+            {
+              column_name: 'id',
+              data_type: 'serial',
+              constraints_type: { is_primary_key: true, is_not_null: true, is_unique: true },
+            },
+          ],
+        },
+      })
+    );
+  });
+
+  it('creates a Button component on a page created earlier in the plan (pageId validation applies to every widget type, not just Table)', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateComponent', description: 'Add a Save button' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      // Attempt 1: hallucinated pageId — rejected and retried.
+      .mockResolvedValueOnce(componentToolCall({ type: 'Button', pageId: 'made-up', text: 'Save' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Button', pageId: 'page-1', text: 'Save' }));
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Add a Save button',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' }).mockResolvedValueOnce({
+      id: 'button-1',
+      pageId: 'page-1',
+      type: 'Button',
+    });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'button-1', pageId: 'page-1', type: 'Button' },
+        identifier: 'button-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(2);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(2, 'version-1', 'org-1', 'Button', {
+      pageId: 'page-1',
+      text: 'Save',
+    });
+  });
+
+  it.each([
+    ['Text', { pageId: 'page-1', text: 'Welcome' }],
+    ['TextInput', { pageId: 'page-1', label: 'Email' }],
+    ['Container', { pageId: 'page-1', title: 'Sidebar' }],
+  ])(
+    'dispatches a %s CreateComponent step to AgentsService.CreateComponent with the model-supplied props',
+    async (type, props) => {
+      const {
+        service,
+        aiUtilService,
+        conversationRepo,
+        messageRepo,
+        agentsService,
+        artifactRepository,
+        stepRepository,
+      } = buildService();
+
+      conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+      messageRepo.findLatestByConversationId.mockResolvedValue([
+        { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+      ]);
+      aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+        planToolCall([
+          { type: 'CreateComponent', description: 'Create the page' },
+          { type: 'CreateComponent', description: `Add a ${type}` },
+        ])
+      )
+        .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Page' }))
+        .mockResolvedValueOnce(componentToolCall({ type, ...(props as object) }));
+
+      stepRepository.createOne
+        .mockResolvedValueOnce({
+          id: 'step-1',
+          conversationId: 'conv-1',
+          messageId: 'ai-msg-1',
+          order: 0,
+          type: 'CreateComponent',
+          description: 'Create the page',
+          status: 'pending',
+        })
+        .mockResolvedValueOnce({
+          id: 'step-2',
+          conversationId: 'conv-1',
+          messageId: 'ai-msg-1',
+          order: 1,
+          type: 'CreateComponent',
+          description: `Add a ${type}`,
+          status: 'pending',
+        });
+
+      agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Page' }).mockResolvedValueOnce({
+        id: 'widget-1',
+        pageId: 'page-1',
+        type,
+      });
+
+      artifactRepository.createOne
+        .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Page' }, identifier: 'page-1' })
+        .mockResolvedValueOnce({
+          id: 'artifact-2',
+          content: { id: 'widget-1', pageId: 'page-1', type },
+          identifier: 'widget-1',
+        });
+
+      await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+      expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(2, 'version-1', 'org-1', type, props);
+    }
+  );
+
+  it('creates a Form bound to a table created earlier in the plan, passing the real columns through', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    const tableColumns = [
+      {
+        column_name: 'id',
+        data_type: 'serial',
+        constraints_type: { is_primary_key: true, is_not_null: true, is_unique: true },
+      },
+      {
+        column_name: 'name',
+        data_type: 'character varying',
+        constraints_type: { is_primary_key: false, is_not_null: true, is_unique: false },
+      },
+    ];
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateTable', description: 'Create a customers table' },
+        { type: 'CreateComponent', description: 'Create the Customers page' },
+        { type: 'CreateComponent', description: 'Add a form to create customers' },
+      ])
+    )
+      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Form', pageId: 'page-1', tableId: 'tjdb-uuid', title: 'New customer' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Create the Customers page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a form to create customers',
+        status: 'pending',
+      });
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Customers' }).mockResolvedValueOnce({
+      id: 'form-1',
+      pageId: 'page-1',
+      type: 'Form',
+      tableId: 'tjdb-uuid',
+    });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'artifact-1',
+        content: { id: 'tjdb-uuid', table_name: 'customers', columns: tableColumns },
+        identifier: 'customers',
+      })
+      .mockResolvedValueOnce({ id: 'artifact-2', content: { id: 'page-1', name: 'Customers' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'form-1', pageId: 'page-1', type: 'Form' },
+        identifier: 'form-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    // The Form step's execution passes the real prior CreateTable artifact's columns
+    // through — that's what lets AgentsService build correct JSONSchema fields.
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(2, 'version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      tableId: 'tjdb-uuid',
+      title: 'New customer',
+      columns: tableColumns,
+    });
+  });
+
+  it('rejects a Form step whose tableId does not match any table created earlier in this plan, then succeeds once the retry references the real one', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateTable', description: 'Create a customers table' },
+        { type: 'CreateComponent', description: 'Create the Customers page' },
+        { type: 'CreateComponent', description: 'Add a form to create customers' },
+      ])
+    )
+      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
+      // Attempt 1: hallucinated tableId.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Form', pageId: 'page-1', tableId: 'made-up-table-id', title: 'New customer' })
+      )
+      // Attempt 2 (retry): the real tableId.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Form', pageId: 'page-1', tableId: 'tjdb-uuid', title: 'New customer' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Create the Customers page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a form to create customers',
+        status: 'pending',
+      });
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Customers' }).mockResolvedValueOnce({
+      id: 'form-1',
+      pageId: 'page-1',
+      type: 'Form',
+    });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'artifact-1',
+        content: { id: 'tjdb-uuid', table_name: 'customers', columns: [] },
+        identifier: 'customers',
+      })
+      .mockResolvedValueOnce({ id: 'artifact-2', content: { id: 'page-1', name: 'Customers' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'form-1', pageId: 'page-1', type: 'Form' },
+        identifier: 'form-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+
+    // Only two CreateComponent calls total: the Page, and the Form's successful (second)
+    // attempt — the hallucinated-tableId attempt never reached AgentsService.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(2);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(
+      2,
+      'version-1',
+      'org-1',
+      'Form',
+      expect.objectContaining({ tableId: 'tjdb-uuid' })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-3',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
 });

@@ -85,22 +85,30 @@ const createTableTool = tool({
   }),
 });
 
-// v1 subset (ADR-0002 lists the full allow-list: Page, Table, Form, Button, Text,
-// TextInput, Container) — Form/Button/Text/TextInput/Container land in a later ticket.
-// Unlike an unsupported *Step* type (ADR-0006, which can never succeed since no handler
-// exists), an unsupported *component* type is retried: the model picks it per attempt, so
-// a later retry can self-correct to a supported one.
-const SUPPORTED_COMPONENT_TYPES = ['Page', 'Table'] as const;
+// Full v1 allow-list as of this ticket (ADR-0002: Page, Table, Form, Button, Text,
+// TextInput, Container). Unlike an unsupported *Step* type (ADR-0006, which can never
+// succeed since no handler exists), an unsupported *component* type is retried: the model
+// picks it per attempt, so a later retry can self-correct to a supported one.
+const SUPPORTED_COMPONENT_TYPES = ['Page', 'Table', 'Button', 'Text', 'TextInput', 'Container', 'Form'] as const;
+
+// Component types that place a widget on an existing Page — everything except 'Page'
+// itself (which creates one). Used to validate `pageId` uniformly across all of them.
+const PAGE_WIDGET_TYPES = ['Table', 'Button', 'Text', 'TextInput', 'Container', 'Form'] as const;
 
 const CREATE_COMPONENT_SYSTEM_PROMPT = `You create one UI element for this step, based on the PRD and whatever earlier steps in this plan already created (listed below, if any).
 
-Call createComponent exactly once. Supported component types right now: Page, Table.
+Call createComponent exactly once. Supported component types: Page, Table, Button, Text, TextInput, Container, Form.
 - Page: give it a short, specific name.
-- Table: reference the id of a Page already created in this plan (from context below) to place it on, give it a title, and reference the name of a query already created in this plan (from context below) whose data it should display.
-Only reference pages/queries that actually appear in the context below — never invent an id or name.`;
+- Table: reference the id of a Page already created in this plan to place it on, give it a title, and reference the name of a query already created in this plan whose data it should display.
+- Button: reference a Page id, give it a short label.
+- Text: reference a Page id, give it the text to display.
+- TextInput: reference a Page id, give it a label (and an optional placeholder).
+- Container: reference a Page id, give it a short title.
+- Form: reference a Page id, the id of a ToolJet DB table already created in this plan to create records in, and a form title. This produces a working create-record form — you don't need a separate query or event step for it.
+Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
-  description: 'Create a Page, or a Table widget bound to an existing query on an existing Page.',
+  description: 'Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form) on an existing Page.',
   parameters: z.discriminatedUnion('type', [
     z.object({
       type: z.literal('Page'),
@@ -111,6 +119,35 @@ const createComponentTool = tool({
       pageId: z.string().describe('id of an already-created Page (from context) to place this table on'),
       title: z.string().describe('Table title shown in the UI'),
       queryName: z.string().describe('name of an already-created query (from context) this table should display'),
+    }),
+    z.object({
+      type: z.literal('Button'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this button on'),
+      text: z.string().describe('Button label text'),
+    }),
+    z.object({
+      type: z.literal('Text'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this text on'),
+      text: z.string().describe('Text content to display'),
+    }),
+    z.object({
+      type: z.literal('TextInput'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this input on'),
+      label: z.string().describe('Input label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+    }),
+    z.object({
+      type: z.literal('Container'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this container on'),
+      title: z.string().describe('Short container title'),
+    }),
+    z.object({
+      type: z.literal('Form'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this form on'),
+      tableId: z
+        .string()
+        .describe('id of an already-created ToolJet DB table (from context) this form creates records in'),
+      title: z.string().describe('Form title'),
     }),
   ]),
 });
@@ -499,7 +536,15 @@ export class AiService implements IAiService {
 
     const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
 
-    return { content: created, identifier: created.table_name, props: tableParams };
+    // `created` only carries { id, table_name } (TooljetDbTableOperationsService's return) —
+    // merging in the real columns here is what lets later steps (CreateQuery, and a Form
+    // step's field generation) see this table's actual schema via context.priorResults,
+    // not just its id/name.
+    return {
+      content: { ...created, columns: tableParams.columns },
+      identifier: created.table_name,
+      props: tableParams,
+    };
   }
 
   private async executeComponentStep(
@@ -532,12 +577,14 @@ export class AiService implements IAiService {
       );
     }
 
-    // A Table only actually shows data if pageId/queryName are real — the tool schema
-    // can't enforce that (they're free-form strings), so it's checked here against what
-    // this plan has actually built so far. Without this, a hallucinated queryName would
-    // silently persist a Table whose `{{queries.<name>.data}}` binding resolves to nothing,
-    // rather than failing loud — retryable, same reasoning as the type check above.
-    if (type === 'Table') {
+    // Every widget-on-a-page type only actually works if pageId is real — the tool schema
+    // can't enforce that (it's a free-form string), so it's checked here against what this
+    // plan has actually built so far. Without this, a hallucinated pageId would either fail
+    // at the DB (a real FK) or, worse for Table/Form, silently persist a widget bound to
+    // nothing rather than failing loud — retryable, same reasoning as the type check above.
+    // A Page artifact is distinguished from a widget artifact by NOT having its own `pageId`
+    // (every widget's content does, via createWidgetComponent's return shape).
+    if ((PAGE_WIDGET_TYPES as readonly string[]).includes(type)) {
       const pageExists = context.priorResults.some(
         (result) =>
           result.type === 'CreateComponent' &&
@@ -547,12 +594,27 @@ export class AiService implements IAiService {
       if (!pageExists) {
         throw new Error(`pageId "${props.pageId}" does not match any Page created earlier in this plan`);
       }
+    }
+
+    if (type === 'Table') {
       const queryExists = context.priorResults.some(
         (result) => result.type === 'CreateQuery' && result.artifact.content?.name === props.queryName
       );
       if (!queryExists) {
         throw new Error(`queryName "${props.queryName}" does not match any query created earlier in this plan`);
       }
+    }
+
+    if (type === 'Form') {
+      const tableResult = context.priorResults.find(
+        (result) => result.type === 'CreateTable' && result.artifact.content?.id === props.tableId
+      );
+      if (!tableResult) {
+        throw new Error(`tableId "${props.tableId}" does not match any table created earlier in this plan`);
+      }
+      // AgentsService.createFormComponent needs the table's real columns (to build the
+      // form's fields) — only available from the CreateTable step's Artifact content.
+      props.columns = tableResult.artifact.content.columns;
     }
 
     const created = await this.agentsService.CreateComponent(context.appVersionId, context.organizationId, type, props);

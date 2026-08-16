@@ -13,6 +13,10 @@ const buildMockComponentsService = () => ({
   create: jest.fn(),
 });
 
+const buildMockEventsService = () => ({
+  createEvent: jest.fn(),
+});
+
 const buildMockDataQueryRepository = () => ({
   createOne: jest.fn(),
 });
@@ -26,6 +30,7 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     overrides.tooljetDbTableOperationsService ?? buildMockTooljetDbTableOperationsService();
   const pageService = overrides.pageService ?? buildMockPageService();
   const componentsService = overrides.componentsService ?? buildMockComponentsService();
+  const eventsService = overrides.eventsService ?? buildMockEventsService();
   const dataQueryRepository = overrides.dataQueryRepository ?? buildMockDataQueryRepository();
   const dataSourcesRepository = overrides.dataSourcesRepository ?? buildMockDataSourcesRepository();
 
@@ -33,6 +38,7 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     tooljetDbTableOperationsService as any,
     pageService as any,
     componentsService as any,
+    eventsService as any,
     dataQueryRepository as any,
     dataSourcesRepository as any
   );
@@ -42,6 +48,7 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     tooljetDbTableOperationsService,
     pageService,
     componentsService,
+    eventsService,
     dataQueryRepository,
     dataSourcesRepository,
   };
@@ -137,11 +144,200 @@ describe('AgentsService.CreateComponent', () => {
   it('throws for an unrecognized component type without calling PageService/ComponentsService', async () => {
     const { service, pageService, componentsService } = buildAgentsService();
 
-    await expect(service.CreateComponent('version-1', 'org-1', 'Form', {})).rejects.toThrow(
+    await expect(service.CreateComponent('version-1', 'org-1', 'Chart', {})).rejects.toThrow(
       /unsupported component type/i
     );
     expect(pageService.createPage).not.toHaveBeenCalled();
     expect(componentsService.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Button', { pageId: 'page-1', text: 'Save' }, { width: 4, height: 40 }],
+    ['Text', { pageId: 'page-1', text: 'Welcome' }, { width: 6, height: 40 }],
+    ['TextInput', { pageId: 'page-1', label: 'Email' }, { width: 10, height: 40 }],
+    ['Container', { pageId: 'page-1', title: 'Sidebar' }, { width: 15, height: 450 }],
+  ])('creates a %s component on the given page with its real defaultSize', async (type, props, size) => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    const result = await service.CreateComponent('version-1', 'org-1', type as string, props);
+
+    const [componentDiff, pageId, appVersionId] = componentsService.create.mock.calls[0];
+    expect(pageId).toBe('page-1');
+    expect(appVersionId).toBe('version-1');
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.type).toBe(type);
+    expect(definition.layouts.desktop).toEqual({ top: 0, left: 0, ...size });
+    expect(result).toMatchObject({ pageId: 'page-1', type });
+  });
+
+  it('Text component stores the given text as its properties.text.value', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Text', { pageId: 'page-1', text: 'Welcome' });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.properties.text.value).toBe('Welcome');
+  });
+
+  it('TextInput component stores label/placeholder', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'TextInput', {
+      pageId: 'page-1',
+      label: 'Email',
+      placeholder: 'you@example.com',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.properties.label.value).toBe('Email');
+    expect(definition.properties.placeholder.value).toBe('you@example.com');
+  });
+});
+
+/** @group platform */
+describe('AgentsService.CreateComponent — Form', () => {
+  const orderColumns = [
+    { column_name: 'id', data_type: 'serial', constraints_type: { is_primary_key: true } },
+    { column_name: 'customer_name', data_type: 'character varying', constraints_type: { is_primary_key: false } },
+    { column_name: 'quantity', data_type: 'integer', constraints_type: { is_primary_key: false } },
+  ];
+
+  it('builds a create-record Form with JSONSchema fields for every non-primary-key column', async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'insert_orders_form' });
+
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Orders form',
+      tableId: 'table-1',
+      columns: orderColumns,
+    });
+
+    const [componentDiff, pageId, appVersionId] = componentsService.create.mock.calls[0];
+    expect(pageId).toBe('page-1');
+    expect(appVersionId).toBe('version-1');
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.type).toBe('Form');
+    expect(definition.properties.advanced.value).toBe('{{true}}');
+
+    const schemaMatch = definition.properties.JSONSchema.value.match(/\{\{ (.*) \}\}/);
+    const schema = JSON.parse(schemaMatch[1]);
+    // The primary key column is excluded — it's auto-generated, never user-entered.
+    expect(Object.keys(schema.properties)).toEqual(['customer_name', 'quantity']);
+    expect(schema.properties.customer_name.type).toBe('textinput');
+    expect(schema.properties.quantity.type).toBe('number');
+  });
+
+  it('gives the Form a valid-JS-identifier name even when the title starts with a digit ({{components.<name>.data}} is evaluated as JS)', async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'insert_form' });
+
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: '2024 Orders',
+      tableId: 'table-1',
+      columns: orderColumns,
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [name, definition] = Object.entries(componentDiff)[0] as [string, any];
+    expect(name).not.toBe(definition.name); // name is the componentDiff key (a uuid); definition.name is the Form's binding-safe identifier
+    expect(definition.name).toMatch(/^[a-zA-Z_][a-zA-Z0-9_]*$/);
+
+    const columnBindings = Object.values(
+      (dataQueryRepository.createOne.mock.calls[0][0] as any).options.create_row
+    ) as any[];
+    for (const binding of columnBindings) {
+      expect(binding.value).toContain(`components.${definition.name}.data.`);
+    }
+  });
+
+  it('gives two Forms in the same plan different names even when their titles sanitize to the same string', async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'insert_form' });
+
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Contact Form',
+      tableId: 'table-1',
+      columns: orderColumns,
+    });
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Contact Form',
+      tableId: 'table-1',
+      columns: orderColumns,
+    });
+
+    const firstDefinition = Object.values(componentsService.create.mock.calls[0][0])[0] as any;
+    const secondDefinition = Object.values(componentsService.create.mock.calls[1][0])[0] as any;
+    expect(firstDefinition.name).not.toBe(secondDefinition.name);
+  });
+
+  it("creates an insert query whose column values are template-bound to the Form's own field data", async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'insert_orders_form' });
+
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Orders form',
+      tableId: 'table-1',
+      columns: orderColumns,
+    });
+
+    expect(dataSourcesRepository.getStaticDataSourceByKind).toHaveBeenCalledWith('org-1', 'tooljetdb');
+    const [queryPayload] = dataQueryRepository.createOne.mock.calls[0];
+    expect(queryPayload.dataSourceId).toBe('ds-1');
+    expect(queryPayload.appVersionId).toBe('version-1');
+    expect(queryPayload.options.operation).toBe('create_row');
+    expect(queryPayload.options.table_id).toBe('table-1');
+    const columnBindings = Object.values(queryPayload.options.create_row) as any[];
+    expect(columnBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ column: 'customer_name', value: expect.stringContaining('.data.customer_name') }),
+        expect.objectContaining({ column: 'quantity', value: expect.stringContaining('.data.quantity') }),
+      ])
+    );
+    // The primary key is never written by the insert.
+    expect(columnBindings.some((binding) => binding.column === 'id')).toBe(false);
+  });
+
+  it("wires the Form's onSubmit to run the insert query via EventsService.createEvent", async () => {
+    const { service, componentsService, eventsService, dataQueryRepository, dataSourcesRepository } =
+      buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'insert_orders_form' });
+
+    const result = await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Orders form',
+      tableId: 'table-1',
+      columns: orderColumns,
+    });
+
+    expect(eventsService.createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'component',
+        attachedTo: result.id,
+        event: expect.objectContaining({ eventId: 'onSubmit', actionId: 'run-query', queryId: 'query-1' }),
+      }),
+      'version-1'
+    );
+    expect(result).toMatchObject({ tableId: 'table-1', queryId: 'query-1', queryName: 'insert_orders_form' });
   });
 });
 
