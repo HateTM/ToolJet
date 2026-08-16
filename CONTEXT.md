@@ -19,7 +19,7 @@ _Avoid_: Plan, spec, proposal
 The user action that locks in a PRD and starts execution. Turns a plan into a queue of `Step`s. One-way: there's no "un-approve," only rewinding executed steps.
 
 **Step**:
-One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`.
+One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container) or creates a Query against a ToolJet DB table — see [ADR-0002](docs/adr/0002-generic-component-tool.md).
 
 **Artifact**:
 The concrete output of one `Step` — the generated/changed piece of the `App` (e.g. a component, a table). Persisted as `Artifact`, linked to the `Conversation` and to the specific AI `Message` that produced it.
@@ -32,6 +32,5 @@ Undo execution back to an earlier `Step`, discarding the `Artifact`s made after 
 Re-run a specific AI response in place, branching off its parent message (`parentId`) rather than replaying the whole `Conversation`. Produces a sibling message; the old one is superseded (`isLatest: false`) but not deleted.
 _Avoid_: Retry, redo
 
-## Open
-
-**Learn conversation** (`conversationType: 'learn'`): purpose not yet confirmed — hypothesis is a Q&A/docs mode that answers questions without producing a PRD or `Artifact`s. Not yet resolved with the user.
+**Learn conversation**:
+A `Conversation` scoped to Q&A rather than building — no PRD, no `Step`s, no `Artifact`s. Corresponds to `conversationType: 'learn'`. **Deferred**: out of scope for this build; the `sendUserDocsMessage` endpoint and this conversation type are not being implemented yet.
