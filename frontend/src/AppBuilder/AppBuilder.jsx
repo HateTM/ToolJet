@@ -12,6 +12,8 @@ import QueryPanel from '@/AppBuilder/QueryPanel';
 import RealtimeCursors from '@/AppBuilder/RealtimeCursors';
 import EditorHeader from '@/AppBuilder/Header';
 import LeftSidebar from '@/AppBuilder/LeftSidebar';
+import { AiBuilderTrigger } from '@/AppBuilder/LeftSidebar/AiBuilder/AiBuilderTrigger';
+import { AiBuilderChatPanel } from '@/AppBuilder/LeftSidebar/AiBuilder/AiBuilderChatPanel';
 import Popups from './Popups';
 import { ModuleProvider } from '@/AppBuilder/_contexts/ModuleContext';
 import RightSidebarToggle from '@/AppBuilder/RightSideBar/RightSidebarToggle';
@@ -64,7 +66,12 @@ export const Editor = ({ id: appId, darkMode, moduleId = 'canvas', switchDarkMod
           <Suspense fallback={<div>Loading...</div>}>
             <EditorHeader darkMode={darkMode} appType={appType} />
 
-            <LeftSidebar switchDarkMode={changeToDarkMode} darkMode={darkMode} />
+            <LeftSidebar
+              switchDarkMode={changeToDarkMode}
+              darkMode={darkMode}
+              renderAISideBarTrigger={(triggerProps) => <AiBuilderTrigger {...triggerProps} />}
+              renderAIChat={(chatProps) => <AiBuilderChatPanel {...chatProps} appId={appId} />}
+            />
           </Suspense>
 
           {window?.public_config?.ENABLE_MULTIPLAYER_EDITING === 'true' && multiPlayerEditEnabled && (

@@ -1015,6 +1015,18 @@
             "text": "Inspector",
             "tip": "Inspector"
         },
+        "AI Builder": {
+            "text": "AI Builder",
+            "tip": "AI Builder",
+            "newConversation": "New conversation",
+            "conversationHistory": "Conversation history",
+            "close": "Close",
+            "noConversations": "No previous conversations yet",
+            "untitledConversation": "Untitled conversation",
+            "defaultGreeting": "What would you like to build today?",
+            "inputPlaceholder": "Describe the app you want to build...",
+            "send": "Send"
+        },
         "Sources": {
             "text": "Sources",
             "tip": "Add or edit datasources",

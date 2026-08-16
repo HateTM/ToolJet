@@ -13,13 +13,13 @@ export class AiController implements IAiController {
   @InitFeature(FEATURE_KEY.FETCH_ZERO_STATE)
   @Get('/zero-state')
   async fetchZeroStateConfig(@User() user) {
-    throw new NotFoundException();
+    return await this.aiService.fetchZeroStateConfig(user.firstName);
   }
 
   @InitFeature(FEATURE_KEY.SEND_USER_MESSAGE)
   @Post('conversation/message')
   async sendUserMessage(@User() user, @Body() body, @Res() response: Response) {
-    throw new NotFoundException();
+    return await this.aiService.sendUserMessage(body, response, user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.SEND_DOCS_MESSAGE)
@@ -75,18 +75,26 @@ export class AiController implements IAiController {
     @Query('appId') appId: string,
     @Query('conversationType') conversationType: string
   ) {
-    throw new NotFoundException();
+    return await this.aiService.listConversations(appId, user.id, conversationType);
   }
 
   @InitFeature(FEATURE_KEY.CREATE_CONVERSATION)
   @Post('conversation')
   async createConversation(@User() user, @Body() body) {
-    throw new NotFoundException();
+    const { appId, conversationType, currentConversationId, handoff } = body ?? {};
+    return await this.aiService.createConversation(
+      user.id,
+      appId,
+      conversationType,
+      user.organizationId,
+      currentConversationId,
+      handoff
+    );
   }
 
   @InitFeature(FEATURE_KEY.GET_CONVERSATION)
   @Get('conversation/:conversationId')
   async getConversationById(@User() user, @Param('conversationId') conversationId: string) {
-    throw new NotFoundException();
+    return await this.aiService.getConversationById(conversationId, user.id);
   }
 }

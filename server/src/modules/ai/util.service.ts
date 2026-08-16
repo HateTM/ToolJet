@@ -1,14 +1,25 @@
-import { Logger } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 import { IAiUtilService } from './interfaces/IUtilService';
+import { AiConversationRepository } from './repositories/ai-conversation.repository';
+import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
+import { AiConversation } from '@entities/ai_conversation.entity';
 
 const SUPPORTED_AI_PROVIDERS = ['openai'];
+
+// Mirrors AiConversation.conversationType — the repositories are typed against this
+// union, but IAiUtilService (and controllers upstream) pass conversationType as a
+// plain string, so it's cast at the boundary here rather than repeated per call site.
+type ConversationType = 'generate' | 'learn';
 
 export class AiUtilService implements IAiUtilService {
   private readonly logger = new Logger(AiUtilService.name);
 
-  constructor() {}
+  constructor(
+    private readonly aiConversationRepository: AiConversationRepository,
+    private readonly aiConversationMessageRepository: AiConversationMessageRepository
+  ) {}
 
   public getAgentAssetPath(filename) {
     throw new Error('Method not implemented.');
@@ -83,23 +94,72 @@ export class AiUtilService implements IAiUtilService {
     throw new Error('Method not implemented.');
   }
 
+  /**
+   * Writes a single Server-Sent Event to `res` in standard wire format:
+   *
+   *   event: <type>
+   *   data: <JSON.stringify(data)>
+   *   (blank line)
+   *
+   * Caller is responsible for setting the SSE response headers before the
+   * first call, and for ending the response once done.
+   */
   public sendSSE(res: any, type: string, data: any) {
-    throw new Error('Method not implemented.');
+    res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
-  async getConversation(appId: string, userId: string, conversationType: string): Promise<any> {
-    throw new Error('Method not implemented.');
+  async getConversation(appId: string, userId: string, conversationType: string): Promise<AiConversation> {
+    return this.aiConversationRepository.findByAppAndUser(appId, userId, conversationType as ConversationType);
   }
 
-  async createNewConversation(userId, appId, conversationType): Promise<any> {
-    throw new Error('Method not implemented.');
+  /**
+   * Creates (or reactivates) the conversation a user's message thread should
+   * continue on:
+   *  - `currentConversationId` set: reactivate that specific conversation
+   *    (deactivating any other active one for the same app/user/type).
+   *  - otherwise: start a brand new conversation, deactivating whatever was
+   *    previously active (see AiConversationRepository.createNewConversation).
+   *
+   * `handoff` (e.g. moving from a "learn" thread into "generate") is recorded
+   * on the conversation's metadata for later tickets to key off of.
+   */
+  async createNewConversation(
+    userId: string,
+    appId: string,
+    conversationType: string,
+    currentConversationId?: string,
+    handoff?: boolean
+  ): Promise<AiConversation> {
+    const type = conversationType as ConversationType;
+
+    if (currentConversationId) {
+      await this.aiConversationRepository.setActive(currentConversationId, appId, userId, type);
+      return this.aiConversationRepository.findById(currentConversationId);
+    }
+
+    const conversation = await this.aiConversationRepository.createNewConversation(userId, appId, type);
+
+    if (handoff) {
+      const metadata = { ...(conversation.metadata || {}), handoff: true };
+      await this.aiConversationRepository.updateOne(conversation.id, { metadata });
+      conversation.metadata = metadata;
+    }
+
+    return conversation;
   }
 
-  async getConversationsList(appId: string, userId: string, conversationType: string): Promise<any[]> {
-    throw new Error('Method not implemented.');
+  async getConversationsList(appId: string, userId: string, conversationType: string): Promise<AiConversation[]> {
+    return this.aiConversationRepository.findAllByAppAndUser(appId, userId, conversationType as ConversationType);
   }
 
   async getConversationById(conversationId: string, userId: string): Promise<any> {
-    throw new Error('Method not implemented.');
+    const conversation = await this.aiConversationRepository.findById(conversationId);
+    if (!conversation || conversation.userId !== userId) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+
+    return { ...conversation, messages };
   }
 }

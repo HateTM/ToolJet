@@ -16,6 +16,7 @@ export const aiService = {
   getConversation,
   autoSort,
   getTokenUsage,
+  fetchZeroState,
 };
 
 function handleAITextResponse(response) {
@@ -164,4 +165,9 @@ async function autoSort(body) {
 async function getTokenUsage(conversationId) {
   const requestOptions = { method: 'GET', headers: authHeader(), credentials: 'include' };
   return fetch(`${config.apiUrl}/ai/conversation/${conversationId}/token-usage`, requestOptions).then(handleResponse);
+}
+
+async function fetchZeroState() {
+  const requestOptions = { method: 'GET', headers: authHeader(), credentials: 'include' };
+  return fetch(`${config.apiUrl}/ai/zero-state`, requestOptions).then(handleResponse);
 }

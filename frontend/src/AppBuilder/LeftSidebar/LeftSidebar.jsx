@@ -114,7 +114,7 @@ export const BaseLeftSidebar = ({
           />
         );
       case 'tooljetai':
-        return renderAIChat({ darkMode });
+        return renderAIChat({ darkMode, onClose: () => toggleLeftSidebar(false) });
       case 'apphistory':
         return <AppHistory darkMode={darkMode} setPinned={setPinned} pinned={pinned} />;
       case 'libraries':
