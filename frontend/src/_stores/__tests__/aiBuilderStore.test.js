@@ -191,6 +191,14 @@ describe('aiBuilderStore', () => {
     expect(state.error).toBeNull();
   });
 
+  it("resetConversation also clears skipConversationBootstrap (ADR-0010's homepage-handoff flag)", () => {
+    useAiBuilderStore.setState({ skipConversationBootstrap: true });
+
+    getInitialState().resetConversation();
+
+    expect(getInitialState().skipConversationBootstrap).toBe(false);
+  });
+
   it('loadConversation populates messages from the fetched conversation', async () => {
     aiService.getConversation.mockResolvedValue({
       id: 'conv-2',

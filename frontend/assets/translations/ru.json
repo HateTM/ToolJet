@@ -352,6 +352,10 @@
       "openInAppViewer": "Открыть просмотрщик приложений",
       "removeFromFolder": "Удалить из папки"
     },
+    "createAppWithPrompt": {
+      "placeholder": "Опишите приложение, которое хотите создать...",
+      "submit": "Создать приложение"
+    },
     "blankPage": {
       "welcomeToToolJet": "Добро пожаловать в ToolJet!",
       "getStartedCreateNewApp": "Вы можете начать создание нового приложения или создание нового приложения используя шаблон из библиотеки ToolJet",

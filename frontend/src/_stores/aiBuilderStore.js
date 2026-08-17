@@ -30,6 +30,14 @@ const initialState = {
   votes: {},
   // id of the AI message currently being regenerated, or null.
   regeneratingMessageId: null,
+  // Set synchronously (via useAiBuilderStore.setState, not the async actions below) by the
+  // homepage-prompt handoff in useAppData.js, right before it opens the AI sidebar — tells
+  // AiBuilderChatPanel's own mount bootstrap (listConversations -> loadConversation) to
+  // stand down for that one mount, since the handoff is already populating this store via
+  // createConversation/sendMessage. Without this, both fire for the same appId within a few
+  // ms of each other, and loadConversation's unconditional overwrite of `messages`/
+  // `streamingMessage` can wipe the in-flight prompt/reply the handoff just started (ADR-0010).
+  skipConversationBootstrap: false,
   error: null,
 };
 
@@ -64,6 +72,7 @@ const useAiBuilderStore = create(
             state.rewindingStepId = null;
             state.votes = {};
             state.regeneratingMessageId = null;
+            state.skipConversationBootstrap = false;
             state.error = null;
           },
           false,

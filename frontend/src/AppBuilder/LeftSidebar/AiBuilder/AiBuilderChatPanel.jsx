@@ -254,6 +254,15 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
 
   useEffect(() => {
     if (!appId) return;
+    // ADR-0010: the homepage-prompt handoff (useAppData.js) sets this synchronously right
+    // before it opens the sidebar — this mount is its very first render, so the flag is
+    // already there. Consume it and skip this bootstrap: the handoff is already populating
+    // the store via its own createConversation/sendMessage, and racing this panel's
+    // listConversations/loadConversation against that would overwrite the in-flight prompt.
+    if (useAiBuilderStore.getState().skipConversationBootstrap) {
+      useAiBuilderStore.setState({ skipConversationBootstrap: false });
+      return;
+    }
     listConversations(appId, conversationType).then((existing) => {
       const active = existing?.find((conversation) => conversation.active) || existing?.[0];
       if (active) {

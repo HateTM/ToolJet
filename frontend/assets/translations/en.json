@@ -420,6 +420,10 @@
             "openInAppViewer": "Open in app viewer",
             "removeFromFolder": "Remove from folder"
         },
+        "createAppWithPrompt": {
+            "placeholder": "Describe the app you want to build...",
+            "submit": "Create app"
+        },
         "blankPage": {
             "welcomeToToolJet": "Welcome to your new ToolJet workspace",
             "getStartedCreateNewApp": "You can get started by creating a new application or by creating an application using a template in ToolJet Library.",

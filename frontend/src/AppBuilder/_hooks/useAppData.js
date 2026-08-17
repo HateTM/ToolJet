@@ -11,6 +11,7 @@ import {
   customStylesService,
 } from '@/_services';
 import useStore from '@/AppBuilder/_stores/store';
+import useAiBuilderStore from '@/_stores/aiBuilderStore';
 import { camelCase, isEmpty, mapKeys, noop } from 'lodash';
 import { usePrevious } from '@dnd-kit/utilities';
 import { deepCamelCase } from '@/_helpers/appUtils';
@@ -144,7 +145,6 @@ const useAppData = (
   const detectThemeChange = useStore((state) => state.detectThemeChange);
   const setConversation = useStore((state) => state.ai?.setConversation);
   const setDocsConversation = useStore((state) => state.ai?.setDocsConversation);
-  const sendMessage = useStore((state) => state.ai?.sendMessage);
   const getCreditBalance = useStore((state) => state.ai?.getCreditBalance);
   const setSelectedSidebarItem = useStore((state) => state.setSelectedSidebarItem);
   const toggleLeftSidebar = useStore((state) => state.toggleLeftSidebar);
@@ -454,23 +454,31 @@ const useAppData = (
           moduleId
         );
 
-        const liveMessages = useStore.getState().ai?.conversation?.aiConversationMessages;
-        if (
-          state?.prompt &&
-          !promptSentRef.current &&
-          (conversation?.aiConversationMessages || []).length === 0 &&
-          (liveMessages || []).length === 0
-        ) {
+        // ADR-0010: this used to read/call the main store's `ai` slice, which is EE-only
+        // (getEditionSpecificSlice resolves it to `{}` for edition === 'ce') — rewired to the
+        // real aiBuilderStore (@/_stores/aiBuilderStore) that AiBuilderChatPanel actually
+        // renders from, since nothing else can be the trigger that opens the sidebar and
+        // sends the homepage prompt before the panel itself has ever mounted. Guarded by
+        // promptSentRef alone (not also "no messages yet in the store") — aiBuilderStore is
+        // a global singleton, so checking its current message count here would misfire if
+        // the user had another app's AI chat open in the same SPA session before creating
+        // this one; promptSentRef, scoped to this hook instance, is the correct one-shot gate.
+        if (state?.prompt && !promptSentRef.current) {
           promptSentRef.current = true;
+          // Set synchronously, before the sidebar opens and mounts AiBuilderChatPanel, so its
+          // own mount effect (listConversations -> loadConversation) sees the flag on its very
+          // first render and skips its bootstrap instead of racing this handoff (ADR-0010).
+          useAiBuilderStore.setState({ skipConversationBootstrap: true });
           setSelectedSidebarItem('tooljetai');
           toggleLeftSidebar(true);
-          // Structured datasources/tables the user tagged via "@mentions" in the create prompt. Sent
-          // alongside the kickoff message so the backend can auto-complete the data-clarification /
-          // datasource-selection / table-mapping steps for what was already referenced.
-          const taggedResources = state?.taggedResources;
-          const hasTaggedResources =
-            taggedResources && (taggedResources.datasources?.length ?? 0) + (taggedResources.tables?.length ?? 0) > 0;
-          sendMessage(state.prompt, {}, hasTaggedResources ? { taggedResources } : {}, moduleId);
+          const aiBuilderStore = useAiBuilderStore.getState();
+          aiBuilderStore
+            .createConversation({ appId: effectiveAppId, conversationType: 'generate', handoff: true })
+            .then(() => aiBuilderStore.sendMessage({ appId: effectiveAppId, content: state.prompt }))
+            .catch(() => {
+              // createConversation/sendMessage already record the failure on aiBuilderStore's
+              // own `error` state, surfaced once the sidebar renders — nothing else to do here.
+            });
           setIsQueryPaneExpanded(false);
           // Clear prompt from navigation state so it doesn't re-trigger on page refresh
           const {
