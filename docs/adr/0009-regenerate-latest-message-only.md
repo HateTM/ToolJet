@@ -1,0 +1,15 @@
+---
+status: accepted
+---
+
+# Regenerate only targets the conversation's latest message; vote is a single row per message, not per user
+
+Ticket #8 asks for "regenerate a response": given `parentMessageId`, mark the current `isLatest` AI reply to that parent `isLatest: false` and insert a new sibling — same `parentId`, `isLatest: true` — with freshly generated content (`AiConversationMessage`'s `parentId`/`isLatest` columns already model exactly this branch-and-supersede shape; ADR-0001's Generate-conversation contract just never had a caller that used it until now).
+
+The real design question is what happens to messages that came **after** the one being regenerated, if any exist. `findLatestByConversationId` returns a flat, `createdAt`-ordered list filtered to `isLatest: true` — it does not walk a tree. If regenerate only flips the *one* stale AI reply to `isLatest: false` and leaves everything chronologically after it untouched, a regenerate on anything but the last message produces a broken list: later messages whose real parent is the now-superseded reply would still show up as `isLatest: true`, stitched onto a new reply they were never actually a response to. Making regenerate correctly cascade-invalidate every descendant would need an actual tree walk (or a materialized-path/depth column neither entity has), which is real work with no consumer asking for it yet — the chat panel only ever exposes "regenerate" on the AI message currently at the end of the transcript, so nothing today produces the situation an in-order regenerate would mishandle.
+
+Decided: `regenerateAiMessage` requires `parentMessageId`'s current `isLatest` AI reply to be the **last** entry in `findLatestByConversationId`'s result — rejected with a 400 otherwise. This keeps the cascade problem out of scope entirely rather than half-solving it, matching the pattern already set by CreateTable-only (ADR before #4), Page+Table-only (#5), Form create-mode-only (ADR-0007): a deliberately narrow v1 slice, not an attempt to solve conversation branching in general. If a later ticket needs "regenerate an earlier turn," it needs this cascade solved as its own piece of work, not bolted onto this one.
+
+The conversation history sent to the LLM for the regenerated reply is every currently-`isLatest` message up to and including `parentMessageId`, in the same shape `sendUserMessage` used when that message was first sent — this is well-defined regardless of how many prior regenerations happened, since `isLatest` already tracks "the current branch" for everything before the target.
+
+Vote is simpler: `AiResponseVote` is a `OneToOne` off `AiConversationMessage` (not `OneToMany`), so it's one row per message, not one per (message, user) — `voteAiMessage` upserts that single row (create if absent, update `voteType`/`userId` if present) rather than tracking per-user votes. This matches the entity as already defined, and a Generate conversation only ever has one participant, so per-user vote tracking has no observable difference from a single shared row.

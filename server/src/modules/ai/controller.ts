@@ -44,14 +44,16 @@ export class AiController implements IAiController {
 
   @InitFeature(FEATURE_KEY.REGENERATE_MESSAGE)
   @Post('conversation/regenerate-message')
-  async regenerateAiMessage(@User() user, @Param('parentMessageId') parentMessageId: string) {
-    throw new NotFoundException();
+  async regenerateAiMessage(@User() user, @Body() body) {
+    const { parentMessageId } = body ?? {};
+    return await this.aiService.regenerateAiMessage(parentMessageId, user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.VOTE_MESSAGE)
   @Post('conversation/vote-message')
-  async voteAiMessage(@User() user, @Param('messageId') messageId: string, @Body() body) {
-    throw new NotFoundException();
+  async voteAiMessage(@User() user, @Body() body) {
+    const { messageId, voteType } = body ?? {};
+    return await this.aiService.voteAiMessage(messageId, voteType, user.id);
   }
 
   @InitFeature(FEATURE_KEY.GET_CREDITS_BALANCE)

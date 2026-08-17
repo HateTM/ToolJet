@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import cx from 'classnames';
 import { shallow } from 'zustand/shallow';
 import { useTranslation } from 'react-i18next';
-import { History, Plus, X, ArrowUp, Check, Circle, RotateCcw } from 'lucide-react';
+import { History, Plus, X, ArrowUp, Check, Circle, RotateCcw, ThumbsUp, ThumbsDown, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
 import useAiBuilderStore from '@/_stores/aiBuilderStore';
@@ -38,16 +38,81 @@ const ConversationHistory = ({ conversations, onSelect, onClose }) => {
   );
 };
 
-const ChatBubble = ({ message }) => (
-  <div
-    className={cx('tw-max-w-[85%] tw-rounded-lg tw-px-3 tw-py-2 tw-text-sm tw-whitespace-pre-wrap', {
-      'tw-self-end tw-bg-button-primary tw-text-text-on-solid': message.messageType === 'user',
-      'tw-self-start tw-bg-background-surface-layer-02 tw-text-text-default': message.messageType !== 'user',
-    })}
-  >
-    {message.content}
-  </div>
-);
+// Vote/regenerate controls only apply to persisted AI messages (message.id set — excludes
+// the in-flight streamingMessage buffer). `canRegenerate` is passed in rather than derived
+// here since it depends on this being the conversation's last AI message (ADR-0009: only
+// the current last turn can be regenerated) — a whole-list fact this single bubble can't see.
+const ChatBubble = ({ message, vote, onVote, canRegenerate, onRegenerate, isRegenerating }) => {
+  const { t } = useTranslation();
+  const isPersistedAiMessage = message.messageType !== 'user' && Boolean(message.id);
+
+  return (
+    <div
+      className={cx('tw-flex tw-flex-col tw-gap-1', {
+        'tw-items-end': message.messageType === 'user',
+        'tw-items-start': message.messageType !== 'user',
+      })}
+    >
+      <div
+        className={cx('tw-max-w-[85%] tw-rounded-lg tw-px-3 tw-py-2 tw-text-sm tw-whitespace-pre-wrap', {
+          'tw-bg-button-primary tw-text-text-on-solid': message.messageType === 'user',
+          'tw-bg-background-surface-layer-02 tw-text-text-default': message.messageType !== 'user',
+        })}
+      >
+        {message.content}
+      </div>
+      {isPersistedAiMessage && (
+        <div className="tw-flex tw-items-center tw-gap-0.5 tw-px-1">
+          <button
+            type="button"
+            className={cx(
+              'tw-flex tw-items-center tw-border-none tw-bg-transparent tw-p-0.5 hover:tw-text-icon-default',
+              {
+                'tw-text-icon-success': vote === 'up',
+                'tw-text-icon-weak': vote !== 'up',
+              }
+            )}
+            onClick={() => onVote(message.id, 'up')}
+            aria-label={tAiBuilder(t, 'voteUp', 'Good response')}
+            title={tAiBuilder(t, 'voteUp', 'Good response')}
+            data-cy="ai-builder-vote-up-button"
+          >
+            <ThumbsUp width="12" height="12" />
+          </button>
+          <button
+            type="button"
+            className={cx(
+              'tw-flex tw-items-center tw-border-none tw-bg-transparent tw-p-0.5 hover:tw-text-icon-default',
+              {
+                'tw-text-icon-danger': vote === 'down',
+                'tw-text-icon-weak': vote !== 'down',
+              }
+            )}
+            onClick={() => onVote(message.id, 'down')}
+            aria-label={tAiBuilder(t, 'voteDown', 'Bad response')}
+            title={tAiBuilder(t, 'voteDown', 'Bad response')}
+            data-cy="ai-builder-vote-down-button"
+          >
+            <ThumbsDown width="12" height="12" />
+          </button>
+          {canRegenerate && (
+            <button
+              type="button"
+              className="tw-flex tw-items-center tw-border-none tw-bg-transparent tw-p-0.5 tw-text-icon-weak hover:tw-text-icon-default disabled:tw-opacity-50"
+              onClick={() => onRegenerate(message.parentId)}
+              disabled={isRegenerating}
+              aria-label={tAiBuilder(t, 'regenerate', 'Regenerate response')}
+              title={tAiBuilder(t, 'regenerate', 'Regenerate response')}
+              data-cy="ai-builder-regenerate-button"
+            >
+              {isRegenerating ? <Spinner size="small" /> : <RefreshCw width="12" height="12" />}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ZeroState = ({ zeroState, isZeroStateLoading, onSuggestionClick }) => {
   const { t } = useTranslation();
@@ -146,6 +211,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
     steps,
     isApproving,
     rewindingStepId,
+    votes,
+    regeneratingMessageId,
     error,
     fetchZeroState,
     listConversations,
@@ -154,6 +221,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
     sendMessage,
     approvePrd,
     rewindStep,
+    voteMessage,
+    regenerateMessage,
     clearError,
   ] = useAiBuilderStore(
     (state) => [
@@ -166,6 +235,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
       state.steps,
       state.isApproving,
       state.rewindingStepId,
+      state.votes,
+      state.regeneratingMessageId,
       state.error,
       state.fetchZeroState,
       state.listConversations,
@@ -174,6 +245,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
       state.sendMessage,
       state.approvePrd,
       state.rewindStep,
+      state.voteMessage,
+      state.regenerateMessage,
       state.clearError,
     ],
     shallow
@@ -286,7 +359,15 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
       ) : (
         <div className="tw-flex tw-flex-1 tw-flex-col tw-gap-2 tw-overflow-y-auto tw-px-3 tw-py-3">
           {messages.map((message) => (
-            <ChatBubble key={message.id} message={message} />
+            <ChatBubble
+              key={message.id}
+              message={message}
+              vote={votes[message.id]}
+              onVote={voteMessage}
+              canRegenerate={message.id === latestAiMessage?.id}
+              onRegenerate={regenerateMessage}
+              isRegenerating={regeneratingMessageId === message.parentId}
+            />
           ))}
           {streamingMessage && <ChatBubble message={streamingMessage} />}
           {canApprove && (

@@ -1026,7 +1026,11 @@
             "defaultGreeting": "What would you like to build today?",
             "inputPlaceholder": "Describe the app you want to build...",
             "send": "Send",
-            "approvePrd": "Approve and build"
+            "approvePrd": "Approve and build",
+            "rewindToStep": "Rewind to this step",
+            "regenerate": "Regenerate response",
+            "voteUp": "Good response",
+            "voteDown": "Bad response"
         },
         "Sources": {
             "text": "Sources",

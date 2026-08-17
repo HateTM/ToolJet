@@ -12,9 +12,9 @@ export interface IAiController {
 
   rewindStep(user: User, body: any): Promise<any>;
 
-  regenerateAiMessage(user: User, parentMessageId: string): Promise<any>;
+  regenerateAiMessage(user: User, body: any): Promise<any>;
 
-  voteAiMessage(user: User, messageId: string, body: any): Promise<any>;
+  voteAiMessage(user: User, body: any): Promise<any>;
 
   getCreditsBalance(user: User): Promise<any>;
 

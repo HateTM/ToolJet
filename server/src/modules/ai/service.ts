@@ -9,9 +9,11 @@ import { AiConversationRepository } from './repositories/ai-conversation.reposit
 import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
 import { ArtifactRepository } from './repositories/artifact.repository';
 import { StepRepository } from './repositories/step.repository';
+import { AiResponseVoteRepository } from './repositories/ai-response-vote.repository';
 import { VersionRepository } from '@modules/versions/repository';
 import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
+import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
 
 // Grounds the assistant in the Generate-conversation contract (see CONTEXT.md's
 // "PRD" entry and ADR-0001): a Generate conversation only ever proposes a PRD in
@@ -187,7 +189,8 @@ export class AiService implements IAiService {
     private readonly agentsService: AgentsService,
     private readonly artifactRepository: ArtifactRepository,
     private readonly stepRepository: StepRepository,
-    private readonly versionRepository: VersionRepository
+    private readonly versionRepository: VersionRepository,
+    private readonly aiResponseVoteRepository: AiResponseVoteRepository
   ) {}
 
   /**
@@ -231,8 +234,36 @@ export class AiService implements IAiService {
     };
   }
 
-  async voteAiMessage(messageId, voteType, userId): Promise<any> {
-    throw new Error('Method not implemented.');
+  /**
+   * Upserts the single vote row for `messageId` (ADR-0009: AiResponseVote is a OneToOne
+   * off AiConversationMessage, one row per message — not per user, so a second vote just
+   * overwrites the first rather than creating a duplicate).
+   */
+  async voteAiMessage(messageId: string, voteType: string, userId: string): Promise<any> {
+    if (!messageId || !voteType) {
+      throw new BadRequestException('messageId and voteType are required');
+    }
+    if (voteType !== 'up' && voteType !== 'down') {
+      throw new BadRequestException('voteType must be "up" or "down"');
+    }
+
+    const message = await this.aiConversationMessageRepository.findMessageById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const vote = voteType as 'up' | 'down';
+    const existingVote = await this.aiResponseVoteRepository.findByMessageId(messageId);
+    if (existingVote) {
+      await this.aiResponseVoteRepository.updateOne(existingVote.id, { voteType: vote, userId });
+      return { ...existingVote, voteType: vote, userId };
+    }
+
+    return await this.aiResponseVoteRepository.createOne({
+      aiConversationMessageId: messageId,
+      userId,
+      voteType: vote,
+    });
   }
 
   /**
@@ -656,6 +687,23 @@ export class AiService implements IAiService {
   }
 
   /**
+   * Shared PRD-conversation message shape both `sendUserMessage` and `regenerateAiMessage`
+   * feed to the LLM: the system prompt, `priorMessages` mapped to role/content, and an
+   * optional trailing user turn (sendUserMessage's new message — regenerateAiMessage has
+   * none, since the user turn it's replying to is already the last entry in priorMessages).
+   */
+  private buildPrdMessages(priorMessages: AiConversationMessage[], trailingUserContent?: string) {
+    return [
+      { role: 'system', content: PRD_SYSTEM_PROMPT },
+      ...priorMessages.map((message) => ({
+        role: message.messageType === 'user' ? 'user' : 'assistant',
+        content: message.content,
+      })),
+      ...(trailingUserContent ? [{ role: 'user', content: trailingUserContent }] : []),
+    ];
+  }
+
+  /**
    * Loads/validates the conversation, persists the user's message, streams the
    * assistant's reply from AIGateway over SSE, then persists the full reply as
    * a new AiConversationMessage and closes the stream with a `done` event.
@@ -698,14 +746,7 @@ export class AiService implements IAiService {
       isLatest: true,
     });
 
-    const messages = [
-      { role: 'system', content: PRD_SYSTEM_PROMPT },
-      ...priorMessages.map((message) => ({
-        role: message.messageType === 'user' ? 'user' : 'assistant',
-        content: message.content,
-      })),
-      { role: 'user', content },
-    ];
+    const messages = this.buildPrdMessages(priorMessages, content);
 
     response.setHeader('Content-Type', 'text/event-stream');
     response.setHeader('Cache-Control', 'no-cache');
@@ -792,8 +833,61 @@ export class AiService implements IAiService {
     return { rewoundTo: targetStep.id, undone: stepsAfter.map((step) => step.id) };
   }
 
-  async regenerateAiMessage(parentMessageId, organizationId): Promise<any> {
-    throw new Error('Method not implemented.');
+  /**
+   * Regenerates the AI reply to `parentMessageId` (ADR-0009): marks the current `isLatest`
+   * reply `isLatest: false` and inserts a new sibling — same `parentId`, `isLatest: true` —
+   * generated from the same conversation history (every currently-`isLatest` message up to
+   * and including `parentMessageId`) the original reply was generated from. Only the
+   * conversation's current last turn can be regenerated (see ADR-0009 for why); a stale-
+   * message check would need to cascade-invalidate everything after it, which nothing here
+   * does. approvePrd already picks up whichever AI message is `isLatest` last, so a
+   * regenerated PRD automatically replaces the prior one as the pending-approval PRD —
+   * nothing there needs to change for that.
+   */
+  async regenerateAiMessage(parentMessageId: string, organizationId: string): Promise<any> {
+    if (!parentMessageId) {
+      throw new BadRequestException('parentMessageId is required');
+    }
+
+    const parentMessage = await this.aiConversationMessageRepository.findMessageById(parentMessageId);
+    if (!parentMessage) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const conversationId = parentMessage.aiConversationId;
+    const latestMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const parentIndex = latestMessages.findIndex((message) => message.id === parentMessageId);
+    if (parentIndex === -1) {
+      throw new BadRequestException('Message is not part of the active conversation branch');
+    }
+
+    const staleReply = latestMessages[parentIndex + 1];
+    if (!staleReply || staleReply.parentId !== parentMessageId || staleReply.messageType !== 'ai') {
+      throw new BadRequestException('No AI reply to regenerate for this message');
+    }
+    if (parentIndex + 1 !== latestMessages.length - 1) {
+      throw new BadRequestException('Only the latest message in the conversation can be regenerated');
+    }
+
+    const priorMessages = latestMessages.slice(0, parentIndex + 1);
+    const messages = this.buildPrdMessages(priorMessages);
+
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      'openai',
+      'regenerate-message',
+      { messages },
+      organizationId
+    );
+
+    await this.aiConversationMessageRepository.updateOne(staleReply.id, { isLatest: false });
+
+    return await this.aiConversationMessageRepository.createOne({
+      aiConversationId: conversationId,
+      messageType: 'ai',
+      content: result?.text || '',
+      parentId: parentMessageId,
+      isLatest: true,
+    });
   }
 
   /**

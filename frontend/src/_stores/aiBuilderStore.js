@@ -25,10 +25,27 @@ const initialState = {
   // id of the step currently being rewound, or null — only one rewind can be in flight at
   // a time (rewindStep is a single synchronous backend call, not a stream).
   rewindingStepId: null,
+  // { [messageId]: 'up' | 'down' } — which vote (if any) is currently recorded for a
+  // message, so the chat panel can highlight the active vote button.
+  votes: {},
+  // id of the AI message currently being regenerated, or null.
+  regeneratingMessageId: null,
   error: null,
 };
 
 const buildErrorMessage = (error, fallback) => error?.error || error?.data?.message || error?.message || fallback;
+
+// Messages fetched from the backend carry their vote as a nested `aiResponseVote`
+// relation (findLatestByConversationId's `relations: ['aiResponseVote', ...]`) — this
+// flattens that into the `{ [messageId]: 'up' | 'down' }` map the chat panel reads to
+// highlight the active vote button.
+const extractVotes = (messages) =>
+  (messages || []).reduce((votes, message) => {
+    if (message?.aiResponseVote?.voteType) {
+      votes[message.id] = message.aiResponseVote.voteType;
+    }
+    return votes;
+  }, {});
 
 const useAiBuilderStore = create(
   zustandDevTools(
@@ -45,6 +62,8 @@ const useAiBuilderStore = create(
             state.steps = [];
             state.isApproving = false;
             state.rewindingStepId = null;
+            state.votes = {};
+            state.regeneratingMessageId = null;
             state.error = null;
           },
           false,
@@ -143,6 +162,7 @@ const useAiBuilderStore = create(
             (state) => {
               state.currentConversationId = conversation?.id ?? conversationId;
               state.messages = conversation?.aiConversationMessages || conversation?.messages || [];
+              state.votes = extractVotes(state.messages);
               state.streamingMessage = null;
               state.isLoadingConversation = false;
             },
@@ -185,6 +205,7 @@ const useAiBuilderStore = create(
             (state) => {
               state.currentConversationId = conversation?.id ?? null;
               state.messages = conversation?.aiConversationMessages || conversation?.messages || [];
+              state.votes = extractVotes(state.messages);
               state.streamingMessage = null;
               state.isLoadingConversation = false;
             },
@@ -455,6 +476,86 @@ const useAiBuilderStore = create(
             },
             false,
             'aiBuilder/rewindStep/error'
+          );
+          return null;
+        }
+      },
+
+      // Upserts the vote for `messageId` (ADR-0009: one vote row per message). Optimistic —
+      // the button's highlighted state flips immediately rather than waiting on the round
+      // trip, since a vote failure isn't disruptive enough to warrant blocking the UI on it.
+      voteMessage: async (messageId, voteType) => {
+        if (!messageId || !voteType) return;
+
+        const previousVote = get().votes[messageId];
+        set(
+          (state) => {
+            state.votes[messageId] = voteType;
+          },
+          false,
+          'aiBuilder/voteMessage/optimistic'
+        );
+
+        try {
+          await aiService.voteMessage(messageId, voteType);
+        } catch (error) {
+          set(
+            (state) => {
+              if (previousVote) {
+                state.votes[messageId] = previousVote;
+              } else {
+                delete state.votes[messageId];
+              }
+              state.error = buildErrorMessage(error, 'Failed to record vote');
+            },
+            false,
+            'aiBuilder/voteMessage/error'
+          );
+        }
+      },
+
+      // Regenerates the AI reply to `parentMessageId` (ADR-0009: only the conversation's
+      // current last turn can be regenerated). Replaces the stale reply in `state.messages`
+      // with the new one in place, rather than appending — the stale reply is no longer
+      // `isLatest` on the backend either.
+      regenerateMessage: async (parentMessageId) => {
+        if (!parentMessageId) return;
+
+        set(
+          (state) => {
+            state.regeneratingMessageId = parentMessageId;
+            state.error = null;
+          },
+          false,
+          'aiBuilder/regenerateMessage/start'
+        );
+
+        try {
+          const newMessage = await aiService.regenerateMessage({ parentMessageId });
+          set(
+            (state) => {
+              const staleIndex = state.messages.findIndex(
+                (message) => message.parentId === parentMessageId && message.messageType === 'ai'
+              );
+              if (staleIndex === -1) {
+                state.messages.push(newMessage);
+              } else {
+                state.messages[staleIndex] = newMessage;
+              }
+              state.regeneratingMessageId = null;
+            },
+            false,
+            'aiBuilder/regenerateMessage/success'
+          );
+          return newMessage;
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to regenerate the response');
+              state.regeneratingMessageId = null;
+            },
+            false,
+            'aiBuilder/regenerateMessage/error'
           );
           return null;
         }

@@ -9,6 +9,8 @@ jest.mock('@/_services/ai.service', () => ({
     fetchZeroState: jest.fn(),
     approvePrd: jest.fn(),
     rewindStep: jest.fn(),
+    voteMessage: jest.fn(),
+    regenerateMessage: jest.fn(),
   },
 }));
 
@@ -203,6 +205,21 @@ describe('aiBuilderStore', () => {
     expect(state.isLoadingConversation).toBe(false);
   });
 
+  it("loadConversation flattens each message's aiResponseVote relation into the votes map", async () => {
+    aiService.getConversation.mockResolvedValue({
+      id: 'conv-2',
+      aiConversationMessages: [
+        { id: 'm1', messageType: 'user', content: 'hey' },
+        { id: 'm2', messageType: 'ai', content: 'a PRD', aiResponseVote: { voteType: 'up' } },
+        { id: 'm3', messageType: 'ai', content: 'no vote yet' },
+      ],
+    });
+
+    await getInitialState().loadConversation('conv-2');
+
+    expect(getInitialState().votes).toEqual({ m2: 'up' });
+  });
+
   it('fetchZeroState stores the returned zero-state payload', async () => {
     const zeroState = {
       user: { name: 'Ada', greeting: 'Welcome back', description: 'Let’s build something' },
@@ -387,6 +404,121 @@ describe('aiBuilderStore', () => {
       expect(state.error).toBe('Can only rewind to a completed step');
       expect(state.rewindingStepId).toBeNull();
       expect(state.steps).toHaveLength(3);
+    });
+  });
+
+  describe('voteMessage', () => {
+    it('does nothing without a messageId or voteType', async () => {
+      await getInitialState().voteMessage(null, 'up');
+      await getInitialState().voteMessage('msg-1', null);
+
+      expect(aiService.voteMessage).not.toHaveBeenCalled();
+    });
+
+    it('sets the vote optimistically before the request resolves', async () => {
+      let resolveVote;
+      aiService.voteMessage.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveVote = resolve;
+          })
+      );
+
+      const pending = getInitialState().voteMessage('msg-1', 'up');
+      expect(getInitialState().votes).toEqual({ 'msg-1': 'up' });
+
+      resolveVote({});
+      await pending;
+      expect(aiService.voteMessage).toHaveBeenCalledWith('msg-1', 'up');
+    });
+
+    it('rolls back to the previous vote and sets an error when the request rejects', async () => {
+      useAiBuilderStore.setState({ votes: { 'msg-1': 'up' } });
+      aiService.voteMessage.mockRejectedValue(new Error('network down'));
+
+      await getInitialState().voteMessage('msg-1', 'down');
+
+      const state = getInitialState();
+      expect(state.votes).toEqual({ 'msg-1': 'up' });
+      expect(state.error).toBe('network down');
+    });
+
+    it('rolls back to no vote (not a stale one) when there was none before', async () => {
+      aiService.voteMessage.mockRejectedValue(new Error('network down'));
+
+      await getInitialState().voteMessage('msg-1', 'up');
+
+      expect(getInitialState().votes).toEqual({});
+    });
+  });
+
+  describe('regenerateMessage', () => {
+    beforeEach(() => {
+      useAiBuilderStore.setState({
+        messages: [
+          { id: 'user-msg-1', messageType: 'user', content: 'Build me a CRM' },
+          { id: 'ai-msg-1', messageType: 'ai', content: 'Here is a PRD', parentId: 'user-msg-1' },
+        ],
+      });
+    });
+
+    it('does nothing without a parentMessageId', async () => {
+      await getInitialState().regenerateMessage(null);
+
+      expect(aiService.regenerateMessage).not.toHaveBeenCalled();
+    });
+
+    it('sets regeneratingMessageId while the request is in flight', async () => {
+      let resolveRegenerate;
+      aiService.regenerateMessage.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRegenerate = resolve;
+          })
+      );
+
+      const pending = getInitialState().regenerateMessage('user-msg-1');
+      expect(getInitialState().regeneratingMessageId).toBe('user-msg-1');
+
+      resolveRegenerate({
+        id: 'ai-msg-2',
+        messageType: 'ai',
+        content: 'Regenerated PRD',
+        parentId: 'user-msg-1',
+        isLatest: true,
+      });
+      await pending;
+      expect(getInitialState().regeneratingMessageId).toBeNull();
+    });
+
+    it('replaces the stale AI reply in place with the newly regenerated one', async () => {
+      aiService.regenerateMessage.mockResolvedValue({
+        id: 'ai-msg-2',
+        messageType: 'ai',
+        content: 'Regenerated PRD',
+        parentId: 'user-msg-1',
+        isLatest: true,
+      });
+
+      await getInitialState().regenerateMessage('user-msg-1');
+
+      const state = getInitialState();
+      expect(state.messages).toHaveLength(2);
+      expect(state.messages[1]).toMatchObject({ id: 'ai-msg-2', content: 'Regenerated PRD' });
+    });
+
+    it('sets an error state and clears regeneratingMessageId when the request rejects', async () => {
+      aiService.regenerateMessage.mockRejectedValue(
+        new Error('Only the latest message in the conversation can be regenerated')
+      );
+
+      await getInitialState().regenerateMessage('user-msg-1');
+
+      const state = getInitialState();
+      expect(state.error).toBe('Only the latest message in the conversation can be regenerated');
+      expect(state.regeneratingMessageId).toBeNull();
+      // the stale message list is left untouched on failure
+      expect(state.messages).toHaveLength(2);
     });
   });
 });

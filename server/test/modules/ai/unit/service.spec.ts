@@ -18,6 +18,14 @@ const buildMockConversationRepository = () => ({
 const buildMockMessageRepository = () => ({
   findLatestByConversationId: jest.fn(),
   createOne: jest.fn(),
+  updateOne: jest.fn(),
+  findMessageById: jest.fn(),
+});
+
+const buildMockAiResponseVoteRepository = () => ({
+  findByMessageId: jest.fn(),
+  createOne: jest.fn(),
+  updateOne: jest.fn(),
 });
 
 const buildMockAgentsService = () => ({
@@ -53,7 +61,7 @@ const buildMockResponse = () => ({
   end: jest.fn(),
 });
 
-// Builds an AiService with all 7 constructor dependencies mocked, any of which can be
+// Builds an AiService with all 8 constructor dependencies mocked, any of which can be
 // overridden. Centralizing this avoids repeating the full mock/constructor wiring in
 // every test (and having to update all of them whenever the constructor's shape changes).
 const buildService = (overrides: Partial<Record<string, any>> = {}) => {
@@ -64,6 +72,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const artifactRepository = overrides.artifactRepository ?? buildMockArtifactRepository();
   const stepRepository = overrides.stepRepository ?? buildMockStepRepository();
   const versionRepository = overrides.versionRepository ?? buildMockVersionRepository();
+  const aiResponseVoteRepository = overrides.aiResponseVoteRepository ?? buildMockAiResponseVoteRepository();
 
   const service = new AiService(
     aiUtilService as any,
@@ -72,7 +81,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     agentsService as any,
     artifactRepository as any,
     stepRepository as any,
-    versionRepository as any
+    versionRepository as any,
+    aiResponseVoteRepository as any
   );
 
   return {
@@ -84,6 +94,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     artifactRepository,
     stepRepository,
     versionRepository,
+    aiResponseVoteRepository,
   };
 };
 
@@ -1547,5 +1558,161 @@ describe('AiService.rewindStep', () => {
     );
     expect(artifactRepository.deleteOne).not.toHaveBeenCalled();
     expect(stepRepository.updateOne).not.toHaveBeenCalled();
+  });
+});
+
+/** @group platform */
+describe('AiService.voteAiMessage', () => {
+  it('rejects when messageId or voteType is missing', async () => {
+    const { service } = buildService();
+
+    await expect(service.voteAiMessage(null, 'up', 'user-1')).rejects.toThrow(BadRequestException);
+    await expect(service.voteAiMessage('msg-1', null, 'user-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a voteType that is neither "up" nor "down"', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findMessageById.mockResolvedValue({ id: 'msg-1' });
+
+    await expect(service.voteAiMessage('msg-1', 'sideways', 'user-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('404s when the message does not exist', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findMessageById.mockResolvedValue(null);
+
+    await expect(service.voteAiMessage('msg-1', 'up', 'user-1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('creates a new vote when none exists yet for this message', async () => {
+    const { service, messageRepo, aiResponseVoteRepository } = buildService();
+    messageRepo.findMessageById.mockResolvedValue({ id: 'msg-1' });
+    aiResponseVoteRepository.findByMessageId.mockResolvedValue(null);
+    aiResponseVoteRepository.createOne.mockResolvedValue({
+      id: 'vote-1',
+      aiConversationMessageId: 'msg-1',
+      userId: 'user-1',
+      voteType: 'up',
+    });
+
+    const result = await service.voteAiMessage('msg-1', 'up', 'user-1');
+
+    expect(aiResponseVoteRepository.createOne).toHaveBeenCalledWith({
+      aiConversationMessageId: 'msg-1',
+      userId: 'user-1',
+      voteType: 'up',
+    });
+    expect(aiResponseVoteRepository.updateOne).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ voteType: 'up' });
+  });
+
+  it('overwrites the existing vote row instead of creating a second one (ADR-0009: one row per message)', async () => {
+    const { service, messageRepo, aiResponseVoteRepository } = buildService();
+    messageRepo.findMessageById.mockResolvedValue({ id: 'msg-1' });
+    aiResponseVoteRepository.findByMessageId.mockResolvedValue({
+      id: 'vote-1',
+      aiConversationMessageId: 'msg-1',
+      userId: 'user-1',
+      voteType: 'up',
+    });
+
+    await service.voteAiMessage('msg-1', 'down', 'user-2');
+
+    expect(aiResponseVoteRepository.updateOne).toHaveBeenCalledWith('vote-1', { voteType: 'down', userId: 'user-2' });
+    expect(aiResponseVoteRepository.createOne).not.toHaveBeenCalled();
+  });
+});
+
+/** @group platform */
+describe('AiService.regenerateAiMessage', () => {
+  it('rejects when parentMessageId is missing', async () => {
+    const { service } = buildService();
+
+    await expect(service.regenerateAiMessage(null, 'org-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('404s when the parent message does not exist', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findMessageById.mockResolvedValue(null);
+
+    await expect(service.regenerateAiMessage('user-msg-1', 'org-1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects when the parent message is not part of the active (isLatest) branch', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findMessageById.mockResolvedValue({ id: 'user-msg-1', aiConversationId: 'conv-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([{ id: 'other-msg', messageType: 'user', content: 'hi' }]);
+
+    await expect(service.regenerateAiMessage('user-msg-1', 'org-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects when the parent message has no AI reply to regenerate', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findMessageById.mockResolvedValue({ id: 'user-msg-1', aiConversationId: 'conv-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'user-msg-1', messageType: 'user', content: 'Build me a CRM' },
+    ]);
+
+    await expect(service.regenerateAiMessage('user-msg-1', 'org-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it("rejects regenerating anything but the conversation's current last turn (ADR-0009)", async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findMessageById.mockResolvedValue({ id: 'user-msg-1', aiConversationId: 'conv-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'user-msg-1', messageType: 'user', content: 'Build me a CRM', parentId: null },
+      { id: 'ai-msg-1', messageType: 'ai', content: 'Here is a PRD', parentId: 'user-msg-1' },
+      { id: 'user-msg-2', messageType: 'user', content: 'Add a status field', parentId: null },
+      { id: 'ai-msg-2', messageType: 'ai', content: 'Updated PRD', parentId: 'user-msg-2' },
+    ]);
+
+    await expect(service.regenerateAiMessage('user-msg-1', 'org-1')).rejects.toThrow(
+      'Only the latest message in the conversation can be regenerated'
+    );
+  });
+
+  it('marks the stale reply isLatest:false and creates a new sibling with the same parentId, built from the same history the original reply used', async () => {
+    const { service, messageRepo, aiUtilService } = buildService();
+    messageRepo.findMessageById.mockResolvedValue({ id: 'user-msg-2', aiConversationId: 'conv-1' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'user-msg-1', messageType: 'user', content: 'Build me a CRM', parentId: null },
+      { id: 'ai-msg-1', messageType: 'ai', content: 'Here is a PRD', parentId: 'user-msg-1' },
+      { id: 'user-msg-2', messageType: 'user', content: 'Add a status field', parentId: null },
+      { id: 'ai-msg-2', messageType: 'ai', content: 'Updated PRD', parentId: 'user-msg-2' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({ text: 'Regenerated PRD text' });
+    messageRepo.createOne.mockResolvedValue({
+      id: 'ai-msg-3',
+      aiConversationId: 'conv-1',
+      messageType: 'ai',
+      content: 'Regenerated PRD text',
+      parentId: 'user-msg-2',
+      isLatest: true,
+    });
+
+    const result = await service.regenerateAiMessage('user-msg-2', 'org-1');
+
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
+      'openai',
+      'regenerate-message',
+      {
+        messages: [
+          { role: 'system', content: expect.any(String) },
+          { role: 'user', content: 'Build me a CRM' },
+          { role: 'assistant', content: 'Here is a PRD' },
+          { role: 'user', content: 'Add a status field' },
+        ],
+      },
+      'org-1'
+    );
+    expect(messageRepo.updateOne).toHaveBeenCalledWith('ai-msg-2', { isLatest: false });
+    expect(messageRepo.createOne).toHaveBeenCalledWith({
+      aiConversationId: 'conv-1',
+      messageType: 'ai',
+      content: 'Regenerated PRD text',
+      parentId: 'user-msg-2',
+      isLatest: true,
+    });
+    expect(result).toMatchObject({ id: 'ai-msg-3', isLatest: true });
   });
 });

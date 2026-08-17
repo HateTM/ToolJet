@@ -19,6 +19,7 @@ export const aiService = {
   fetchZeroState,
   approvePrd,
   rewindStep,
+  regenerateMessage,
 };
 
 function handleAITextResponse(response) {
@@ -113,6 +114,13 @@ async function approvePrd(body, onMessage) {
 async function rewindStep(body) {
   const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
   return fetch(`${config.apiUrl}/ai/conversation/rewind-step`, requestOptions).then(handleResponse);
+}
+
+// body: { parentMessageId }. Not SSE — the backend generates the full reply before
+// responding (AiService.regenerateAiMessage), same as any other plain JSON endpoint here.
+async function regenerateMessage(body) {
+  const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
+  return fetch(`${config.apiUrl}/ai/conversation/regenerate-message`, requestOptions).then(handleResponse);
 }
 
 async function getCopilotSuggestion(body) {
