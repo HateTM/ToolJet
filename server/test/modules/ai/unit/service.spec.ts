@@ -24,15 +24,20 @@ const buildMockAgentsService = () => ({
   CreateTable: jest.fn(),
   CreateComponent: jest.fn(),
   CreateQuery: jest.fn(),
+  undoArtifact: jest.fn(),
 });
 
 const buildMockArtifactRepository = () => ({
   createOne: jest.fn(),
+  findById: jest.fn(),
+  deleteOne: jest.fn(),
 });
 
 const buildMockStepRepository = () => ({
   createOne: jest.fn(),
   updateOne: jest.fn(),
+  findById: jest.fn(),
+  findAfterOrder: jest.fn(),
 });
 
 // Defaults to one version so tests that don't care about appVersionId resolution (most of
@@ -1306,5 +1311,241 @@ describe('AiService.approvePrd', () => {
       'step-3',
       expect.objectContaining({ status: 'succeeded', attempts: 2 })
     );
+  });
+});
+
+/** @group platform */
+describe('AiService.rewindStep', () => {
+  it('rejects when conversationId or stepId is missing', async () => {
+    const { service } = buildService();
+
+    await expect(service.rewindStep(null, 'step-1', 'org-1')).rejects.toThrow(BadRequestException);
+    await expect(service.rewindStep('conv-1', null, 'org-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('404s when the conversation does not exist', async () => {
+    const { service, conversationRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue(null);
+
+    await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('404s when the step does not exist, or belongs to a different conversation', async () => {
+    const { service, conversationRepo, stepRepository } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    stepRepository.findById.mockResolvedValue(null);
+
+    await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toThrow(NotFoundException);
+
+    stepRepository.findById.mockResolvedValue({ id: 'step-1', conversationId: 'conv-other', status: 'succeeded' });
+    await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects rewinding to a step that never completed', async () => {
+    const { service, conversationRepo, stepRepository } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    stepRepository.findById.mockResolvedValue({ id: 'step-1', conversationId: 'conv-1', status: 'pending' });
+
+    await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('undoes every succeeded step after the target, back to front, then resets each to pending', async () => {
+    const { service, conversationRepo, stepRepository, artifactRepository, agentsService, versionRepository } =
+      buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    versionRepository.getAllVersions.mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]);
+
+    const targetStep = {
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      order: 0,
+      status: 'succeeded',
+    };
+    stepRepository.findById.mockResolvedValue(targetStep);
+
+    const stepsAfter = [
+      {
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        order: 1,
+        type: 'CreateTable',
+        status: 'succeeded',
+        artifactId: 'artifact-2',
+      },
+      {
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        status: 'succeeded',
+        artifactId: 'artifact-3',
+      },
+    ];
+    stepRepository.findAfterOrder.mockResolvedValue(stepsAfter);
+
+    const undoneOrder: string[] = [];
+    artifactRepository.findById.mockImplementation(async (id) => {
+      if (id === 'artifact-2') return { id: 'artifact-2', content: { id: 'tjdb-1', table_name: 'orders' } };
+      if (id === 'artifact-3') return { id: 'artifact-3', content: { id: 'component-1', pageId: 'page-1' } };
+      return null;
+    });
+    agentsService.undoArtifact.mockImplementation(async (type, appVersionId, organizationId, content) => {
+      undoneOrder.push(content.id);
+    });
+
+    const result = await service.rewindStep('conv-1', 'step-1', 'org-1');
+
+    // Reverse order: step-3's artifact (component-1) is undone before step-2's (tjdb-1) —
+    // a later step can only reference an earlier one's output, never the reverse.
+    expect(undoneOrder).toEqual(['component-1', 'tjdb-1']);
+    expect(agentsService.undoArtifact).toHaveBeenCalledWith('CreateComponent', 'version-1', 'org-1', {
+      id: 'component-1',
+      pageId: 'page-1',
+    });
+    expect(agentsService.undoArtifact).toHaveBeenCalledWith('CreateTable', 'version-1', 'org-1', {
+      id: 'tjdb-1',
+      table_name: 'orders',
+    });
+    expect(artifactRepository.deleteOne).toHaveBeenCalledWith('artifact-2');
+    expect(artifactRepository.deleteOne).toHaveBeenCalledWith('artifact-3');
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-2', {
+      status: 'pending',
+      artifactId: null,
+      errorMessage: null,
+      attempts: 0,
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-3', {
+      status: 'pending',
+      artifactId: null,
+      errorMessage: null,
+      attempts: 0,
+    });
+    // The target step itself is untouched — rewind returns to the state right after it
+    // finished, not before it.
+    expect(stepRepository.updateOne).not.toHaveBeenCalledWith('step-1', expect.anything());
+    expect(result).toEqual({ rewoundTo: 'step-1', undone: ['step-2', 'step-3'] });
+  });
+
+  it('a partial-plan rewind only touches steps after the target, leaving earlier ones alone', async () => {
+    const { service, conversationRepo, stepRepository, artifactRepository, agentsService } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+
+    // Rewinding to the middle step (order 1) of a 3-step plan.
+    const targetStep = { id: 'step-2', conversationId: 'conv-1', messageId: 'msg-1', order: 1, status: 'succeeded' };
+    stepRepository.findById.mockResolvedValue(targetStep);
+    stepRepository.findAfterOrder.mockResolvedValue([
+      {
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        status: 'succeeded',
+        artifactId: 'artifact-3',
+      },
+    ]);
+    artifactRepository.findById.mockResolvedValue({
+      id: 'artifact-3',
+      content: { id: 'component-1', pageId: 'page-1' },
+    });
+
+    const result = await service.rewindStep('conv-1', 'step-2', 'org-1');
+
+    expect(stepRepository.findAfterOrder).toHaveBeenCalledWith('conv-1', 'msg-1', 1);
+    // Only step-3 is undone/reset — step-1 (before the target) was never fetched at all.
+    expect(stepRepository.updateOne).toHaveBeenCalledTimes(1);
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-3', expect.objectContaining({ status: 'pending' }));
+    expect(agentsService.undoArtifact).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ rewoundTo: 'step-2', undone: ['step-3'] });
+  });
+
+  it("scopes 'steps after the target' to the target's own plan (messageId) — a separately approved PRD's steps are never touched", async () => {
+    const { service, conversationRepo, stepRepository } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'msg-plan-2',
+      order: 0,
+      status: 'succeeded',
+    });
+    stepRepository.findAfterOrder.mockResolvedValue([]);
+
+    await service.rewindStep('conv-1', 'step-1', 'org-1');
+
+    // Scoped by this plan's own messageId, not just conversationId — an earlier plan's
+    // (msg-plan-1) steps are a disjoint set findAfterOrder never sees.
+    expect(stepRepository.findAfterOrder).toHaveBeenCalledWith('conv-1', 'msg-plan-2', 0);
+  });
+
+  it('resets a failed step after the target back to pending too, even though it has no artifact to undo', async () => {
+    const { service, conversationRepo, stepRepository, artifactRepository, agentsService } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      order: 0,
+      status: 'succeeded',
+    });
+    stepRepository.findAfterOrder.mockResolvedValue([
+      {
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        order: 1,
+        type: 'CreateTable',
+        status: 'failed',
+        artifactId: null,
+      },
+    ]);
+
+    await service.rewindStep('conv-1', 'step-1', 'org-1');
+
+    expect(artifactRepository.findById).not.toHaveBeenCalled();
+    expect(agentsService.undoArtifact).not.toHaveBeenCalled();
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-2', {
+      status: 'pending',
+      artifactId: null,
+      errorMessage: null,
+      attempts: 0,
+    });
+  });
+
+  it('propagates an undo failure and stops, leaving steps at/before the failure untouched by that step', async () => {
+    const { service, conversationRepo, stepRepository, artifactRepository, agentsService } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      order: 0,
+      status: 'succeeded',
+    });
+    stepRepository.findAfterOrder.mockResolvedValue([
+      {
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        order: 1,
+        type: 'CreateTable',
+        status: 'succeeded',
+        artifactId: 'artifact-2',
+      },
+    ]);
+    artifactRepository.findById.mockResolvedValue({
+      id: 'artifact-2',
+      content: { id: 'tjdb-1', table_name: 'orders' },
+    });
+    agentsService.undoArtifact.mockRejectedValue(new Error("Table can't be deleted, it is being used in app queries"));
+
+    await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toThrow(
+      "Table can't be deleted, it is being used in app queries"
+    );
+    expect(artifactRepository.deleteOne).not.toHaveBeenCalled();
+    expect(stepRepository.updateOne).not.toHaveBeenCalled();
   });
 });

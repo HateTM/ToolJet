@@ -18,6 +18,7 @@ export const aiService = {
   getTokenUsage,
   fetchZeroState,
   approvePrd,
+  rewindStep,
 };
 
 function handleAITextResponse(response) {
@@ -105,6 +106,13 @@ async function sendMessage(body, onMessage, isDocs = false) {
 // backend): plan, step-progress, step-done, step-failed, done, error.
 async function approvePrd(body, onMessage) {
   return postSSE(`${config.apiUrl}/ai/conversation/approve-prd`, body, onMessage);
+}
+
+// body: { conversationId, stepId }. Not SSE — rewind is a synchronous DB/App undo, no
+// LLM call is on this path (see AiService.rewindStep on the backend).
+async function rewindStep(body) {
+  const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
+  return fetch(`${config.apiUrl}/ai/conversation/rewind-step`, requestOptions).then(handleResponse);
 }
 
 async function getCopilotSuggestion(body) {

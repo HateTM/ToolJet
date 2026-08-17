@@ -7,10 +7,12 @@ const buildMockTooljetDbTableOperationsService = () => ({
 
 const buildMockPageService = () => ({
   createPage: jest.fn(),
+  deletePage: jest.fn(),
 });
 
 const buildMockComponentsService = () => ({
   create: jest.fn(),
+  delete: jest.fn(),
 });
 
 const buildMockEventsService = () => ({
@@ -19,10 +21,16 @@ const buildMockEventsService = () => ({
 
 const buildMockDataQueryRepository = () => ({
   createOne: jest.fn(),
+  deleteDataQueryEvents: jest.fn(),
+  deleteOne: jest.fn(),
 });
 
 const buildMockDataSourcesRepository = () => ({
   getStaticDataSourceByKind: jest.fn(),
+});
+
+const buildMockVersionRepository = () => ({
+  findVersion: jest.fn(),
 });
 
 const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
@@ -33,6 +41,7 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
   const eventsService = overrides.eventsService ?? buildMockEventsService();
   const dataQueryRepository = overrides.dataQueryRepository ?? buildMockDataQueryRepository();
   const dataSourcesRepository = overrides.dataSourcesRepository ?? buildMockDataSourcesRepository();
+  const versionRepository = overrides.versionRepository ?? buildMockVersionRepository();
 
   const service = new AgentsService(
     tooljetDbTableOperationsService as any,
@@ -40,7 +49,8 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     componentsService as any,
     eventsService as any,
     dataQueryRepository as any,
-    dataSourcesRepository as any
+    dataSourcesRepository as any,
+    versionRepository as any
   );
 
   return {
@@ -51,6 +61,7 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     eventsService,
     dataQueryRepository,
     dataSourcesRepository,
+    versionRepository,
   };
 };
 
@@ -367,5 +378,88 @@ describe('AgentsService.CreateQuery', () => {
       })
     );
     expect(result.name).toBe('list_orders');
+  });
+});
+
+/** @group platform */
+describe('AgentsService.undoArtifact', () => {
+  it('drops the table for a CreateTable artifact, by table_name', async () => {
+    const { service, tooljetDbTableOperationsService } = buildAgentsService();
+
+    await service.undoArtifact('CreateTable', 'version-1', 'org-1', { id: 'tjdb-1', table_name: 'orders' });
+
+    expect(tooljetDbTableOperationsService.perform).toHaveBeenCalledWith('org-1', 'drop_table', {
+      table_name: 'orders',
+    });
+  });
+
+  it('deletes a CreateQuery artifact, clearing its events first', async () => {
+    const { service, dataQueryRepository } = buildAgentsService();
+
+    await service.undoArtifact('CreateQuery', 'version-1', 'org-1', { id: 'query-1', name: 'list_orders' });
+
+    expect(dataQueryRepository.deleteDataQueryEvents).toHaveBeenCalledWith('query-1');
+    expect(dataQueryRepository.deleteOne).toHaveBeenCalledWith('query-1');
+  });
+
+  it('deletes a Page artifact via PageService.deletePage, resolving the editing AppVersion first', async () => {
+    const { service, pageService, versionRepository } = buildAgentsService();
+    versionRepository.findVersion.mockResolvedValue({ id: 'version-1', homePageId: 'other-page' });
+
+    await service.undoArtifact('CreateComponent', 'version-1', 'org-1', { id: 'page-1', name: 'Orders' });
+
+    expect(versionRepository.findVersion).toHaveBeenCalledWith('version-1');
+    expect(pageService.deletePage).toHaveBeenCalledWith(
+      'page-1',
+      'version-1',
+      { id: 'version-1', homePageId: 'other-page' },
+      false,
+      'org-1'
+    );
+  });
+
+  it('deletes a plain widget artifact (has a pageId) via ComponentsService.delete', async () => {
+    const { service, componentsService } = buildAgentsService();
+
+    await service.undoArtifact('CreateComponent', 'version-1', 'org-1', {
+      id: 'component-1',
+      pageId: 'page-1',
+      type: 'Button',
+    });
+
+    expect(componentsService.delete).toHaveBeenCalledWith(['component-1'], 'version-1');
+  });
+
+  it("deletes a Form artifact's insert query before the Form component itself", async () => {
+    const { service, dataQueryRepository, componentsService } = buildAgentsService();
+    const callOrder: string[] = [];
+    dataQueryRepository.deleteOne.mockImplementation(async () => {
+      callOrder.push('deleteQuery');
+    });
+    componentsService.delete.mockImplementation(async () => {
+      callOrder.push('deleteComponent');
+    });
+
+    await service.undoArtifact('CreateComponent', 'version-1', 'org-1', {
+      id: 'form-1',
+      pageId: 'page-1',
+      type: 'Form',
+      tableId: 'table-1',
+      queryId: 'query-1',
+      queryName: 'insert_orders_form',
+    });
+
+    expect(dataQueryRepository.deleteDataQueryEvents).toHaveBeenCalledWith('query-1');
+    expect(dataQueryRepository.deleteOne).toHaveBeenCalledWith('query-1');
+    expect(componentsService.delete).toHaveBeenCalledWith(['form-1'], 'version-1');
+    expect(callOrder).toEqual(['deleteQuery', 'deleteComponent']);
+  });
+
+  it('throws for a step type it has no undo handler for', async () => {
+    const { service } = buildAgentsService();
+
+    await expect(service.undoArtifact('SomeFutureStepType' as any, 'version-1', 'org-1', {})).rejects.toThrow(
+      'Cannot undo unsupported step type "SomeFutureStepType"'
+    );
   });
 });

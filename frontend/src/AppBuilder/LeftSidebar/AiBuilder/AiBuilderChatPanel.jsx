@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import cx from 'classnames';
 import { shallow } from 'zustand/shallow';
 import { useTranslation } from 'react-i18next';
-import { History, Plus, X, ArrowUp, Check, Circle } from 'lucide-react';
+import { History, Plus, X, ArrowUp, Check, Circle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
 import useAiBuilderStore from '@/_stores/aiBuilderStore';
@@ -93,23 +93,39 @@ const StepStatusIcon = ({ status }) => {
   return <Circle width="10" height="10" className="tw-text-icon-weak" />;
 };
 
-const StepProgressList = ({ steps }) => (
-  <div className="tw-flex tw-flex-col tw-gap-2 tw-border-0 tw-border-b tw-border-solid tw-border-border-weak tw-px-3 tw-py-3">
-    {steps.map((step, index) => (
-      <div key={step.id ?? index} className="tw-flex tw-items-start tw-gap-2 tw-text-sm">
-        <div className="tw-mt-0.5 tw-flex tw-w-4 tw-flex-shrink-0 tw-items-center tw-justify-center">
-          <StepStatusIcon status={step.status} />
-        </div>
-        <div className="tw-flex tw-flex-col">
-          <span className="tw-text-text-default">{step.description}</span>
-          {step.status === 'failed' && step.errorMessage && (
-            <span className="tw-text-xs tw-text-text-danger">{step.errorMessage}</span>
+const StepProgressList = ({ steps, onRewind, rewindingStepId }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="tw-flex tw-flex-col tw-gap-2 tw-border-0 tw-border-b tw-border-solid tw-border-border-weak tw-px-3 tw-py-3">
+      {steps.map((step, index) => (
+        <div key={step.id ?? index} className="tw-flex tw-items-start tw-gap-2 tw-text-sm">
+          <div className="tw-mt-0.5 tw-flex tw-w-4 tw-flex-shrink-0 tw-items-center tw-justify-center">
+            <StepStatusIcon status={step.status} />
+          </div>
+          <div className="tw-flex tw-flex-1 tw-flex-col">
+            <span className="tw-text-text-default">{step.description}</span>
+            {step.status === 'failed' && step.errorMessage && (
+              <span className="tw-text-xs tw-text-text-danger">{step.errorMessage}</span>
+            )}
+          </div>
+          {step.status === 'succeeded' && step.id && (
+            <button
+              type="button"
+              className="tw-flex tw-flex-shrink-0 tw-items-center tw-border-none tw-bg-transparent tw-p-0.5 tw-text-icon-weak hover:tw-text-icon-default disabled:tw-opacity-50"
+              onClick={() => onRewind(step.id)}
+              disabled={Boolean(rewindingStepId)}
+              aria-label={t('leftSidebar.AI Builder.rewindToStep', 'Rewind to this step')}
+              title={t('leftSidebar.AI Builder.rewindToStep', 'Rewind to this step')}
+              data-cy={`ai-builder-rewind-step-${index}`}
+            >
+              {rewindingStepId === step.id ? <Spinner size="small" /> : <RotateCcw width="14" height="14" />}
+            </button>
           )}
         </div>
-      </div>
-    ))}
-  </div>
-);
+      ))}
+    </div>
+  );
+};
 
 // Matches BaseLeftSidebar's `renderAIChat({ darkMode, onClose })` contract (see LeftSidebar.jsx's
 // renderPopoverContent 'tooljetai' case). `appId`/`conversationType` are bound by the caller
@@ -129,6 +145,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
     conversations,
     steps,
     isApproving,
+    rewindingStepId,
     error,
     fetchZeroState,
     listConversations,
@@ -136,6 +153,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
     resetConversation,
     sendMessage,
     approvePrd,
+    rewindStep,
     clearError,
   ] = useAiBuilderStore(
     (state) => [
@@ -147,6 +165,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
       state.conversations,
       state.steps,
       state.isApproving,
+      state.rewindingStepId,
       state.error,
       state.fetchZeroState,
       state.listConversations,
@@ -154,6 +173,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
       state.resetConversation,
       state.sendMessage,
       state.approvePrd,
+      state.rewindStep,
       state.clearError,
     ],
     shallow
@@ -285,7 +305,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId, conversationType 
         </div>
       )}
 
-      {steps.length > 0 && <StepProgressList steps={steps} />}
+      {steps.length > 0 && <StepProgressList steps={steps} onRewind={rewindStep} rewindingStepId={rewindingStepId} />}
 
       {error && (
         <div className="tw-flex tw-items-center tw-justify-between tw-bg-background-error-weak tw-px-3 tw-py-2 tw-text-xs tw-text-text-danger">

@@ -7,7 +7,9 @@ import { ComponentsService } from '@modules/apps/services/component.service';
 import { EventsService } from '@modules/apps/services/event.service';
 import { DataQueryRepository } from '@modules/data-queries/repository';
 import { DataSourcesRepository } from '@modules/data-sources/repository';
+import { VersionRepository } from '@modules/versions/repository';
 import { Target } from '@entities/event_handler.entity';
+import { StepType } from '@entities/step.entity';
 
 // ToolJet DB column data types that map to a numeric form field; everything else (text,
 // boolean, timestamp, jsonb) falls back to a plain text input — safe/functional, if not
@@ -22,7 +24,8 @@ export class AgentsService implements IAgentsService {
     private readonly componentsService: ComponentsService,
     private readonly eventsService: EventsService,
     private readonly dataQueryRepository: DataQueryRepository,
-    private readonly dataSourcesRepository: DataSourcesRepository
+    private readonly dataSourcesRepository: DataSourcesRepository,
+    private readonly versionRepository: VersionRepository
   ) {}
 
   /**
@@ -357,6 +360,57 @@ export class AgentsService implements IAgentsService {
       dataSourceId: dataSource.id,
       appVersionId,
     } as any);
+  }
+
+  /**
+   * Reverts the real App/DB change a Step's Artifact made (ADR-0008) — the inverse of
+   * CreateTable/CreateComponent/CreateQuery, dispatched on the same StepType the Artifact
+   * was created under. Used by rewind: undo every step after the rewind target, back to
+   * front, so a later step's dependency (a Form's table, a Table widget's query) is always
+   * gone before the step that depends on it.
+   */
+  async undoArtifact(stepType: StepType, appVersionId: string, organizationId: string, content: any): Promise<void> {
+    switch (stepType) {
+      case 'CreateTable':
+        return this.undoCreateTable(organizationId, content);
+      case 'CreateQuery':
+        return this.undoQuery(content.id);
+      case 'CreateComponent':
+        return this.undoCreateComponent(appVersionId, organizationId, content);
+      default:
+        throw new Error(`Cannot undo unsupported step type "${stepType}"`);
+    }
+  }
+
+  private async undoCreateTable(organizationId: string, content: any): Promise<void> {
+    await this.tooljetDbTableOperationsService.perform(organizationId, 'drop_table', {
+      table_name: content.table_name,
+    });
+  }
+
+  private async undoQuery(queryId: string): Promise<void> {
+    await this.dataQueryRepository.deleteDataQueryEvents(queryId);
+    await this.dataQueryRepository.deleteOne(queryId);
+  }
+
+  /**
+   * A Page artifact (createPageComponent's return, the real Page entity) carries no
+   * `pageId` of its own — every widget's content does (createWidgetComponent's shape) —
+   * the same distinction executeComponentStep's pageId-hallucination check already relies
+   * on. A Form artifact additionally carries `queryId` for the insert query ADR-0007
+   * created alongside it, which has to go first: ComponentsService.delete already cascades
+   * the Form's own submit EventHandler, but not a query that merely references the Form.
+   */
+  private async undoCreateComponent(appVersionId: string, organizationId: string, content: any): Promise<void> {
+    if (content.pageId === undefined) {
+      const editingVersion = await this.versionRepository.findVersion(appVersionId);
+      await this.pageService.deletePage(content.id, appVersionId, editingVersion, false, organizationId);
+      return;
+    }
+    if (content.queryId) {
+      await this.undoQuery(content.queryId);
+    }
+    await this.componentsService.delete([content.id], appVersionId);
   }
 
   async docs(prompt: string, organizationId: string, previousMessages?: any[]): Promise<any> {

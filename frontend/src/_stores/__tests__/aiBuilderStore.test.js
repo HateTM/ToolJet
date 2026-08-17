@@ -8,6 +8,7 @@ jest.mock('@/_services/ai.service', () => ({
     getConversation: jest.fn(),
     fetchZeroState: jest.fn(),
     approvePrd: jest.fn(),
+    rewindStep: jest.fn(),
   },
 }));
 
@@ -313,6 +314,79 @@ describe('aiBuilderStore', () => {
       const state = getInitialState();
       expect(state.error).toBe('network down');
       expect(state.isApproving).toBe(false);
+    });
+  });
+
+  describe('rewindStep', () => {
+    beforeEach(() => {
+      useAiBuilderStore.setState({
+        currentConversationId: 'conv-1',
+        steps: [
+          { id: 'step-1', type: 'CreateComponent', description: 'Create the Orders page', status: 'succeeded' },
+          { id: 'step-2', type: 'CreateComponent', description: 'Add a Save button', status: 'succeeded' },
+          { id: 'step-3', type: 'CreateComponent', description: 'Add a welcome text', status: 'succeeded' },
+        ],
+      });
+    });
+
+    it('does nothing without a current conversation', async () => {
+      useAiBuilderStore.setState({ currentConversationId: null });
+
+      await getInitialState().rewindStep('step-1');
+
+      expect(aiService.rewindStep).not.toHaveBeenCalled();
+    });
+
+    it('does nothing without a stepId', async () => {
+      await getInitialState().rewindStep(null);
+
+      expect(aiService.rewindStep).not.toHaveBeenCalled();
+    });
+
+    it('sends the current conversationId and the given stepId', async () => {
+      aiService.rewindStep.mockResolvedValue({ rewoundTo: 'step-1', undone: ['step-2', 'step-3'] });
+
+      await getInitialState().rewindStep('step-1');
+
+      expect(aiService.rewindStep).toHaveBeenCalledWith({ conversationId: 'conv-1', stepId: 'step-1' });
+    });
+
+    it('drops every undone step from the local step list, keeping the rewound-to step', async () => {
+      aiService.rewindStep.mockResolvedValue({ rewoundTo: 'step-1', undone: ['step-2', 'step-3'] });
+
+      await getInitialState().rewindStep('step-1');
+
+      const state = getInitialState();
+      expect(state.steps.map((step) => step.id)).toEqual(['step-1']);
+      expect(state.rewindingStepId).toBeNull();
+    });
+
+    it('sets rewindingStepId to the target while the request is in flight', async () => {
+      let resolveRewind;
+      aiService.rewindStep.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRewind = resolve;
+          })
+      );
+
+      const pending = getInitialState().rewindStep('step-2');
+      expect(getInitialState().rewindingStepId).toBe('step-2');
+
+      resolveRewind({ rewoundTo: 'step-2', undone: ['step-3'] });
+      await pending;
+      expect(getInitialState().rewindingStepId).toBeNull();
+    });
+
+    it('sets an error state and leaves the step list untouched when the request rejects', async () => {
+      aiService.rewindStep.mockRejectedValue(new Error('Can only rewind to a completed step'));
+
+      await getInitialState().rewindStep('step-2');
+
+      const state = getInitialState();
+      expect(state.error).toBe('Can only rewind to a completed step');
+      expect(state.rewindingStepId).toBeNull();
+      expect(state.steps).toHaveLength(3);
     });
   });
 });

@@ -14,4 +14,14 @@ export class ArtifactRepository extends Repository<Artifact> {
       return manager.save(manager.create(Artifact, artifact));
     }, manager || this.manager);
   }
+
+  async findById(id: string): Promise<Artifact> {
+    return await this.findOne({ where: { id } });
+  }
+
+  async deleteOne(id: string, manager?: EntityManager): Promise<void> {
+    await dbTransactionWrap(async (manager: EntityManager) => {
+      await manager.delete(Artifact, { id });
+    }, manager || this.manager);
+  }
 }

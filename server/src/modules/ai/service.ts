@@ -742,6 +742,56 @@ export class AiService implements IAiService {
     throw new Error('Method not implemented.');
   }
 
+  /**
+   * Rewinds a plan's execution to an earlier completed step (ADR-0008): every Step after
+   * `stepId` within the same plan (same conversationId + the target's messageId — a later,
+   * separately approved PRD's Steps carry a different messageId and are never touched) has
+   * its Artifact's real App change reverted, oldest-undone-last (a later step can only ever
+   * reference an earlier one's output, never the reverse), then its Step row is reset to
+   * 'pending' with a cleared artifactId/errorMessage/attempts. The target step itself is
+   * left as-is — rewind returns the plan to the state right after it finished, not before.
+   * Not a streaming endpoint: there's no LLM call on this path, just DB/App-state undos.
+   */
+  async rewindStep(conversationId: string, stepId: string, organizationId: string): Promise<any> {
+    if (!conversationId || !stepId) {
+      throw new BadRequestException('conversationId and stepId are required');
+    }
+
+    const conversation = await this.aiConversationRepository.findById(conversationId);
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const targetStep = await this.stepRepository.findById(stepId);
+    if (!targetStep || targetStep.conversationId !== conversationId) {
+      throw new NotFoundException('Step not found in this conversation');
+    }
+    if (targetStep.status !== 'succeeded') {
+      throw new BadRequestException('Can only rewind to a completed step');
+    }
+
+    const appVersionId = await this.resolveAppVersionId(conversation.appId);
+    const stepsAfter = await this.stepRepository.findAfterOrder(conversationId, targetStep.messageId, targetStep.order);
+
+    for (const step of [...stepsAfter].reverse()) {
+      if (step.status === 'succeeded' && step.artifactId) {
+        const artifact = await this.artifactRepository.findById(step.artifactId);
+        if (artifact) {
+          await this.agentsService.undoArtifact(step.type, appVersionId, organizationId, artifact.content);
+          await this.artifactRepository.deleteOne(artifact.id);
+        }
+      }
+      await this.stepRepository.updateOne(step.id, {
+        status: 'pending',
+        artifactId: null,
+        errorMessage: null,
+        attempts: 0,
+      });
+    }
+
+    return { rewoundTo: targetStep.id, undone: stepsAfter.map((step) => step.id) };
+  }
+
   async regenerateAiMessage(parentMessageId, organizationId): Promise<any> {
     throw new Error('Method not implemented.');
   }

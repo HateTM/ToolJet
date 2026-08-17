@@ -22,6 +22,9 @@ const initialState = {
   // { id, type, description, status: 'pending'|'running'|'succeeded'|'failed', artifact?, errorMessage? }
   steps: [],
   isApproving: false,
+  // id of the step currently being rewound, or null — only one rewind can be in flight at
+  // a time (rewindStep is a single synchronous backend call, not a stream).
+  rewindingStepId: null,
   error: null,
 };
 
@@ -41,6 +44,7 @@ const useAiBuilderStore = create(
             state.isSending = false;
             state.steps = [];
             state.isApproving = false;
+            state.rewindingStepId = null;
             state.error = null;
           },
           false,
@@ -412,6 +416,47 @@ const useAiBuilderStore = create(
             false,
             'aiBuilder/approvePrd/catch'
           );
+        }
+      },
+
+      // Rewinds the plan back to `stepId` (a completed step): the backend discards every
+      // step after it (ADR-0008), so `state.steps` is trimmed to match — everything from
+      // the rewound-to step's index onward, keeping only steps up to and including it.
+      rewindStep: async (stepId) => {
+        const conversationId = get().currentConversationId;
+        if (!conversationId || !stepId) return;
+
+        set(
+          (state) => {
+            state.rewindingStepId = stepId;
+            state.error = null;
+          },
+          false,
+          'aiBuilder/rewindStep/start'
+        );
+
+        try {
+          const result = await aiService.rewindStep({ conversationId, stepId });
+          set(
+            (state) => {
+              const undoneIds = new Set(result?.undone || []);
+              state.steps = state.steps.filter((step) => !undoneIds.has(step.id));
+              state.rewindingStepId = null;
+            },
+            false,
+            'aiBuilder/rewindStep/success'
+          );
+          return result;
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to rewind');
+              state.rewindingStepId = null;
+            },
+            false,
+            'aiBuilder/rewindStep/error'
+          );
+          return null;
         }
       },
     })),

@@ -37,13 +37,9 @@ export class AiController implements IAiController {
 
   @InitFeature(FEATURE_KEY.REWIND_STEP)
   @Post('conversation/rewind-step')
-  async rewindStep(
-    @User() user,
-    @Param('conversationId') conversationId: string,
-    @Body() body,
-    @Res() response: Response
-  ) {
-    throw new NotFoundException();
+  async rewindStep(@User() user, @Body() body) {
+    const { conversationId, stepId } = body ?? {};
+    return await this.aiService.rewindStep(conversationId, stepId, user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.REGENERATE_MESSAGE)

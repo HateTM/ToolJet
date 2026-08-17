@@ -32,6 +32,8 @@ export interface IAiService {
 
   approvePrd(conversationId: string, prd: any, organizationId: string, response: Response): Promise<any>;
 
+  rewindStep(conversationId: string, stepId: string, organizationId: string): Promise<any>;
+
   regenerateAiMessage(parentMessageId: string, organizationId: string): Promise<AiConversationMessage | any>;
 
   voteAiMessage(messageId: string, voteType: string, userId: string): Promise<any>;

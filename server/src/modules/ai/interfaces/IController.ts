@@ -10,6 +10,8 @@ export interface IAiController {
 
   approvePrd(user: User, conversationId: string, body: any, response: Response): Promise<any>;
 
+  rewindStep(user: User, body: any): Promise<any>;
+
   regenerateAiMessage(user: User, parentMessageId: string): Promise<any>;
 
   voteAiMessage(user: User, messageId: string, body: any): Promise<any>;
