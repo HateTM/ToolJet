@@ -33,4 +33,15 @@ Re-run a specific AI response in place, branching off its parent message (`paren
 _Avoid_: Retry, redo
 
 **Learn conversation**:
-A `Conversation` scoped to Q&A rather than building — no PRD, no `Step`s, no `Artifact`s. Corresponds to `conversationType: 'learn'`. **Deferred**: out of scope for this build; the `sendUserDocsMessage` endpoint and this conversation type are not being implemented yet.
+A `Conversation` scoped to Q&A about the current `App` — its structure and its `Generate conversation` history — rather than building. No PRD, no `Step`s, no `Artifact`s. Corresponds to `conversationType: 'learn'`. Answered from an `App inventory`, not from ToolJet's own product documentation — the latter is a separate, unrelated concern.
+_Avoid_: Docs mode, Q&A mode, chat mode
+
+**App inventory**:
+A distilled, freshly-assembled snapshot of the current `App` — its pages, the type and name of each page's components, its data sources, and its queries — plus a condensed summary of past approved PRDs. Assembled fresh for every message in a `Learn conversation`; never indexed or persisted (see [ADR-0011](docs/adr/0011-learn-conversation-context-assembled-directly-no-rag.md)). Omits layout and styling: a `Learn conversation` answers "what does my app do," not "what is this button's border-radius."
+_Avoid_: Docs, knowledge base, context
+
+**Promote** (a Learn conversation):
+The user action that starts a new `Generate conversation` seeded with a `Context seed` drawn from a `Learn conversation`. The originating `Learn conversation` is untouched and stays separately accessible — `conversationType` never changes on an existing `Conversation` (see [ADR-0012](docs/adr/0012-promote-creates-a-new-conversation.md)).
+
+**Context seed**:
+The condensed handoff placed into the first message of a `Generate conversation` created by `Promote` — the triggering question and its answer, not the full `Learn conversation` history.
