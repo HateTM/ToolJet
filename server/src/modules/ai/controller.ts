@@ -71,6 +71,14 @@ export class AiController implements IAiController {
     return await this.aiService.fixWithAi(body, user.organizationId);
   }
 
+  // Also not a conversation endpoint (ADR-0016): one prompt plus the editor's context in,
+  // one Completion out, nothing persisted and nothing streamed.
+  @InitFeature(FEATURE_KEY.COPILOT)
+  @Post('/copilot')
+  async copilot(@User() user, @Body() body) {
+    return await this.aiService.copilot(body, user.organizationId);
+  }
+
   @InitFeature(FEATURE_KEY.GET_CREDITS_BALANCE)
   @Get('/get-credits-balance')
   async getCreditsBalance(@User() user) {

@@ -12,8 +12,6 @@ const usePortal = ({ children, ...restProps }) => {
     optionalProps = {},
     selectors = {},
     dragResizePortal = false,
-    callgpt,
-    isCopilotEnabled = false,
     onPortalDimensionsChange,
     canRefresh = false,
   } = restProps;
@@ -41,8 +39,6 @@ const usePortal = ({ children, ...restProps }) => {
           trigger={callback}
           componentName={componentName}
           dragResizePortal={dragResizePortal}
-          callgpt={callgpt}
-          isCopilotEnabled={isCopilotEnabled}
           onPortalDimensionsChange={onPortalDimensionsChange}
           canRefresh={canRefresh}
         >

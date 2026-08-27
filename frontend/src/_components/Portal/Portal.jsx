@@ -17,8 +17,6 @@ const Portal = ({ children, ...restProps }) => {
     className,
     componentName,
     dragResizePortal,
-    callgpt,
-    isCopilotEnabled,
     onPortalDimensionsChange = noop,
     canRefresh = false,
   } = restProps;
@@ -61,8 +59,6 @@ const Portal = ({ children, ...restProps }) => {
           styles={styles}
           componentName={name}
           dragResizePortal={dragResizePortal}
-          callgpt={callgpt}
-          isCopilotEnabled={isCopilotEnabled}
           onPortalDimensionsChange={onPortalDimensionsChange}
           canRefresh={canRefresh}
         >
@@ -85,27 +81,14 @@ const Modal = ({
   componentName,
   darkMode,
   dragResizePortal,
-  callgpt,
-  isCopilotEnabled,
   onPortalDimensionsChange,
   canRefresh = false,
 }) => {
-  const [loading, setLoading] = React.useState(false);
-
   const codehinterPopupRndDefault = React.useMemo(() => {
     if (!dragResizePortal) return null;
     return readCodehinterPopupEditorDimensions() || getDefaultCodehinterPopupEditorDimensions();
   }, [dragResizePortal]);
 
-  const handleCallGpt = () => {
-    setLoading(true);
-
-    callgpt().then(() => setLoading(false));
-  };
-
-  const includeGPT = ['Runjs', 'Runpy', 'transformation'].includes(componentName) && isCopilotEnabled;
-
-  console.log('Rendering Portal Modal with componentName:', componentName, 'and canRefresh:', canRefresh);
   const renderModalContent = () => (
     <div className="modal-content" style={{ ...portalStyles, ...styles }} onClick={(e) => e.stopPropagation()}>
       <div
@@ -123,20 +106,6 @@ const Modal = ({
             {componentName ?? 'Editor'}
           </span>
         </div>
-
-        {includeGPT && (
-          <div className="mx-2">
-            <Button
-              onClick={handleCallGpt}
-              darkMode={darkMode}
-              size="sm"
-              classNames={`${loading ? (darkMode ? 'btn-loading' : 'button-loading') : ''}`}
-              styles={{ width: '100%', fontSize: '12px', fontWeight: 500, borderColor: darkMode && 'transparent' }}
-            >
-              <Button.Content title={'Generate code'} />
-            </Button>
-          </div>
-        )}
 
         {canRefresh && (
           <div className="mx-2">

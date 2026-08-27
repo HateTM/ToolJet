@@ -3,7 +3,6 @@ import { Tab, ListGroup, Row, Col, Popover, OverlayTrigger } from 'react-bootstr
 import { useTranslation } from 'react-i18next';
 import _ from 'lodash';
 import { CustomToggleSwitch } from './CustomToggleSwitch';
-import { authenticationService } from '@/_services';
 import CodeHinter from '@/AppBuilder/CodeEditor';
 import useStore from '@/AppBuilder/_stores/store';
 import { v4 as uuidv4 } from 'uuid';
@@ -61,10 +60,6 @@ export const Transformation = ({ changeOption, options, darkMode, queryId, rende
     ...options?.transformations,
   });
   const { t } = useTranslation();
-
-  const { current_organization_name } = authenticationService.currentSessionValue;
-  const currentOrgName = current_organization_name.replace(/\s/g, '').toLowerCase();
-  const isCopilotEnabled = localStorage.getItem(`copilotEnabled-${currentOrgName}`) === 'true';
 
   useEffect(() => {
     if (lang !== (options.transformationLanguage ?? 'javascript')) {
@@ -207,8 +202,6 @@ export const Transformation = ({ changeOption, options, darkMode, queryId, rende
               renderCopilot={renderCopilot}
               componentName={`transformation`}
               cyLabel={'transformation-input'}
-              // callgpt={handleCallToGPT}
-              isCopilotEnabled={isCopilotEnabled}
               delayOnChange={false}
               readOnly={!enableTransformation}
               editable={enableTransformation}

@@ -1,5 +1,4 @@
 import React from 'react';
-import { Tooltip as ReactTooltip } from 'react-tooltip';
 
 import { cn } from '@/lib/utils';
 
@@ -39,11 +38,7 @@ export const CustomToggleSwitch = ({
   );
 
   return (
-    <div
-      data-tooltip-id={dataCy === 'copilot' ? 'tooltip-for-active-copilot' : ''}
-      data-tooltip-content="Only workspace admins can enable or disable Copilot."
-      className={cn('custom-toggle-switch d-flex col gap-2 align-items-center', classes?.toggleSwitchContainer)}
-    >
+    <div className={cn('custom-toggle-switch d-flex col gap-2 align-items-center', classes?.toggleSwitchContainer)}>
       {switchToggle}
       <div className="d-flex flex-column">
         {label && (
@@ -57,13 +52,6 @@ export const CustomToggleSwitch = ({
           </span>
         )}
       </div>
-      {disabled && dataCy === 'copilot' && (
-        <ReactTooltip
-          id="tooltip-for-active-copilot"
-          className="tooltip"
-          style={{ backgroundColor: '#e6eefe', color: '#222' }}
-        />
-      )}
     </div>
   );
 };
