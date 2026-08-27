@@ -16,7 +16,7 @@ import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
 import { AiConversation } from '@entities/ai_conversation.entity';
 import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
-import { ErrorContext, Suggestion } from './types';
+import { Completion, CopilotContext, ErrorContext, Suggestion } from './types';
 
 const CONVERSATION_TYPES = ['generate', 'learn'] as const;
 type ConversationType = (typeof CONVERSATION_TYPES)[number];
@@ -216,12 +216,70 @@ const proposeFixTool = tool({
   }),
 });
 
+// Grounds a `Copilot` request (CONTEXT.md). The mirror image of FIX_WITH_AI_SYSTEM_PROMPT:
+// that one hands the model one broken expression and no app context, this one hands it a
+// whole query body to write and the `App inventory` to write it against (ADR-0016). The
+// "only what the query body may contain" section is what keeps the answer pasteable — a
+// model left to itself writes a module, with imports and a function declaration wrapped
+// around the code, and a runjs field is neither.
+const COPILOT_SYSTEM_PROMPT = `You write the body of a data query in a ToolJet app, from a plain-language description of what it should do.
+
+The user is typing into one query editor. Whatever you return replaces that editor's entire contents, so it must be the complete body and nothing else — no markdown fences, no commentary, no import statements, and no surrounding function declaration. The body runs as-is.
+
+Inside a query body the app runtime exposes:
+- queries.<name>.run() — run another query and await its result; queries.<name>.data holds its last result
+- components.<name> — a component's exposed values, e.g. components.textinput1.value
+- globals.currentUser, globals.theme
+- variables.<name> and constants.<name>
+- parameters.<name> — the query's own declared parameters
+The last expression a JavaScript body returns is the query's result; use an explicit \`return\`.
+
+You are given an inventory of the app the user is working in. Use it:
+- Reference only queries, components and pages that actually appear in it. Never invent a name — a name that does not exist resolves to undefined at runtime with no error, which is far worse for the user than code that does less.
+- When the description asks for data that no existing query provides, write the body against what is there and say so in the explanation rather than inventing a query to call.
+
+Call writeCode exactly once.
+
+Rules:
+- code is the complete replacement body for the editor, written in the language you are told the editor is in.
+- When the editor already has code in it, treat it as the user's work in progress: extend, complete, or amend it to do what they asked, and keep the parts they did not ask you to change. Do not start over from a blank body unless the description clearly asks for something unrelated.
+- Prefer the plainest thing that works. No defensive scaffolding, no configuration options, no abstraction the description did not ask for.
+- explanation is one short plain-language sentence about what the code does, written for someone who is not going to read it line by line. Do not restate the code.`;
+
+const writeCodeTool = tool({
+  description: 'Return the complete query body the user described.',
+  parameters: z.object({
+    code: z.string().describe("The complete replacement body for the editor, in the editor's language"),
+    explanation: z.string().describe('One short plain-language sentence about what the code does'),
+  }),
+});
+
+// The editor's current contents go into the prompt so a completion can extend the user's work
+// rather than replace it blind (ADR-0016).
+//
+// The bound is deliberately far above any real query body (~5k tokens' worth), because
+// truncating here is not free the way it is for a fix's fallback value: a `Completion` replaces
+// the *whole* editor, so a model shown only part of the body would be asked to "keep what you
+// weren't asked to change" while unable to see it, and the unseen head would vanish on Apply.
+// Past this bound the existing code is dropped from the prompt entirely and the model is told
+// so — an honestly-blind completion the user can reject beats a quietly lossy one.
+const CURRENT_CODE_PROMPT_LIMIT = 20000;
+
+// The editor reports CodeMirror's language name, which is what the model has to write in. An
+// absent or unrecognised one defaults to javascript rather than being passed through: `runjs`
+// is the overwhelmingly common surface, and a body silently generated in the wrong language is
+// not a degraded answer, it is an unusable one.
+const SUPPORTED_COPILOT_LANGUAGES = ['javascript', 'python'];
+const DEFAULT_COPILOT_LANGUAGE = 'javascript';
+
 // The fallback value arrives as parsed JSON from the request body, so it can't be circular —
 // but it can be large (a whole query result standing in for a Table's `data`), and a fix
 // prompt has no reason to carry more than enough of it to show the expected shape.
 const FALLBACK_VALUE_PROMPT_LIMIT = 500;
 
 const isNonEmptyString = (value: any): value is string => typeof value === 'string' && value.trim().length > 0;
+
+const isCodeTooLongToShow = (code: string): boolean => code.length > CURRENT_CODE_PROMPT_LIMIT;
 
 const summarizeFallbackValue = (value: any): string => {
   const serialized = JSON.stringify(value) ?? String(value);
@@ -1298,5 +1356,110 @@ export class AiService implements IAiService {
 
     const { fixedValue, explanation } = call.args as { fixedValue: string; explanation: string };
     return { fixedValue, explanation };
+  }
+
+  /**
+   * Assembles the `App inventory` for a `Copilot` request, or nothing at all.
+   *
+   * Unlike a Learn answer — which is *about* the App, and so is worthless ungrounded — a
+   * completion without the inventory is still code in the right language doing roughly the
+   * right thing; it just can't safely name the App's queries and components. So an App with
+   * no version yet, or a repository that faults, degrades to an ungrounded completion rather
+   * than failing the request (ADR-0016). The failure is logged because a *persistently*
+   * ungrounded copilot looks to the user like a model that keeps making names up.
+   */
+  private async assembleCopilotInventory(appId?: string): Promise<string | null> {
+    if (!appId) return null;
+
+    try {
+      return await this.assembleAppInventory(appId);
+    } catch (error) {
+      this.logger.warn(
+        `[copilot] appId=${appId} inventory unavailable, answering ungrounded: ${error?.message}`,
+        error?.stack
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Renders the `Copilot context` (CONTEXT.md) the model writes against. The prompt comes
+   * last on purpose: everything above it is background the model should read first, and the
+   * request itself is what it should still be holding when it starts writing.
+   *
+   * Both the inventory and the existing code are omitted entirely when absent rather than
+   * rendered as empty sections — an "Already in the editor:" heading over nothing invites the
+   * model to treat the blank as content and preserve it.
+   */
+  private buildCopilotContextLines(context: CopilotContext, inventory: string | null): string {
+    const { prompt, currentCode, language, dataSourceKind } = context;
+    const sections: string[] = [];
+
+    sections.push(`Editor language: ${this.resolveCopilotLanguage(language)}`);
+    if (isNonEmptyString(dataSourceKind)) {
+      sections.push(`This query runs against a "${dataSourceKind}" data source.`);
+    }
+    if (inventory) {
+      sections.push(`Inventory of the app being edited:\n${inventory}`);
+    }
+    if (isNonEmptyString(currentCode) && isCodeTooLongToShow(currentCode)) {
+      sections.push(
+        'The editor already contains a body too long to include here, so you cannot see it. Write only what was asked, as a self-contained body, and open your explanation by warning that it replaces the existing code rather than extending it.'
+      );
+    } else if (isNonEmptyString(currentCode)) {
+      sections.push(`Already in the editor, which is the user's work in progress:\n${currentCode}`);
+    } else {
+      sections.push('The editor is empty.');
+    }
+    sections.push(`What the user asked for:\n${prompt.trim()}`);
+
+    return sections.join('\n\n');
+  }
+
+  private resolveCopilotLanguage(language?: string): string {
+    const normalized = (language || '').trim().toLowerCase();
+    return SUPPORTED_COPILOT_LANGUAGES.includes(normalized) ? normalized : DEFAULT_COPILOT_LANGUAGE;
+  }
+
+  /**
+   * Produces one `Completion` for a query editor from the user's plain-language description
+   * (CONTEXT.md's `Copilot`). Like `fixWithAi` and for the same reasons, this is not a
+   * `Conversation`: no `conversationId`, nothing written to `ai_conversations`/
+   * `ai_conversation_messages`, not streamed — the client can't apply half a query body
+   * (ADR-0016). Structured output comes from a forced tool call through `AIGatewayGenerate`
+   * (ADR-0003).
+   *
+   * Only the prompt is required. Type-checked rather than truthiness-checked for the same
+   * reason `fixWithAi` checks its inputs: this takes a raw `@Body()`, and `.trim()` on a
+   * non-string would surface as a 500 for what is a malformed request.
+   */
+  async copilot(body: CopilotContext, organizationId: string): Promise<Completion> {
+    const { prompt } = body ?? ({} as CopilotContext);
+
+    if (!isNonEmptyString(prompt)) {
+      throw new BadRequestException('prompt is required and must be a non-empty string');
+    }
+
+    const inventory = await this.assembleCopilotInventory(body.appId);
+
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      'openai',
+      'copilot',
+      {
+        system: COPILOT_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: this.buildCopilotContextLines(body, inventory) }],
+        tools: { writeCode: writeCodeTool },
+        toolChoice: { type: 'tool', toolName: 'writeCode' },
+      },
+      organizationId
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== 'writeCode') {
+      throw new Error('The assistant did not produce any code');
+    }
+
+    const { code, explanation } = call.args as { code: string; explanation: string };
+    return { code, explanation };
   }
 }

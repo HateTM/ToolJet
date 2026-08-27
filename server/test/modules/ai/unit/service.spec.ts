@@ -2245,3 +2245,195 @@ describe('AiService.fixWithAi', () => {
     expect(prompt.toLowerCase()).not.toContain('fell back to');
   });
 });
+
+describe('AiService.copilot', () => {
+  // The Copilot context the query editor assembles client-side (CONTEXT.md): what the user
+  // asked for, what is already in the editor, and enough about the editor to know what
+  // language the answer has to be written in.
+  const copilotContext = {
+    prompt: 'fetch the users and return only the active ones',
+    currentCode: 'return [];',
+    language: 'javascript',
+    dataSourceKind: 'runjs',
+    appId: 'app-1',
+  };
+
+  const completionToolCall = {
+    toolCalls: [
+      {
+        toolName: 'writeCode',
+        args: {
+          code: 'const users = await queries.getUsers.run();\nreturn users.filter((user) => user.active);',
+          explanation: 'Runs the getUsers query and keeps only the rows whose active flag is set.',
+        },
+      },
+    ],
+  };
+
+  it('rejects an empty prompt rather than asking the model to guess what to write', async () => {
+    const { service, aiUtilService } = buildService();
+
+    await expect(service.copilot({ ...copilotContext, prompt: '   ' }, 'org-1')).rejects.toThrow(BadRequestException);
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  // This endpoint takes a raw `@Body()`, so a non-string prompt is a bad request rather than
+  // a TypeError inside `.trim()` surfacing to the user as a 500.
+  it.each([
+    ['an array', ['write a query']],
+    ['a number', 42],
+    ['an object', { text: 'write a query' }],
+  ])('rejects a non-string prompt (%s) with a 400', async (_label, prompt) => {
+    const { service, aiUtilService } = buildService();
+
+    await expect(service.copilot({ ...copilotContext, prompt } as any, 'org-1')).rejects.toThrow(BadRequestException);
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  it('returns the single Completion the forced tool call produced', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    const completion = await service.copilot(copilotContext, 'org-1');
+
+    expect(completion).toEqual({
+      code: 'const users = await queries.getUsers.run();\nreturn users.filter((user) => user.active);',
+      explanation: 'Runs the getUsers query and keeps only the rows whose active flag is set.',
+    });
+  });
+
+  it('forces the writeCode tool call and puts the whole Copilot context in the prompt', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    await service.copilot(copilotContext, 'org-1');
+
+    const [provider, operationId, promptBody, organizationId] = aiUtilService.AIGatewayGenerate.mock.calls[0];
+    expect(provider).toBe('openai');
+    expect(operationId).toBe('copilot');
+    expect(organizationId).toBe('org-1');
+    expect(promptBody.toolChoice).toEqual({ type: 'tool', toolName: 'writeCode' });
+    expect(promptBody.tools).toHaveProperty('writeCode');
+
+    const prompt = promptBody.messages[0].content;
+    expect(prompt).toContain('fetch the users and return only the active ones');
+    expect(prompt).toContain('return [];');
+    expect(prompt).toContain('runjs');
+  });
+
+  // ADR-0016: the App inventory is what stops the model inventing query and component names.
+  it('grounds the prompt in the App inventory rather than assembling a second context', async () => {
+    const { service, aiUtilService, appInventoryService } = buildService();
+    appInventoryService.assemble.mockResolvedValue('App: Test app\nQueries:\n- getUsers (tooljetdb)');
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    await service.copilot(copilotContext, 'org-1');
+
+    expect(appInventoryService.assemble).toHaveBeenCalledWith('app-1', 'version-1');
+    expect(aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content).toContain('getUsers (tooljetdb)');
+  });
+
+  // An ungrounded completion is worse than a grounded one but far better than an error: the
+  // user still gets code for the language they are in, just without knowing the app's names.
+  it('still answers when no appId is supplied, without assembling an inventory', async () => {
+    const { service, aiUtilService, appInventoryService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    const completion = await service.copilot({ ...copilotContext, appId: undefined }, 'org-1');
+
+    expect(completion.code).toContain('queries.getUsers.run()');
+    expect(appInventoryService.assemble).not.toHaveBeenCalled();
+  });
+
+  // Same reasoning: an app whose inventory can't be read (no versions yet, a repository
+  // fault) should still get a completion, unlike a Learn answer, which would be ungrounded
+  // about the very thing it was asked.
+  it('degrades to an ungrounded completion when the inventory cannot be assembled', async () => {
+    const { service, aiUtilService, appInventoryService } = buildService();
+    appInventoryService.assemble.mockRejectedValue(new Error('no versions'));
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    const completion = await service.copilot(copilotContext, 'org-1');
+
+    expect(completion.code).toContain('queries.getUsers.run()');
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalled();
+  });
+
+  // ADR-0016 (following ADR-0014): one prompt in, one Completion out, no trace left behind.
+  it('persists nothing', async () => {
+    const { service, aiUtilService, messageRepo, conversationRepo, artifactRepository, stepRepository } =
+      buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    await service.copilot(copilotContext, 'org-1');
+
+    expect(messageRepo.createOne).not.toHaveBeenCalled();
+    expect(aiUtilService.createNewConversation).not.toHaveBeenCalled();
+    expect(conversationRepo.updateOne).not.toHaveBeenCalled();
+    expect(artifactRepository.createOne).not.toHaveBeenCalled();
+    expect(stepRepository.createOne).not.toHaveBeenCalled();
+  });
+
+  it('fails loudly when the model answers without calling writeCode', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({ text: 'Sure, here is some code', toolCalls: [] });
+
+    await expect(service.copilot(copilotContext, 'org-1')).rejects.toThrow('did not produce any code');
+  });
+
+  // An empty editor is the common case for this feature - it must not read as "the user's
+  // existing code is the literal string 'undefined'", which would invite the model to keep it.
+  it('omits the existing-code section entirely for an empty editor', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    await service.copilot({ ...copilotContext, currentCode: '   ' }, 'org-1');
+
+    const prompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
+    expect(prompt).not.toContain('undefined');
+    expect(prompt.toLowerCase()).not.toContain('already in the editor');
+  });
+
+  // A Completion replaces the whole editor, so a partially-shown body is the one thing the
+  // prompt must never contain: the model would be told to preserve code it cannot see, and the
+  // unseen part would disappear on Apply.
+  it('sends a long body whole rather than trimming it behind the model’s back', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+    const longBody = `// start marker\n${'const filler = 1;\n'.repeat(200)}// end marker`;
+
+    await service.copilot({ ...copilotContext, currentCode: longBody }, 'org-1');
+
+    const prompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
+    expect(prompt).toContain('// start marker');
+    expect(prompt).toContain('// end marker');
+    expect(prompt).not.toContain('truncated');
+  });
+
+  // Past the bound the code is dropped outright and the model is told it is writing blind, so
+  // the user is warned in the explanation instead of silently losing the head of their body.
+  it('declares an over-long body unseen instead of showing part of it', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+    const hugeBody = `// start marker\n${'x'.repeat(25000)}\n// end marker`;
+
+    await service.copilot({ ...copilotContext, currentCode: hugeBody }, 'org-1');
+
+    const prompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
+    expect(prompt).not.toContain('// start marker');
+    expect(prompt).not.toContain('// end marker');
+    expect(prompt).toContain('too long to include');
+    expect(prompt.toLowerCase()).toContain('warning');
+  });
+
+  // The language decides the syntax of a whole generated body, so an unrecognised or absent
+  // one must not silently produce Python in a runjs editor.
+  it('defaults to javascript when the editor reports no language', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(completionToolCall);
+
+    await service.copilot({ ...copilotContext, language: undefined }, 'org-1');
+
+    expect(aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content).toContain('javascript');
+  });
+});

@@ -13,6 +13,7 @@ interface Features {
   [FEATURE_KEY.REGENERATE_MESSAGE]: FeatureConfig;
   [FEATURE_KEY.VOTE_MESSAGE]: FeatureConfig;
   [FEATURE_KEY.FIX_WITH_AI]: FeatureConfig;
+  [FEATURE_KEY.COPILOT]: FeatureConfig;
   [FEATURE_KEY.GET_CREDITS_BALANCE]: FeatureConfig;
   [FEATURE_KEY.LIST_CONVERSATIONS]: FeatureConfig;
   [FEATURE_KEY.CREATE_CONVERSATION]: FeatureConfig;
@@ -44,5 +45,24 @@ export interface ErrorContext {
 /** CONTEXT.md's `Suggestion`: the single proposed replacement one request produces. */
 export interface Suggestion {
   fixedValue: string;
+  explanation: string;
+}
+
+/**
+ * CONTEXT.md's `Copilot context`: everything a `Copilot` request carries. Only the prompt is
+ * required — it is the request. `appId` is optional because an ungrounded completion is worth
+ * more than a rejection (ADR-0016), and the rest describes the editor being written into.
+ */
+export interface CopilotContext {
+  prompt: string;
+  currentCode?: string;
+  language?: string;
+  dataSourceKind?: string;
+  appId?: string;
+}
+
+/** CONTEXT.md's `Completion`: the whole replacement editor body one request produces. */
+export interface Completion {
+  code: string;
   explanation: string;
 }

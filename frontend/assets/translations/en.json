@@ -134,6 +134,17 @@
             "close": "Close",
             "idle": "No suggestion yet for this field."
         },
+        "copilot": {
+            "title": "Write with AI",
+            "promptLabel": "Describe what this query should do",
+            "placeholder": "e.g. fetch the users and keep only the active ones",
+            "generate": "Generate code",
+            "pending": "Writing the code…",
+            "apply": "Replace editor contents",
+            "retry": "Try again",
+            "close": "Close",
+            "genericError": "Something went wrong. Please try again."
+        },
         "preview": "Preview",
         "share": "Share",
         "shareModal": {

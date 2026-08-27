@@ -161,7 +161,6 @@ const TJDBCodeEditor = (props) => {
           isMultiEditor={false}
         />
         <CodeHinter.Portal
-          isCopilotEnabled={false}
           isOpen={isOpen}
           callback={setIsOpen}
           componentName={componentName}
@@ -171,7 +170,6 @@ const TJDBCodeEditor = (props) => {
           darkMode={darkMode}
           selectors={{ className: 'preview-block-portal tjdb-portal-codehinter' }}
           dragResizePortal={true}
-          callgpt={null}
         >
           <ErrorBoundary>
             <div className={`${errorState && 'tjdb-hinter-error'} h-100`} data-cy={`${cyLabel}-input-field`}>

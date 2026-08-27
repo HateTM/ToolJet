@@ -575,7 +575,6 @@ const EditorInput = ({
         />
       )}
       <CodeHinter.Portal
-        isCopilotEnabled={false}
         isOpen={isOpen}
         callback={setIsOpen}
         componentName={componentName}
@@ -586,7 +585,6 @@ const EditorInput = ({
         darkMode={darkMode}
         selectors={{ className: 'preview-block-portal' }}
         dragResizePortal={true}
-        callgpt={null}
         onPortalDimensionsChange={portalProps?.onPortalDimensionsChange}
         canRefresh={portalProps?.canRefresh}
       >
