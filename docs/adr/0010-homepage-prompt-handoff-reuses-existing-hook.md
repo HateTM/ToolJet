@@ -2,6 +2,11 @@
 status: accepted
 ---
 
+> **Amended by [ADR-0017](0017-homepage-prompt-handoff-is-a-status-not-a-skip-flag.md).** The
+> `skipConversationBootstrap` boolean described below is now a four-state `handoffStatus`; the
+> race fix it was introduced for is unchanged, but a *failed* handoff no longer leaves the
+> panel permanently un-bootstrapped.
+
 # Homepage create-with-prompt reuses the existing prompt-handoff hook in useAppData, rewired from the dead EE `ai` slice to the real aiBuilderStore
 
 Ticket #9 asks for: type a prompt on the homepage → a new empty App is created → the builder opens with that prompt already sent as the first message. `HomePage.jsx`'s `createApp(appName, type, prompt, taggedResources)` already does the first half — it was built (for an unrelated EE/cloud "AI onboarding" cookie flow, `handleAiOnboarding`) to create the app and `navigate(...)` into it with `state: { prompt, taggedResources }` — and `AppBuilder/_hooks/useAppData.js` already has a matching `if (state?.prompt && !promptSentRef.current && ...)` block that opens the AI sidebar and sends the prompt as the first message on load. This is exactly ticket #9's shape, already wired end to end — just pointed at the wrong store.

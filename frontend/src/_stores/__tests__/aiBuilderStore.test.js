@@ -195,12 +195,169 @@ describe('aiBuilderStore', () => {
     expect(state.error).toBeNull();
   });
 
-  it("resetConversation also clears skipConversationBootstrap (ADR-0010's homepage-handoff flag)", () => {
-    useAiBuilderStore.setState({ skipConversationBootstrap: true });
+  // The panel's bootstrap effect watches handoffStatus/handoffAppId (ADR-0017), and "New chat"
+  // deliberately starts an empty thread and fetches its own zero state. Clearing the handoff
+  // here would re-trigger that effect and reload the very conversation the user just cleared,
+  // which ADR-0010's self-consuming boolean never did.
+  it('resetConversation leaves the spent handoff alone, so "New chat" is not undone by a bootstrap', () => {
+    getInitialState().beginHandoff('Build a CRM', 'app-1');
+    getInitialState().finishHandoff();
 
     getInitialState().resetConversation();
 
-    expect(getInitialState().skipConversationBootstrap).toBe(false);
+    expect(getInitialState().handoffStatus).toBe('succeeded');
+    expect(getInitialState().handoffAppId).toBe('app-1');
+  });
+
+  // A mode switch throws away the thread the handoff produced, so the handoff no longer owns
+  // the panel's bootstrap — leaving it in place would keep the gate shut with nothing left in
+  // the store, and neither mode's thread list would ever load.
+  it('setConversationType clears the handoff, releasing the panel bootstrap for the new mode', () => {
+    getInitialState().beginHandoff('Build a CRM', 'app-1');
+    getInitialState().finishHandoff();
+
+    getInitialState().setConversationType('learn');
+
+    expect(getInitialState().handoffStatus).toBe('idle');
+    expect(getInitialState().handoffPrompt).toBeNull();
+    expect(getInitialState().handoffAppId).toBeNull();
+  });
+
+  // ADR-0017: sendMessage reports delivery through its return value rather than by rejecting.
+  // It can't reject — the chat panel calls it as a fire-and-forget click handler with no
+  // .catch(), so throwing would surface as an unhandled rejection on every failed send. But
+  // the homepage handoff still has to tell a delivered prompt from a lost one, because it is
+  // what decides whether the prompt may be dropped from navigation state.
+  describe('sendMessage delivery reporting', () => {
+    it('returns true once the message has been sent', async () => {
+      aiService.sendMessage.mockResolvedValue([]);
+      useAiBuilderStore.setState({ currentConversationId: 'conv-1' });
+
+      await expect(getInitialState().sendMessage({ appId: 'app-1', content: 'Hi' })).resolves.toBe(true);
+    });
+
+    it('returns false when the send itself rejects', async () => {
+      aiService.sendMessage.mockRejectedValue(new Error('network down'));
+      useAiBuilderStore.setState({ currentConversationId: 'conv-1' });
+
+      await expect(getInitialState().sendMessage({ appId: 'app-1', content: 'Hi' })).resolves.toBe(false);
+      expect(getInitialState().error).toBe('network down');
+    });
+
+    it('returns false when the first-message conversation creation fails', async () => {
+      aiService.createConversation.mockRejectedValue(new Error('nope'));
+
+      await expect(getInitialState().sendMessage({ appId: 'app-1', content: 'Hi' })).resolves.toBe(false);
+      expect(aiService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('returns false for empty content — nothing was delivered', async () => {
+      await expect(getInitialState().sendMessage({ appId: 'app-1', content: '   ' })).resolves.toBe(false);
+    });
+
+    it('returns false when the stream reports an error event, even though the request resolved', async () => {
+      aiService.sendMessage.mockImplementation(async (body, onMessage) => {
+        onMessage({ type: 'error', data: { message: 'model exploded' } });
+        return [];
+      });
+      useAiBuilderStore.setState({ currentConversationId: 'conv-1' });
+
+      await expect(getInitialState().sendMessage({ appId: 'app-1', content: 'Hi' })).resolves.toBe(false);
+      expect(getInitialState().error).toBe('model exploded');
+    });
+  });
+
+  // ADR-0017: the handoff is a state machine, not a one-shot boolean, precisely so a *failed*
+  // handoff is distinguishable from an in-flight one — the panel has to bootstrap after the
+  // former and stand down during the latter.
+  describe('homepage prompt handoff', () => {
+    it('starts idle, with no prompt held', () => {
+      expect(getInitialState().handoffStatus).toBe('idle');
+      expect(getInitialState().handoffPrompt).toBeNull();
+      expect(getInitialState().handoffAppId).toBeNull();
+    });
+
+    it('beginHandoff marks it pending and holds the prompt for recovery', () => {
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+
+      expect(getInitialState().handoffStatus).toBe('pending');
+      expect(getInitialState().handoffPrompt).toBe('Build a CRM');
+    });
+
+    // This store is a module singleton, and nothing clears a *succeeded* handoff — so without
+    // the app it belongs to being recorded, an SPA switch to another app would still find the
+    // panel's bootstrap gate closed and never load that app's threads. ADR-0010's boolean was
+    // immune to this only because the first mount consumed it.
+    it('records the app the handoff belongs to, and keeps it through both terminal states', () => {
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+      expect(getInitialState().handoffAppId).toBe('app-1');
+
+      getInitialState().finishHandoff();
+      expect(getInitialState().handoffAppId).toBe('app-1');
+
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+      getInitialState().failHandoff();
+      expect(getInitialState().handoffAppId).toBe('app-1');
+    });
+
+    it('finishHandoff marks it succeeded and drops the held prompt — it was delivered', () => {
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+
+      getInitialState().finishHandoff();
+
+      expect(getInitialState().handoffStatus).toBe('succeeded');
+      expect(getInitialState().handoffPrompt).toBeNull();
+    });
+
+    it('failHandoff marks it failed and KEEPS the prompt, so it can be put back in the composer', () => {
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+
+      getInitialState().failHandoff();
+
+      expect(getInitialState().handoffStatus).toBe('failed');
+      expect(getInitialState().handoffPrompt).toBe('Build a CRM');
+    });
+
+    it('consumeHandoffPrompt returns the held prompt once, then nothing', () => {
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+      getInitialState().failHandoff();
+
+      expect(getInitialState().consumeHandoffPrompt()).toBe('Build a CRM');
+
+      expect(getInitialState().handoffPrompt).toBeNull();
+      expect(getInitialState().consumeHandoffPrompt()).toBeNull();
+    });
+
+    // ADR-0017's fallback makes a failed handoff run the panel's bootstrap, which starts with
+    // listConversations and can end in loadConversation or fetchZeroState. If any of those
+    // nulled `error` on start, the fallback would erase the banner explaining why the prompt
+    // was handed back, leaving the user with an unexplained draft in the composer.
+    it.each([
+      ['listConversations', () => getInitialState().listConversations('app-1')],
+      ['loadConversation', () => getInitialState().loadConversation('conv-1')],
+      ['fetchZeroState', () => getInitialState().fetchZeroState()],
+    ])('%s does not dismiss an error raised by a failed write', async (_name, read) => {
+      aiService.listConversations.mockResolvedValue([]);
+      aiService.getConversation.mockResolvedValue({ id: 'conv-1', aiConversationMessages: [] });
+      aiService.fetchZeroState.mockResolvedValue({ suggestions: [] });
+      aiService.sendMessage.mockRejectedValue(new Error('model exploded'));
+      useAiBuilderStore.setState({ currentConversationId: 'conv-1' });
+      await getInitialState().sendMessage({ appId: 'app-1', content: 'Build a CRM' });
+      expect(getInitialState().error).toBe('model exploded');
+
+      await read();
+
+      expect(getInitialState().error).toBe('model exploded');
+    });
+
+    it('consumeHandoffPrompt leaves the status alone — the panel still needs to know it failed', () => {
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+      getInitialState().failHandoff();
+
+      getInitialState().consumeHandoffPrompt();
+
+      expect(getInitialState().handoffStatus).toBe('failed');
+    });
   });
 
   it('loadConversation populates messages from the fetched conversation', async () => {
