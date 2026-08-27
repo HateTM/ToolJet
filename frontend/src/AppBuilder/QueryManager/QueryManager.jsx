@@ -5,6 +5,17 @@ import QueryManagerBody from './Components/QueryManagerBody';
 import { CodeHinterContext } from '@/AppBuilder/CodeBuilder/CodeHinterContext';
 import { resolveReferences } from '@/_helpers/utils';
 import useStore from '@/AppBuilder/_stores/store';
+import Copilot from '@/AppBuilder/CodeEditor/Copilot';
+
+/**
+ * Fills the `copilotBtnSlot` that has been threaded down to `MultiLineCodeEditor` all along
+ * and passed `null` at every CE call site (ADR-0015). Mounted here rather than deeper because
+ * this is the top of that chain, and because it scopes `Copilot` to the query editors — the
+ * only surfaces `renderCopilot` reaches — rather than to every multi-line CodeHinter.
+ *
+ * `Copilot` gates itself on AI being enabled, so this stays unconditional.
+ */
+const renderCopilot = (props) => <Copilot {...props} />;
 
 const QueryManager = ({ mode, darkMode }) => {
   // TODO to be moved into queryPanelStore and reimplemented
@@ -67,7 +78,7 @@ const QueryManager = ({ mode, darkMode }) => {
           ),
         }}
       >
-        <QueryManagerBody darkMode={darkMode} activeTab={activeTab} />
+        <QueryManagerBody darkMode={darkMode} activeTab={activeTab} renderCopilot={renderCopilot} />
       </CodeHinterContext.Provider>
     </div>
   );

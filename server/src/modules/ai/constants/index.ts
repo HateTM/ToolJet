@@ -9,6 +9,7 @@ export enum FEATURE_KEY {
   REGENERATE_MESSAGE = 'regenerateMessage',
   VOTE_MESSAGE = 'voteMessage',
   FIX_WITH_AI = 'fixWithAi',
+  COPILOT = 'copilot',
   GET_CREDITS_BALANCE = 'getCreditsBalance',
   LIST_CONVERSATIONS = 'listConversations',
   CREATE_CONVERSATION = 'createConversation',

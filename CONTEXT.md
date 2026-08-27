@@ -57,3 +57,15 @@ _Avoid_: Fix, completion, recommendation
 **Error context**:
 Everything the assistant is given to produce a `Suggestion`: the failing expression, the resolver's error message, the name of the property and the component it belongs to, and the fallback value the property reverted to. Assembled on the client from what the code editor already has on hand — a `Fix with AI` request carries no `App inventory` and no conversation history, because the failing expression and its error are what make the answer determinable.
 _Avoid_: Error payload, error data, prompt context
+
+**Copilot**:
+The user action offered inside a query editor: the user describes in words what the query body should do and the assistant writes it. Explicitly requested from a button in the editor's overlay controls — never triggered by typing, and never offered outside the query editors (see [ADR-0015](docs/adr/0015-copilot-is-a-prompt-button-in-query-editors.md)). The counterpart to `Fix with AI`, not a variant of it: `Copilot` writes code that does not exist yet, `Fix with AI` repairs one expression that broke. Unrelated to `Conversation`: it neither reads nor writes one.
+_Avoid_: Autocomplete, ghost text, inline suggestions, assistant
+
+**Completion**:
+What one `Copilot` request produces: the complete replacement body for the editor, plus a one-line plain-language note on what the code does. Exactly one per request, generated in one shot and never persisted — the user's only responses to it are apply, retry, or dismiss. Applied by overwriting the whole editor body, after being shown verbatim in the popover first (see [ADR-0016](docs/adr/0016-copilot-completion-replaces-the-editor-body-and-reuses-app-inventory.md)). `Regenerate` and voting do not apply to it.
+_Avoid_: Suggestion, recommendation, snippet, draft
+
+**Copilot context**:
+Everything the assistant is given to produce a `Completion`: the user's prompt, the editor's current code, its language, the kind of data source the query runs against, and the `App inventory` of the App being edited. The inventory is what keeps a `Completion` from inventing query and component names — the deliberate difference from an `Error context`, which carries none (see [ADR-0016](docs/adr/0016-copilot-completion-replaces-the-editor-body-and-reuses-app-inventory.md)).
+_Avoid_: Prompt context, copilot payload

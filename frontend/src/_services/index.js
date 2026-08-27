@@ -22,7 +22,6 @@ export * from './auditLogsService.js';
 export * from './globalDatasource.service';
 export * from './app_environment.service';
 export * from './license.service';
-export * from './copilot.service';
 export * from './git_sync.service';
 export * from './organization_constants.service';
 export * from './groupPermission.v2.service';

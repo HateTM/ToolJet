@@ -1,42 +1,6 @@
 import _ from 'lodash';
-import { copilotService } from '@/_services/copilot.service';
-import { toast } from 'react-hot-toast';
 import { deepClone } from '@/_helpers/utilities/utils.helpers';
 import { ACTIONS } from '@/AppBuilder/_stores/constants/actions';
-
-export async function getRecommendation(currentContext, query, lang = 'javascript') {
-  const words = query.split(' ');
-  let results = [];
-
-  function arrayToObject(arr) {
-    return _.reduce(
-      arr,
-      (result, { key, value }) => {
-        if (!result.hasOwnProperty(key)) {
-          result[key] = value;
-        }
-        return result;
-      },
-      {}
-    );
-  }
-
-  try {
-    words.forEach((word) => {
-      results = results.concat(searchQuery(word, currentContext));
-    });
-
-    const context = JSON.stringify(arrayToObject(results));
-
-    const { data } = await copilotService.getCopilotRecommendations({ context, query, lang });
-
-    return query + '\n' + data;
-  } catch ({ error, data }) {
-    const errorMessage = data?.message.includes('Unauthorized') ? 'Invalid Copilot API Key' : 'Something went wrong';
-    toast.error(errorMessage);
-    return query;
-  }
-}
 
 function getResult(suggestionList, query) {
   const result = suggestionList.filter((key) => key.includes(query));
@@ -295,22 +259,4 @@ export function handleChange(
     };
     keystrokeCaller();
   }
-}
-
-function searchQuery(query, obj) {
-  const lcQuery = query.toLowerCase();
-  let results = [];
-
-  for (const key in obj) {
-    const value = obj[key];
-    if (value !== null && typeof value === 'object') {
-      results = results?.concat(searchQuery(lcQuery, value));
-    } else {
-      if (key?.toLowerCase()?.includes(lcQuery) || value?.toString()?.toLowerCase()?.includes(lcQuery)) {
-        results.push({ key, value });
-      }
-    }
-  }
-
-  return results;
 }

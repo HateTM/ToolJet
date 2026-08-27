@@ -1,4 +1,5 @@
 import { aiService } from '@/_services/ai.service';
+import { readAiServiceError } from '@/_helpers/aiServiceError';
 
 /**
  * Per-field state for `Fix with AI` (CONTEXT.md), keyed exactly the way PreviewBox reads it:
@@ -75,11 +76,6 @@ const buildFixRequest = (errorData, meta) => {
   };
 };
 
-// aiService.fixWithAI rejects with `{ error, data, statusCode }` (handleAITextResponse), while
-// a dropped connection rejects with a plain Error — both end up in the popover as text.
-const readableError = (error) =>
-  error?.error || error?.data?.message || error?.message || 'Something went wrong. Please try again.';
-
 export const createCeFixWithAiSlice = (set) => ({
   ...initialState,
 
@@ -116,7 +112,12 @@ export const createCeFixWithAiSlice = (set) => ({
     } catch (error) {
       set(
         (draft) => {
-          setFieldEntry(draft, componentId, componentKey, { status: 'error', error: readableError(error) });
+          // No `t` inside a store slice, so the wording for a message-less rejection stays
+          // here rather than being translated (unchanged from before this helper was shared).
+          setFieldEntry(draft, componentId, componentKey, {
+            status: 'error',
+            error: readAiServiceError(error) ?? 'Something went wrong. Please try again.',
+          });
         },
         false,
         'fixWithAi/error'

@@ -424,8 +424,4 @@ export class AgentsService implements IAgentsService {
   async classify(prompt: string, organizationId): Promise<any> {
     throw new Error('Method not implemented.');
   }
-
-  async copilot(prompt: string, context: string, language: string, organizationId): Promise<any> {
-    throw new Error('Method not implemented.');
-  }
 }

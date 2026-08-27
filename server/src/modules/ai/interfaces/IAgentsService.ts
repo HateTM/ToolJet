@@ -18,6 +18,4 @@ export interface IAgentsService {
   create_header_component(appTitle: string): Promise<any>;
 
   classify(prompt: string, organizationId: string): Promise<any>;
-
-  copilot(prompt: string, context: string, language: string, organizationId: string): Promise<any>;
 }
