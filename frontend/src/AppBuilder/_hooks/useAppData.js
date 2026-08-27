@@ -407,9 +407,13 @@ const useAppData = (
         if (setConversation && setDocsConversation) {
           setConversation(conversation);
           setDocsConversation(docsConversation);
-          // important to control ai inputs
-          getCreditBalance();
         }
+        // important to control ai inputs. aiFeaturesEnabled also gates the `Fix with AI`
+        // affordance on a failing property (ADR-0013), which exists independently of the chat
+        // panel — so the balance fetch can't stay behind the conversation setters, which CE's
+        // ai slice doesn't provide. Editions that do provide them are unaffected: there both
+        // setters exist, so this ran before and still runs, in the same order.
+        getCreditBalance?.();
 
         // if app was created from propmt, and no earlier messages are present in the conversation, send the prompt message
 

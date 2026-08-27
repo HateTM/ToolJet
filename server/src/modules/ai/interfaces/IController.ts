@@ -18,6 +18,8 @@ export interface IAiController {
 
   voteAiMessage(user: User, body: any): Promise<any>;
 
+  fixWithAi(user: User, body: any): Promise<any>;
+
   getCreditsBalance(user: User): Promise<any>;
 
   listConversations(user: User, appId: string, conversationType: string): Promise<any>;

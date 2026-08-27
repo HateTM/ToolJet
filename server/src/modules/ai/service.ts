@@ -16,6 +16,7 @@ import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
 import { AiConversation } from '@entities/ai_conversation.entity';
 import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
+import { ErrorContext, Suggestion } from './types';
 
 const CONVERSATION_TYPES = ['generate', 'learn'] as const;
 type ConversationType = (typeof CONVERSATION_TYPES)[number];
@@ -183,6 +184,51 @@ const createQueryTool = tool({
     table_id: z.string().describe('id of an already-created ToolJet DB table (from context)'),
   }),
 });
+
+// Grounds a `Fix with AI` request (CONTEXT.md). The binding-syntax primer is the part that
+// does the work: the model is being handed one expression with no surrounding app context
+// (ADR-0013 — no App inventory is assembled for a fix), so what ToolJet's `{{ }}` runtime
+// actually exposes has to come from the prompt or the model will invent plausible-looking
+// references. The "return the whole field value" instruction matters just as much: the
+// result is written into the field verbatim by `onAiSuggestionAccept`, never diffed.
+const FIX_WITH_AI_SYSTEM_PROMPT = `You fix a single failing property expression on a component in a ToolJet app.
+
+A ToolJet property field holds either a literal value or a JavaScript expression wrapped in double curly braces — for example {{ queries.getUsers.data }}, {{ components.table1.selectedRow.name }}, or {{ true }}. Inside the braces the app runtime exposes:
+- queries.<name> — a data query's result: .data, .rawData, .isLoading
+- components.<name> — a component's exposed values, e.g. components.textinput1.value
+- globals.currentUser, globals.theme
+- variables.<name> and constants.<name>
+
+You are given one property whose expression failed to resolve, along with the error the runtime reported. Call proposeFix exactly once.
+
+Rules:
+- fixedValue is the complete replacement for the field, not a diff, a patch, or a fragment — whatever you return is written into the field verbatim.
+- Keep the fix minimal and stay with the user's evident intent. Do not redesign the expression, rename things, or point it at a different data source than the one they clearly meant.
+- Keep the {{ }} wrapper when the value is an expression; leave it off when the property should be a plain literal.
+- When the error says something referenced does not exist, prefer correcting an obvious typo or casing slip over inventing a new reference. If nothing sensible can be inferred, fall back to a safe literal of the right shape and say so in the explanation.
+- explanation is one short plain-language sentence, written for someone who does not know why their binding broke. Do not restate the raw error.`;
+
+const proposeFixTool = tool({
+  description: 'Propose a corrected value for the failing component property.',
+  parameters: z.object({
+    fixedValue: z.string().describe('The complete replacement value for the property field, written verbatim into it'),
+    explanation: z.string().describe('One short plain-language sentence explaining what was wrong'),
+  }),
+});
+
+// The fallback value arrives as parsed JSON from the request body, so it can't be circular —
+// but it can be large (a whole query result standing in for a Table's `data`), and a fix
+// prompt has no reason to carry more than enough of it to show the expected shape.
+const FALLBACK_VALUE_PROMPT_LIMIT = 500;
+
+const isNonEmptyString = (value: any): value is string => typeof value === 'string' && value.trim().length > 0;
+
+const summarizeFallbackValue = (value: any): string => {
+  const serialized = JSON.stringify(value) ?? String(value);
+  return serialized.length > FALLBACK_VALUE_PROMPT_LIMIT
+    ? `${serialized.slice(0, FALLBACK_VALUE_PROMPT_LIMIT)}… (truncated)`
+    : serialized;
+};
 
 type StepExecutionContext = {
   prd: string;
@@ -1172,5 +1218,85 @@ export class AiService implements IAiService {
 
   async getThreadTokenUsage(conversationId: string, user: any): Promise<any> {
     throw new Error('Method not implemented.');
+  }
+
+  /**
+   * Renders the `Error context` (CONTEXT.md) the model is asked to fix. Every line is
+   * optional except the expression and the error, which `fixWithAi` has already validated —
+   * a property with no resolved component/field name is unusual but not a reason to refuse a
+   * fix, since the expression and the error alone are what determine the answer.
+   *
+   * The fallback line is emitted on an explicit `undefined` check rather than a truthy one:
+   * a property that fell back to `[]`, `0`, `false` or `''` is telling the model what shape
+   * the field is supposed to hold, which is exactly the case a truthiness test would drop.
+   */
+  private buildFixContextLines(context: ErrorContext): string {
+    const { expression, errorMessage, componentName, componentType, propertyName, fallbackValue } = context;
+    const lines: string[] = [];
+
+    if (componentName || componentType) {
+      lines.push(`Component: ${[componentType, componentName].filter(Boolean).join(' ')}`);
+    }
+    if (propertyName) {
+      lines.push(`Property: ${propertyName}`);
+    }
+    lines.push(`Failing expression: ${expression}`);
+    lines.push(`Error reported by the app runtime: ${errorMessage}`);
+    if (fallbackValue !== undefined) {
+      lines.push(
+        `The property fell back to this value, which shows the shape it expects: ${summarizeFallbackValue(
+          fallbackValue
+        )}`
+      );
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Produces one `Suggestion` for a component property whose expression failed to resolve
+   * (CONTEXT.md's `Fix with AI`). Deliberately not a `Conversation`: no `conversationId` is
+   * accepted, nothing is written to `ai_conversations`/`ai_conversation_messages`, and the
+   * result isn't streamed — there is one question, one answer, and the client applies it into
+   * a form field (ADR-0014). Structured output comes from the same forced-tool-call mechanism
+   * `approvePrd`'s step execution uses (ADR-0003).
+   *
+   * A missing expression or error message is rejected rather than sent to the model: without
+   * both, there is nothing to fix and no way to tell what "fixed" would mean, so the model
+   * could only invent a replacement for a value the user never complained about.
+   */
+  async fixWithAi(body: ErrorContext, organizationId: string): Promise<Suggestion> {
+    const { expression, errorMessage } = body ?? ({} as ErrorContext);
+
+    // Type-checked, not just truthiness-checked: this endpoint takes a raw `@Body()`, and the
+    // error a component reports isn't always a string — PreviewBox's own resolver can produce
+    // an array of messages. A bare `.trim()` on one of those throws a TypeError, which would
+    // surface to the user as a 500 "Internal server error" for what is really a bad request.
+    if (!isNonEmptyString(expression)) {
+      throw new BadRequestException('expression is required and must be a non-empty string');
+    }
+    if (!isNonEmptyString(errorMessage)) {
+      throw new BadRequestException('errorMessage is required and must be a non-empty string');
+    }
+
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      'openai',
+      'fix-with-ai',
+      {
+        system: FIX_WITH_AI_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: this.buildFixContextLines(body) }],
+        tools: { proposeFix: proposeFixTool },
+        toolChoice: { type: 'tool', toolName: 'proposeFix' },
+      },
+      organizationId
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== 'proposeFix') {
+      throw new Error('The assistant did not produce a fix');
+    }
+
+    const { fixedValue, explanation } = call.args as { fixedValue: string; explanation: string };
+    return { fixedValue, explanation };
   }
 }

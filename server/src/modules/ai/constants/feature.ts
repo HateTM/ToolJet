@@ -32,6 +32,9 @@ export const FEATURES: FeaturesConfig = {
     [FEATURE_KEY.VOTE_MESSAGE]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },
+    [FEATURE_KEY.FIX_WITH_AI]: {
+      license: LICENSE_FIELD.AI_FEATURE,
+    },
     [FEATURE_KEY.GET_CREDITS_BALANCE]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },

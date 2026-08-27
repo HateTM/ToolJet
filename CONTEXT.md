@@ -45,3 +45,15 @@ The user action that starts a new `Generate conversation` seeded with a `Context
 
 **Context seed**:
 The condensed handoff placed into the first message of a `Generate conversation` created by `Promote` — the triggering question and its answer, not the full `Learn conversation` history.
+
+**Fix with AI**:
+The user action offered on a component property whose expression failed to resolve: the assistant reads the failing expression and its error and proposes a corrected one, which the user applies into the field in a single click. Available only where an error is already showing — it is not a general "write this code for me" affordance, and it never surfaces on a property that resolves cleanly (see [ADR-0013](docs/adr/0013-fix-with-ai-scoped-to-failing-property-expressions.md)). Unrelated to `Conversation`: it neither reads nor writes one.
+_Avoid_: Copilot, autocomplete, auto-fix, quick fix
+
+**Suggestion**:
+What one `Fix with AI` request produces: a single proposed replacement expression for the failing property, plus a one-line plain-language explanation of what was wrong. Exactly one per request, generated in one shot and never persisted (see [ADR-0014](docs/adr/0014-fix-suggestion-is-one-shot-and-not-persisted.md)) — the user's only responses to it are apply, retry, or dismiss. `Regenerate` and voting do not apply to it.
+_Avoid_: Fix, completion, recommendation
+
+**Error context**:
+Everything the assistant is given to produce a `Suggestion`: the failing expression, the resolver's error message, the name of the property and the component it belongs to, and the fallback value the property reverted to. Assembled on the client from what the code editor already has on hand — a `Fix with AI` request carries no `App inventory` and no conversation history, because the failing expression and its error are what make the answer determinable.
+_Avoid_: Error payload, error data, prompt context

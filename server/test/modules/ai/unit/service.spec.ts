@@ -2108,3 +2108,140 @@ describe('AiService conversation types', () => {
     expect(aiUtilService.createNewConversation).not.toHaveBeenCalled();
   });
 });
+
+describe('AiService.fixWithAi', () => {
+  // The Error context PreviewBox assembles client-side: the failing expression, the
+  // resolver's message, what the property/component are called, and the value the
+  // property fell back to (CONTEXT.md's "Error context").
+  const errorContext = {
+    expression: '{{queries.getusers.data}}',
+    errorMessage: 'queries.getusers is not defined',
+    componentName: 'table1',
+    componentType: 'Table',
+    propertyName: 'Data',
+    fallbackValue: [],
+  };
+
+  const suggestionToolCall = {
+    toolCalls: [
+      {
+        toolName: 'proposeFix',
+        args: {
+          fixedValue: '{{queries.getUsers.data}}',
+          explanation: 'The query name was misspelled - it is getUsers, not getusers.',
+        },
+      },
+    ],
+  };
+
+  it('rejects when the failing expression is missing', async () => {
+    const { service, aiUtilService } = buildService();
+
+    await expect(service.fixWithAi({ ...errorContext, expression: '   ' }, 'org-1')).rejects.toThrow(
+      BadRequestException
+    );
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the resolver error message is missing', async () => {
+    const { service, aiUtilService } = buildService();
+
+    await expect(service.fixWithAi({ ...errorContext, errorMessage: '' }, 'org-1')).rejects.toThrow(
+      BadRequestException
+    );
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  // A component's resolver can report an array of messages rather than a string. That is a
+  // bad request, not a server fault — reaching `.trim()` on it would throw a TypeError and
+  // surface to the user as a 500.
+  it.each([
+    ['an array', ['queries.getusers is not defined']],
+    ['a number', 42],
+    ['an object', { message: 'boom' }],
+  ])('rejects a non-string error message (%s) with a 400', async (_label, errorMessage) => {
+    const { service, aiUtilService } = buildService();
+
+    await expect(service.fixWithAi({ ...errorContext, errorMessage } as any, 'org-1')).rejects.toThrow(
+      BadRequestException
+    );
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string expression with a 400', async () => {
+    const { service, aiUtilService } = buildService();
+
+    await expect(service.fixWithAi({ ...errorContext, expression: ['{{a}}'] } as any, 'org-1')).rejects.toThrow(
+      BadRequestException
+    );
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  it('returns the single Suggestion the forced tool call produced', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
+
+    const suggestion = await service.fixWithAi(errorContext, 'org-1');
+
+    expect(suggestion).toEqual({
+      fixedValue: '{{queries.getUsers.data}}',
+      explanation: 'The query name was misspelled - it is getUsers, not getusers.',
+    });
+  });
+
+  it('forces the proposeFix tool call and puts the whole Error context in the prompt', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
+
+    await service.fixWithAi(errorContext, 'org-1');
+
+    const [provider, operationId, promptBody, organizationId] = aiUtilService.AIGatewayGenerate.mock.calls[0];
+    expect(provider).toBe('openai');
+    expect(operationId).toBe('fix-with-ai');
+    expect(organizationId).toBe('org-1');
+    expect(promptBody.toolChoice).toEqual({ type: 'tool', toolName: 'proposeFix' });
+    expect(promptBody.tools).toHaveProperty('proposeFix');
+
+    const prompt = promptBody.messages[0].content;
+    expect(prompt).toContain('{{queries.getusers.data}}');
+    expect(prompt).toContain('queries.getusers is not defined');
+    expect(prompt).toContain('table1');
+    expect(prompt).toContain('Data');
+  });
+
+  // ADR-0014: a fix request is one-shot - it is not an AiConversation and leaves no trace.
+  it('persists nothing', async () => {
+    const { service, aiUtilService, messageRepo, conversationRepo, artifactRepository, stepRepository } =
+      buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
+
+    await service.fixWithAi(errorContext, 'org-1');
+
+    expect(messageRepo.createOne).not.toHaveBeenCalled();
+    expect(aiUtilService.createNewConversation).not.toHaveBeenCalled();
+    expect(conversationRepo.updateOne).not.toHaveBeenCalled();
+    expect(artifactRepository.createOne).not.toHaveBeenCalled();
+    expect(stepRepository.createOne).not.toHaveBeenCalled();
+  });
+
+  it('fails loudly when the model answers without calling proposeFix', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({ text: 'I think your query name is wrong', toolCalls: [] });
+
+    await expect(service.fixWithAi(errorContext, 'org-1')).rejects.toThrow('did not produce a fix');
+  });
+
+  // A fallback value of `[]`/`0`/`false` is meaningful context, so it has to survive into the
+  // prompt rather than being dropped by a truthiness check - while a genuinely absent one
+  // must not render as "undefined" and invite the model to treat that as the intended value.
+  it('omits the fallback line entirely when there is no fallback value', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
+
+    await service.fixWithAi({ ...errorContext, fallbackValue: undefined }, 'org-1');
+
+    const prompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
+    expect(prompt).not.toContain('undefined');
+    expect(prompt.toLowerCase()).not.toContain('fell back to');
+  });
+});

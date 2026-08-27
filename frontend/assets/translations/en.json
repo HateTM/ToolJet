@@ -126,6 +126,14 @@
         "enterNewPassword": "Enter new password"
     },
     "editor": {
+        "fixWithAi": {
+            "title": "Fix with AI",
+            "pending": "Looking at the error…",
+            "apply": "Apply fix",
+            "retry": "Try again",
+            "close": "Close",
+            "idle": "No suggestion yet for this field."
+        },
         "preview": "Preview",
         "share": "Share",
         "shareModal": {
