@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Res, NotFoundException, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, Query } from '@nestjs/common';
 import { User } from '@modules/app/decorators/user.decorator';
 import { Response } from 'express';
 import { IAiController } from './interfaces/IController';
@@ -25,7 +25,14 @@ export class AiController implements IAiController {
   @InitFeature(FEATURE_KEY.SEND_DOCS_MESSAGE)
   @Post('conversation/docs-message')
   async sendUserDocsMessage(@User() user, @Body() body, @Res() response: Response) {
-    throw new NotFoundException();
+    return await this.aiService.sendUserDocsMessage(body, response, user.organizationId);
+  }
+
+  @InitFeature(FEATURE_KEY.PROMOTE_CONVERSATION)
+  @Post('conversation/promote')
+  async promoteConversation(@User() user, @Body() body) {
+    const { conversationId, messageId } = body ?? {};
+    return await this.aiService.promoteConversation(conversationId, messageId, user.id);
   }
 
   @InitFeature(FEATURE_KEY.APPROVE_PRD)

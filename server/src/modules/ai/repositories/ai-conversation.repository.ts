@@ -63,6 +63,19 @@ export class AiConversationRepository extends Repository<AiConversation> {
     });
   }
 
+  /**
+   * Every conversation of one type for an App, regardless of which user started it — unlike
+   * `findAllByAppAndUser`, which answers "my threads". Used to assemble the App inventory's
+   * build history (ADR-0011), where what matters is what was built into this App, not who
+   * happened to be chatting when it was.
+   */
+  async findAllByAppAndType(appId: string, conversationType: 'generate' | 'learn'): Promise<AiConversation[]> {
+    return await this.find({
+      where: { appId, conversationType },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async findById(conversationId: string): Promise<AiConversation> {
     return await this.findOne({
       where: { id: conversationId },

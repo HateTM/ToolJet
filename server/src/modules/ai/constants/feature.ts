@@ -17,6 +17,9 @@ export const FEATURES: FeaturesConfig = {
     [FEATURE_KEY.SEND_DOCS_MESSAGE]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },
+    [FEATURE_KEY.PROMOTE_CONVERSATION]: {
+      license: LICENSE_FIELD.AI_FEATURE,
+    },
     [FEATURE_KEY.APPROVE_PRD]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },

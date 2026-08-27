@@ -11,6 +11,7 @@ jest.mock('@/_services/ai.service', () => ({
     rewindStep: jest.fn(),
     voteMessage: jest.fn(),
     regenerateMessage: jest.fn(),
+    promoteConversation: jest.fn(),
   },
 }));
 
@@ -52,7 +53,8 @@ describe('aiBuilderStore', () => {
     expect(state.messages[0]).toMatchObject({ messageType: 'user', content: 'Build me a CRM' });
     expect(aiService.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ appId: 'app-1', content: 'Build me a CRM' }),
-      expect.any(Function)
+      expect.any(Function),
+      false
     );
   });
 
@@ -65,7 +67,8 @@ describe('aiBuilderStore', () => {
     expect(aiService.createConversation).not.toHaveBeenCalled();
     expect(aiService.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'conv-1' }),
-      expect.any(Function)
+      expect.any(Function),
+      false
     );
     const [body] = aiService.sendMessage.mock.calls[0];
     expect(body.currentConversationId).toBeUndefined();
@@ -80,7 +83,8 @@ describe('aiBuilderStore', () => {
     expect(aiService.createConversation).toHaveBeenCalledWith({ appId: 'app-1', conversationType: 'generate' });
     expect(aiService.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'conv-new' }),
-      expect.any(Function)
+      expect.any(Function),
+      false
     );
     expect(getInitialState().currentConversationId).toBe('conv-new');
   });
@@ -527,6 +531,128 @@ describe('aiBuilderStore', () => {
       expect(state.regeneratingMessageId).toBeNull();
       // the stale message list is left untouched on failure
       expect(state.messages).toHaveLength(2);
+    });
+  });
+
+  describe('Learn conversations', () => {
+    it('starts in generate mode', () => {
+      expect(getInitialState().conversationType).toBe('generate');
+    });
+
+    it('routes a Learn message to the docs endpoint instead of the PRD one', async () => {
+      useAiBuilderStore.setState({ conversationType: 'learn', currentConversationId: 'learn-1' });
+      aiService.sendMessage.mockImplementation(async () => []);
+
+      await getInitialState().sendMessage({ appId: 'app-1', content: 'What pages do I have?' });
+
+      expect(aiService.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'learn-1', conversationType: 'learn' }),
+        expect.any(Function),
+        true
+      );
+    });
+
+    it('creates a learn conversation for the first message of a Learn thread', async () => {
+      useAiBuilderStore.setState({ conversationType: 'learn' });
+      aiService.createConversation.mockResolvedValue({ id: 'learn-new' });
+      aiService.sendMessage.mockImplementation(async () => []);
+
+      await getInitialState().sendMessage({ appId: 'app-1', content: 'What does this app do?' });
+
+      expect(aiService.createConversation).toHaveBeenCalledWith({ appId: 'app-1', conversationType: 'learn' });
+    });
+
+    it('lists the threads of whichever mode is current', async () => {
+      aiService.listConversations.mockResolvedValue([]);
+      useAiBuilderStore.setState({ conversationType: 'learn' });
+
+      await getInitialState().listConversations('app-1');
+
+      expect(aiService.listConversations).toHaveBeenCalledWith('app-1', 'learn');
+    });
+
+    it('setConversationType drops the current thread — a conversation belongs to exactly one type', () => {
+      useAiBuilderStore.setState({
+        currentConversationId: 'conv-1',
+        messages: [{ id: 'm1', messageType: 'user', content: 'hi' }],
+        steps: [{ id: 'step-1', status: 'succeeded' }],
+        votes: { m1: 'up' },
+        error: 'stale error',
+      });
+
+      getInitialState().setConversationType('learn');
+
+      const state = getInitialState();
+      expect(state.conversationType).toBe('learn');
+      expect(state.currentConversationId).toBeNull();
+      expect(state.messages).toEqual([]);
+      expect(state.steps).toEqual([]);
+      expect(state.votes).toEqual({});
+      expect(state.error).toBeNull();
+    });
+
+    it('setConversationType is a no-op when the mode is unchanged, so an in-flight thread survives', () => {
+      useAiBuilderStore.setState({ conversationType: 'learn', currentConversationId: 'learn-1' });
+
+      getInitialState().setConversationType('learn');
+
+      expect(getInitialState().currentConversationId).toBe('learn-1');
+    });
+
+    describe('promoteConversation', () => {
+      beforeEach(() => {
+        useAiBuilderStore.setState({
+          conversationType: 'learn',
+          currentConversationId: 'learn-1',
+          messages: [
+            { id: 'q-1', messageType: 'user', content: 'How do orders list?' },
+            { id: 'a-1', messageType: 'ai', content: 'Via list_orders.', parentId: 'q-1' },
+          ],
+        });
+      });
+
+      it('switches the panel to the new Generate conversation and its context seed', async () => {
+        aiService.promoteConversation.mockResolvedValue({
+          id: 'generate-1',
+          conversationType: 'generate',
+          messages: [{ id: 'seed-1', messageType: 'user', content: 'Context carried over...' }],
+        });
+
+        const result = await getInitialState().promoteConversation('a-1');
+
+        expect(aiService.promoteConversation).toHaveBeenCalledWith({
+          conversationId: 'learn-1',
+          messageId: 'a-1',
+        });
+        const state = getInitialState();
+        expect(state.conversationType).toBe('generate');
+        expect(state.currentConversationId).toBe('generate-1');
+        expect(state.messages).toEqual([{ id: 'seed-1', messageType: 'user', content: 'Context carried over...' }]);
+        expect(state.promotingMessageId).toBeNull();
+        expect(result).toMatchObject({ id: 'generate-1' });
+      });
+
+      it('leaves the panel on the Learn thread when the request fails', async () => {
+        aiService.promoteConversation.mockRejectedValue(new Error('Conversation not found'));
+
+        const result = await getInitialState().promoteConversation('a-1');
+
+        const state = getInitialState();
+        expect(result).toBeNull();
+        expect(state.conversationType).toBe('learn');
+        expect(state.currentConversationId).toBe('learn-1');
+        expect(state.messages).toHaveLength(2);
+        expect(state.error).toBe('Conversation not found');
+        expect(state.promotingMessageId).toBeNull();
+      });
+
+      it('does nothing without a conversation or a message to promote', async () => {
+        await getInitialState().promoteConversation(undefined);
+        useAiBuilderStore.setState({ currentConversationId: null });
+        await getInitialState().promoteConversation('a-1');
+
+        expect(aiService.promoteConversation).not.toHaveBeenCalled();
+      });
     });
   });
 });

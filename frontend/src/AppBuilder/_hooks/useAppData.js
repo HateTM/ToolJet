@@ -468,7 +468,10 @@ const useAppData = (
           // Set synchronously, before the sidebar opens and mounts AiBuilderChatPanel, so its
           // own mount effect (listConversations -> loadConversation) sees the flag on its very
           // first render and skips its bootstrap instead of racing this handoff (ADR-0010).
-          useAiBuilderStore.setState({ skipConversationBootstrap: true });
+          // `conversationType` is set alongside it because the panel's mode selector writes to
+          // the same singleton store: a homepage prompt always builds, so it must land on a
+          // Generate thread even if the user last left the panel in Learn mode.
+          useAiBuilderStore.setState({ skipConversationBootstrap: true, conversationType: 'generate' });
           setSelectedSidebarItem('tooljetai');
           toggleLeftSidebar(true);
           const aiBuilderStore = useAiBuilderStore.getState();

@@ -30,6 +30,8 @@ export interface IAiService {
     organizationId: string
   ): Promise<any>;
 
+  promoteConversation(conversationId: string, messageId: string, userId: string): Promise<any>;
+
   approvePrd(conversationId: string, prd: any, organizationId: string, response: Response): Promise<any>;
 
   rewindStep(conversationId: string, stepId: string, organizationId: string): Promise<any>;

@@ -11,8 +11,15 @@ const buildMockAiUtilService = () => ({
   getConversationById: jest.fn(),
 });
 
+// Defaults to a Generate conversation so the tests that don't care about the type (most of
+// them) don't each have to say so; Learn-conversation tests override `findById` themselves.
 const buildMockConversationRepository = () => ({
-  findById: jest.fn(),
+  findById: jest.fn().mockResolvedValue({ id: 'conversation-1', appId: 'app-1', conversationType: 'generate' }),
+  updateOne: jest.fn(),
+});
+
+const buildMockAppInventoryService = () => ({
+  assemble: jest.fn().mockResolvedValue('App: Test app'),
 });
 
 const buildMockMessageRepository = () => ({
@@ -61,7 +68,7 @@ const buildMockResponse = () => ({
   end: jest.fn(),
 });
 
-// Builds an AiService with all 8 constructor dependencies mocked, any of which can be
+// Builds an AiService with all 9 constructor dependencies mocked, any of which can be
 // overridden. Centralizing this avoids repeating the full mock/constructor wiring in
 // every test (and having to update all of them whenever the constructor's shape changes).
 const buildService = (overrides: Partial<Record<string, any>> = {}) => {
@@ -73,6 +80,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const stepRepository = overrides.stepRepository ?? buildMockStepRepository();
   const versionRepository = overrides.versionRepository ?? buildMockVersionRepository();
   const aiResponseVoteRepository = overrides.aiResponseVoteRepository ?? buildMockAiResponseVoteRepository();
+  const appInventoryService = overrides.appInventoryService ?? buildMockAppInventoryService();
 
   const service = new AiService(
     aiUtilService as any,
@@ -82,7 +90,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     artifactRepository as any,
     stepRepository as any,
     versionRepository as any,
-    aiResponseVoteRepository as any
+    aiResponseVoteRepository as any,
+    appInventoryService as any
   );
 
   return {
@@ -95,6 +104,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     stepRepository,
     versionRepository,
     aiResponseVoteRepository,
+    appInventoryService,
   };
 };
 
@@ -121,7 +131,7 @@ describe('AiService.sendUserMessage', () => {
   it('streams chunks over SSE and persists the final AI message on success', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne
       .mockResolvedValueOnce({ id: 'user-msg-1' })
@@ -177,7 +187,7 @@ describe('AiService.sendUserMessage', () => {
 
   it('grounds every request in a PRD-focused system prompt (Generate conversations only ever propose a PRD, never build)', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
 
@@ -200,7 +210,7 @@ describe('AiService.sendUserMessage', () => {
   it('includes prior conversation history (as role-mapped messages) before the new message', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { messageType: 'user', content: 'first message' },
       { messageType: 'ai', content: 'first reply' },
@@ -254,7 +264,7 @@ describe('AiService.sendUserMessage', () => {
 
   it('sends an SSE error event and ends the response when the AI gateway fails mid-stream', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValue({ id: 'user-msg-1' });
     aiUtilService.AIGateway.mockRejectedValue(new Error('LLM gateway timed out'));
@@ -320,7 +330,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -402,7 +412,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -445,7 +455,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -525,7 +535,7 @@ describe('AiService.approvePrd', () => {
   it('fails a step whose type has no handler immediately, without spending any retries on it (ADR-0006 defense-in-depth — all v1 STEP_TYPES have handlers as of this ticket, so this exercises the guard directly rather than a reachable-via-the-planner path)', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -583,7 +593,7 @@ describe('AiService.approvePrd', () => {
 
   it('sends an SSE error event when the plan-generation call fails', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -615,7 +625,7 @@ describe('AiService.approvePrd', () => {
       versionRepository,
     } = buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -657,7 +667,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository, versionRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -690,7 +700,7 @@ describe('AiService.approvePrd', () => {
   it('creates a query from a CreateQuery step', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -721,7 +731,7 @@ describe('AiService.approvePrd', () => {
   it('retries an unrecognized component type (the model can self-correct, unlike an unsupported Step type)', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -758,7 +768,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -853,7 +863,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD: build me an app to track orders' },
     ]);
@@ -964,7 +974,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -1005,7 +1015,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -1080,7 +1090,7 @@ describe('AiService.approvePrd', () => {
         stepRepository,
       } = buildService();
 
-      conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+      conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
       messageRepo.findLatestByConversationId.mockResolvedValue([
         { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
       ]);
@@ -1137,7 +1147,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -1234,7 +1244,7 @@ describe('AiService.approvePrd', () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
@@ -1343,7 +1353,7 @@ describe('AiService.rewindStep', () => {
 
   it('404s when the step does not exist, or belongs to a different conversation', async () => {
     const { service, conversationRepo, stepRepository } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     stepRepository.findById.mockResolvedValue(null);
 
     await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toThrow(NotFoundException);
@@ -1354,7 +1364,7 @@ describe('AiService.rewindStep', () => {
 
   it('rejects rewinding to a step that never completed', async () => {
     const { service, conversationRepo, stepRepository } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     stepRepository.findById.mockResolvedValue({ id: 'step-1', conversationId: 'conv-1', status: 'pending' });
 
     await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toThrow(BadRequestException);
@@ -1363,7 +1373,7 @@ describe('AiService.rewindStep', () => {
   it('undoes every succeeded step after the target, back to front, then resets each to pending', async () => {
     const { service, conversationRepo, stepRepository, artifactRepository, agentsService, versionRepository } =
       buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     versionRepository.getAllVersions.mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]);
 
     const targetStep = {
@@ -1442,7 +1452,7 @@ describe('AiService.rewindStep', () => {
 
   it('a partial-plan rewind only touches steps after the target, leaving earlier ones alone', async () => {
     const { service, conversationRepo, stepRepository, artifactRepository, agentsService } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
 
     // Rewinding to the middle step (order 1) of a 3-step plan.
     const targetStep = { id: 'step-2', conversationId: 'conv-1', messageId: 'msg-1', order: 1, status: 'succeeded' };
@@ -1475,7 +1485,7 @@ describe('AiService.rewindStep', () => {
 
   it("scopes 'steps after the target' to the target's own plan (messageId) — a separately approved PRD's steps are never touched", async () => {
     const { service, conversationRepo, stepRepository } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     stepRepository.findById.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -1494,7 +1504,7 @@ describe('AiService.rewindStep', () => {
 
   it('resets a failed step after the target back to pending too, even though it has no artifact to undo', async () => {
     const { service, conversationRepo, stepRepository, artifactRepository, agentsService } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     stepRepository.findById.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -1528,7 +1538,7 @@ describe('AiService.rewindStep', () => {
 
   it('propagates an undo failure and stops, leaving steps at/before the failure untouched by that step', async () => {
     const { service, conversationRepo, stepRepository, artifactRepository, agentsService } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
     stepRepository.findById.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -1714,5 +1724,387 @@ describe('AiService.regenerateAiMessage', () => {
       isLatest: true,
     });
     expect(result).toMatchObject({ id: 'ai-msg-3', isLatest: true });
+  });
+});
+
+/** @group platform */
+describe('AiService.sendUserDocsMessage', () => {
+  const buildLearnConversation = () => ({ id: 'conv-1', appId: 'app-1', conversationType: 'learn' });
+
+  it('answers from a freshly-assembled App inventory and persists the reply, over the same SSE contract as a Generate message', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, appInventoryService } = buildService();
+
+    conversationRepo.findById.mockResolvedValue(buildLearnConversation());
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne
+      .mockResolvedValueOnce({ id: 'user-msg-1' })
+      .mockResolvedValueOnce({ id: 'ai-msg-1', content: 'Your app has 2 pages.' });
+    appInventoryService.assemble.mockResolvedValue('App: CRM\n\nPages:\n- Home: Table "orders"');
+
+    async function* chunks() {
+      yield 'Your app has ';
+      yield '2 pages.';
+    }
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+
+    const response = buildMockResponse();
+
+    await service.sendUserDocsMessage(
+      { conversationId: 'conv-1', content: 'What pages do I have?' },
+      response as any,
+      'org-1'
+    );
+
+    expect(appInventoryService.assemble).toHaveBeenCalledWith('app-1', 'version-1');
+
+    const [provider, operationId, promptBody, organizationId] = aiUtilService.AIGateway.mock.calls[0];
+    expect(provider).toBe('openai');
+    expect(operationId).toBe('send-docs-message');
+    expect(organizationId).toBe('org-1');
+    expect(promptBody.messages[1]).toEqual({ role: 'system', content: expect.stringContaining('App: CRM') });
+    expect(promptBody.messages[promptBody.messages.length - 1]).toEqual({
+      role: 'user',
+      content: 'What pages do I have?',
+    });
+
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'chunk', { content: 'Your app has ' });
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', {
+      message: { id: 'ai-msg-1', content: 'Your app has 2 pages.' },
+    });
+    expect(messageRepo.createOne).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ messageType: 'ai', content: 'Your app has 2 pages.', parentId: 'user-msg-1' })
+    );
+    expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the assistant it cannot build here, and to point at Promote instead', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+
+    conversationRepo.findById.mockResolvedValue(buildLearnConversation());
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+
+    async function* chunks() {
+      yield 'ok';
+    }
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+
+    await service.sendUserDocsMessage(
+      { conversationId: 'conv-1', content: 'Add a customers table' },
+      buildMockResponse() as any,
+      'org-1'
+    );
+
+    const [, , promptBody] = aiUtilService.AIGateway.mock.calls[0];
+    expect(promptBody.messages[0].role).toBe('system');
+    expect(promptBody.messages[0].content).toMatch(/cannot change this app/i);
+    expect(promptBody.messages[0].content).toMatch(/Start building/i);
+  });
+
+  it('sends prior conversation history along with the new question', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+
+    conversationRepo.findById.mockResolvedValue(buildLearnConversation());
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'm1', messageType: 'user', content: 'What queries exist?' },
+      { id: 'm2', messageType: 'ai', content: 'One: list_orders.' },
+    ]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-2' }).mockResolvedValueOnce({ id: 'ai-msg-2' });
+
+    async function* chunks() {
+      yield 'ok';
+    }
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+
+    await service.sendUserDocsMessage(
+      { conversationId: 'conv-1', content: 'Which page uses it?' },
+      buildMockResponse() as any,
+      'org-1'
+    );
+
+    const [, , promptBody] = aiUtilService.AIGateway.mock.calls[0];
+    expect(promptBody.messages.slice(2)).toEqual([
+      { role: 'user', content: 'What queries exist?' },
+      { role: 'assistant', content: 'One: list_orders.' },
+      { role: 'user', content: 'Which page uses it?' },
+    ]);
+  });
+
+  it('surfaces an LLM failure as an SSE error the user can resend after, with no retry', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+
+    conversationRepo.findById.mockResolvedValue(buildLearnConversation());
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' });
+    aiUtilService.AIGateway.mockRejectedValue(new Error('LocalAI unreachable'));
+
+    const response = buildMockResponse();
+
+    await service.sendUserDocsMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'org-1');
+
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'error', { message: 'LocalAI unreachable' });
+    expect(aiUtilService.AIGateway).toHaveBeenCalledTimes(1);
+    // The user's message only — no AI reply is persisted for a failed answer.
+    expect(messageRepo.createOne).toHaveBeenCalledTimes(1);
+    expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces an inventory-assembly failure the same way, rather than answering ungrounded', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, appInventoryService } = buildService();
+
+    conversationRepo.findById.mockResolvedValue(buildLearnConversation());
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' });
+    appInventoryService.assemble.mockRejectedValue(new Error('Could not read the app'));
+
+    const response = buildMockResponse();
+
+    await service.sendUserDocsMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'org-1');
+
+    expect(aiUtilService.AIGateway).not.toHaveBeenCalled();
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'error', { message: 'Could not read the app' });
+  });
+
+  it('refuses a Generate conversation before writing any SSE header', async () => {
+    const { service, conversationRepo, messageRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
+
+    const response = buildMockResponse();
+
+    await expect(
+      service.sendUserDocsMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'org-1')
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(response.setHeader).not.toHaveBeenCalled();
+    expect(messageRepo.createOne).not.toHaveBeenCalled();
+  });
+
+  it('requires conversationId and content', async () => {
+    const { service } = buildService();
+
+    await expect(
+      service.sendUserDocsMessage({ conversationId: '', content: 'Hi' } as any, buildMockResponse() as any, 'org-1')
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.sendUserDocsMessage({ conversationId: 'conv-1', content: '' } as any, buildMockResponse() as any, 'org-1')
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('404s on an unknown conversation', async () => {
+    const { service, conversationRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue(null);
+
+    await expect(
+      service.sendUserDocsMessage({ conversationId: 'nope', content: 'Hi' }, buildMockResponse() as any, 'org-1')
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+/** @group platform */
+describe('AiService — Generate-only actions are unreachable from a Learn conversation', () => {
+  const learnConversation = { id: 'conv-1', appId: 'app-1', conversationType: 'learn' };
+
+  it('refuses approvePrd, without opening an SSE stream or generating a plan', async () => {
+    const { service, conversationRepo, aiUtilService, stepRepository } = buildService();
+    conversationRepo.findById.mockResolvedValue(learnConversation);
+
+    const response = buildMockResponse();
+
+    await expect(service.approvePrd('conv-1', 'some PRD', 'org-1', response as any)).rejects.toBeInstanceOf(
+      BadRequestException
+    );
+    expect(response.setHeader).not.toHaveBeenCalled();
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(stepRepository.createOne).not.toHaveBeenCalled();
+  });
+
+  it('refuses rewindStep, undoing nothing', async () => {
+    const { service, conversationRepo, agentsService, stepRepository } = buildService();
+    conversationRepo.findById.mockResolvedValue(learnConversation);
+
+    await expect(service.rewindStep('conv-1', 'step-1', 'org-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(stepRepository.findById).not.toHaveBeenCalled();
+    expect(agentsService.undoArtifact).not.toHaveBeenCalled();
+  });
+
+  it('refuses sendUserMessage, so a PRD is never proposed in a thread that could not approve it', async () => {
+    const { service, conversationRepo, aiUtilService, messageRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue(learnConversation);
+
+    await expect(
+      service.sendUserMessage({ conversationId: 'conv-1', content: 'Build a CRM' }, buildMockResponse() as any, 'org-1')
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(aiUtilService.AIGateway).not.toHaveBeenCalled();
+    expect(messageRepo.createOne).not.toHaveBeenCalled();
+  });
+});
+
+/** @group platform */
+describe('AiService.regenerateAiMessage — Learn conversations', () => {
+  it('regenerates a Learn answer against the Learn prompt and a re-assembled inventory, not the PRD prompt', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, appInventoryService } = buildService();
+
+    const question = { id: 'user-msg-1', messageType: 'user', content: 'What pages do I have?', parentId: null };
+    const staleAnswer = { id: 'ai-msg-1', messageType: 'ai', content: 'Two.', parentId: 'user-msg-1' };
+
+    messageRepo.findMessageById.mockResolvedValue(question);
+    messageRepo.findLatestByConversationId.mockResolvedValue([question, staleAnswer]);
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'learn' });
+    appInventoryService.assemble.mockResolvedValue('App: CRM');
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({ text: 'Two: Home and Orders.' });
+    messageRepo.createOne.mockResolvedValue({ id: 'ai-msg-2', isLatest: true });
+
+    const result = await service.regenerateAiMessage('user-msg-1', 'org-1');
+
+    const [, , promptBody] = aiUtilService.AIGatewayGenerate.mock.calls[0];
+    expect(promptBody.messages[0].content).toMatch(/cannot change this app/i);
+    expect(promptBody.messages[1].content).toContain('App: CRM');
+    expect(promptBody.messages.slice(2)).toEqual([{ role: 'user', content: 'What pages do I have?' }]);
+
+    expect(messageRepo.updateOne).toHaveBeenCalledWith('ai-msg-1', { isLatest: false });
+    expect(result).toMatchObject({ id: 'ai-msg-2' });
+  });
+});
+
+/** @group platform */
+describe('AiService.promoteConversation', () => {
+  const learnConversation = { id: 'learn-1', appId: 'app-1', userId: 'user-1', conversationType: 'learn' };
+  const question = { id: 'q-1', messageType: 'user', content: 'How do orders get listed?', parentId: null };
+  const answer = { id: 'a-1', messageType: 'ai', content: 'Through the list_orders query.', parentId: 'q-1' };
+
+  const primePromote = () => {
+    const built = buildService();
+    built.conversationRepo.findById.mockResolvedValue(learnConversation);
+    built.messageRepo.findLatestByConversationId.mockResolvedValue([question, answer]);
+    built.aiUtilService.createNewConversation.mockResolvedValue({
+      id: 'generate-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+      metadata: { handoff: true },
+    });
+    built.messageRepo.createOne.mockResolvedValue({ id: 'seed-1', messageType: 'user' });
+    return built;
+  };
+
+  it('creates a NEW Generate conversation and never mutates the Learn one', async () => {
+    const { service, aiUtilService, conversationRepo } = primePromote();
+
+    const result = await service.promoteConversation('learn-1', 'a-1', 'user-1');
+
+    expect(aiUtilService.createNewConversation).toHaveBeenCalledWith('user-1', 'app-1', 'generate', undefined, true);
+    // The only conversation row updated is the new Generate one (its promotedFrom metadata) —
+    // the Learn conversation is left exactly as it was (ADR-0012).
+    expect(conversationRepo.updateOne).toHaveBeenCalledTimes(1);
+    expect(conversationRepo.updateOne).toHaveBeenCalledWith('generate-1', {
+      metadata: { handoff: true, promotedFromConversationId: 'learn-1' },
+    });
+    expect(result).toMatchObject({ id: 'generate-1', conversationType: 'generate' });
+  });
+
+  it('seeds the new conversation with the triggering Q&A only, not the whole Learn history', async () => {
+    const { service, messageRepo } = primePromote();
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'old-q', messageType: 'user', content: 'Unrelated earlier question' },
+      { id: 'old-a', messageType: 'ai', content: 'Unrelated earlier answer', parentId: 'old-q' },
+      question,
+      answer,
+    ]);
+
+    const result = await service.promoteConversation('learn-1', 'a-1', 'user-1');
+
+    expect(messageRepo.createOne).toHaveBeenCalledTimes(1);
+    const seed = messageRepo.createOne.mock.calls[0][0];
+    expect(seed).toMatchObject({ aiConversationId: 'generate-1', messageType: 'user', isLatest: true });
+    expect(seed.content).toContain('How do orders get listed?');
+    expect(seed.content).toContain('Through the list_orders query.');
+    expect(seed.content).not.toContain('Unrelated earlier');
+    expect(result.messages).toEqual([{ id: 'seed-1', messageType: 'user' }]);
+  });
+
+  it('promotes the latest answer when no messageId is given', async () => {
+    const { service, messageRepo } = primePromote();
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      question,
+      answer,
+      { id: 'q-2', messageType: 'user', content: 'And the totals?' },
+      { id: 'a-2', messageType: 'ai', content: 'Computed in the table.', parentId: 'q-2' },
+    ]);
+
+    await service.promoteConversation('learn-1', undefined, 'user-1');
+
+    expect(messageRepo.createOne.mock.calls[0][0].content).toContain('Computed in the table.');
+  });
+
+  it('refuses to promote a Generate conversation', async () => {
+    const { service, conversationRepo, aiUtilService } = primePromote();
+    conversationRepo.findById.mockResolvedValue({ ...learnConversation, conversationType: 'generate' });
+
+    await expect(service.promoteConversation('learn-1', 'a-1', 'user-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(aiUtilService.createNewConversation).not.toHaveBeenCalled();
+  });
+
+  it("404s on another user's conversation", async () => {
+    const { service, aiUtilService } = primePromote();
+
+    await expect(service.promoteConversation('learn-1', 'a-1', 'someone-else')).rejects.toBeInstanceOf(
+      NotFoundException
+    );
+    expect(aiUtilService.createNewConversation).not.toHaveBeenCalled();
+  });
+
+  it('refuses when there is no answer to promote', async () => {
+    const { service, messageRepo, aiUtilService } = primePromote();
+    messageRepo.findLatestByConversationId.mockResolvedValue([question]);
+
+    await expect(service.promoteConversation('learn-1', undefined, 'user-1')).rejects.toBeInstanceOf(
+      BadRequestException
+    );
+    expect(aiUtilService.createNewConversation).not.toHaveBeenCalled();
+  });
+});
+
+/** @group platform */
+describe('AiService conversation types', () => {
+  it('creates and lists both generate and learn conversations', async () => {
+    const { service, aiUtilService } = buildService();
+
+    await service.createConversation('user-1', 'app-1', 'learn', 'org-1');
+    expect(aiUtilService.createNewConversation).toHaveBeenCalledWith('user-1', 'app-1', 'learn', undefined, undefined);
+
+    await service.listConversations('app-1', 'user-1', 'learn');
+    expect(aiUtilService.getConversationsList).toHaveBeenCalledWith('app-1', 'user-1', 'learn');
+
+    await service.createConversation('user-1', 'app-1', 'generate', 'org-1');
+    expect(aiUtilService.createNewConversation).toHaveBeenCalledWith(
+      'user-1',
+      'app-1',
+      'generate',
+      undefined,
+      undefined
+    );
+  });
+
+  it('defaults an unspecified type to generate', async () => {
+    const { service, aiUtilService } = buildService();
+
+    await service.createConversation('user-1', 'app-1', undefined, 'org-1');
+
+    expect(aiUtilService.createNewConversation).toHaveBeenCalledWith(
+      'user-1',
+      'app-1',
+      'generate',
+      undefined,
+      undefined
+    );
+  });
+
+  it('rejects an unsupported conversation type instead of persisting an unlistable row', async () => {
+    const { service, aiUtilService } = buildService();
+
+    await expect(service.createConversation('user-1', 'app-1', 'docs', 'org-1')).rejects.toBeInstanceOf(
+      BadRequestException
+    );
+    await expect(service.listConversations('app-1', 'user-1', 'docs')).rejects.toBeInstanceOf(BadRequestException);
+    expect(aiUtilService.createNewConversation).not.toHaveBeenCalled();
   });
 });

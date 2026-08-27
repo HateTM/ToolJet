@@ -3,6 +3,7 @@ export enum FEATURE_KEY {
   FETCH_ZERO_STATE = 'fetchZeroState',
   SEND_USER_MESSAGE = 'sendUserMessage',
   SEND_DOCS_MESSAGE = 'sendDocsMessage',
+  PROMOTE_CONVERSATION = 'promoteConversation',
   APPROVE_PRD = 'approvePrd',
   REWIND_STEP = 'rewindStep',
   REGENERATE_MESSAGE = 'regenerateMessage',
