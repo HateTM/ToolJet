@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
+import { ErrorContext, Suggestion } from '../types';
 
 export interface IAiService {
   fetchZeroStateConfig(firstName: string): Promise<
@@ -39,6 +40,10 @@ export interface IAiService {
   regenerateAiMessage(parentMessageId: string, organizationId: string): Promise<AiConversationMessage | any>;
 
   voteAiMessage(messageId: string, voteType: string, userId: string): Promise<any>;
+
+  // One-shot `Fix with AI` request (ADR-0014): takes an `Error context` for a single failing
+  // component property, returns one `Suggestion`. Touches no conversation.
+  fixWithAi(body: ErrorContext, organizationId: string): Promise<Suggestion>;
 
   getCreditsBalance(organizationId: string): Promise<
     | {

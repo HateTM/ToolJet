@@ -12,6 +12,7 @@ interface Features {
   [FEATURE_KEY.REWIND_STEP]: FeatureConfig;
   [FEATURE_KEY.REGENERATE_MESSAGE]: FeatureConfig;
   [FEATURE_KEY.VOTE_MESSAGE]: FeatureConfig;
+  [FEATURE_KEY.FIX_WITH_AI]: FeatureConfig;
   [FEATURE_KEY.GET_CREDITS_BALANCE]: FeatureConfig;
   [FEATURE_KEY.LIST_CONVERSATIONS]: FeatureConfig;
   [FEATURE_KEY.CREATE_CONVERSATION]: FeatureConfig;
@@ -24,4 +25,24 @@ interface Features {
 
 export interface FeaturesConfig {
   [MODULES.AI]: Features;
+}
+
+/**
+ * CONTEXT.md's `Error context`: everything a `Fix with AI` request carries about one failing
+ * component property. Only the expression and the error are required — they are what make the
+ * fix determinable; the rest is labelling that improves the answer when the client has it.
+ */
+export interface ErrorContext {
+  expression: string;
+  errorMessage: string;
+  componentName?: string;
+  componentType?: string;
+  propertyName?: string;
+  fallbackValue?: any;
+}
+
+/** CONTEXT.md's `Suggestion`: the single proposed replacement one request produces. */
+export interface Suggestion {
+  fixedValue: string;
+  explanation: string;
 }

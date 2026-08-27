@@ -433,6 +433,11 @@ const PreviewContainer = ({
         componentDefinition?.component?.displayName ?? componentDefinition?.component?.component ?? componentName,
       errorPropertyDisplayName: fieldMeta?.displayName,
       customErrMessage: errorMessage?.message,
+      // The field's raw source text is the thing being fixed. `errorData` only carries the
+      // *resolved* value (see setError above), which is the binding's output rather than the
+      // binding itself, so the expression has to come from here.
+      currentValue,
+      componentName,
     });
   };
 

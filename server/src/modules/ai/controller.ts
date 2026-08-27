@@ -63,6 +63,14 @@ export class AiController implements IAiController {
     return await this.aiService.voteAiMessage(messageId, voteType, user.id);
   }
 
+  // Not a conversation endpoint (ADR-0014): one failing property expression in, one
+  // Suggestion out, nothing persisted — so it takes no conversationId and isn't streamed.
+  @InitFeature(FEATURE_KEY.FIX_WITH_AI)
+  @Post('/fix-with-ai')
+  async fixWithAi(@User() user, @Body() body) {
+    return await this.aiService.fixWithAi(body, user.organizationId);
+  }
+
   @InitFeature(FEATURE_KEY.GET_CREDITS_BALANCE)
   @Get('/get-credits-balance')
   async getCreditsBalance(@User() user) {
