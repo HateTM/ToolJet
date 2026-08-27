@@ -326,6 +326,18 @@ describe('AiService.approvePrd', () => {
     columns: [{ column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true }],
   });
 
+  // The row generateStepPlan persists per proposed step — the same seven fields recur in
+  // every multi-step test's stepRepository.createOne mocks.
+  const pendingStep = (id: string, order: number, type: string, description: string) => ({
+    id,
+    conversationId: 'conv-1',
+    messageId: 'ai-msg-1',
+    order,
+    type,
+    description,
+    status: 'pending',
+  });
+
   it('generates a step plan, persists Steps in order, and executes a single CreateTable step end to end', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
@@ -1361,7 +1373,10 @@ describe('AiService.approvePrd', () => {
     );
   });
 
-  it('rejects a Form step whose pageId points at a non-Page artifact, then succeeds once the retry references the real Page', async () => {
+  // Table's and Button's specs above already cover a pageId matching nothing at all; this one
+  // covers the harder case #6's check exists for — a pageId that does match a prior component,
+  // just not a Page.
+  it('rejects a Form step whose pageId names another widget rather than the Page it sits on, then succeeds once the retry references the real Page', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
 
@@ -1374,15 +1389,18 @@ describe('AiService.approvePrd', () => {
       planToolCall([
         { type: 'CreateTable', description: 'Create a customers table' },
         { type: 'CreateComponent', description: 'Create the Customers page' },
+        { type: 'CreateComponent', description: 'Add a Save button' },
         { type: 'CreateComponent', description: 'Add a form to create customers' },
       ])
     )
       .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
-      // Attempt 1: pageId is the *table's* artifact id — a real id from this plan, just not a
-      // Page. Form is in PAGE_WIDGET_TYPES, so it gets the same pageId check Table does.
+      .mockResolvedValueOnce(componentToolCall({ type: 'Button', pageId: 'page-1', text: 'Save' }))
+      // Attempt 1: pageId names the Button — a real id, from a real CreateComponent step, that
+      // simply isn't a Page. This is the case the id-matching alone can't catch: only the
+      // "a Page artifact has no pageId of its own" discriminator rejects it.
       .mockResolvedValueOnce(
-        componentToolCall({ type: 'Form', pageId: 'tjdb-uuid', tableId: 'tjdb-uuid', title: 'New customer' })
+        componentToolCall({ type: 'Form', pageId: 'button-1', tableId: 'tjdb-uuid', title: 'New customer' })
       )
       // Attempt 2 (retry): the real Page.
       .mockResolvedValueOnce(
@@ -1390,40 +1408,23 @@ describe('AiService.approvePrd', () => {
       );
 
     stepRepository.createOne
-      .mockResolvedValueOnce({
-        id: 'step-1',
-        conversationId: 'conv-1',
-        messageId: 'ai-msg-1',
-        order: 0,
-        type: 'CreateTable',
-        description: 'Create a customers table',
-        status: 'pending',
-      })
-      .mockResolvedValueOnce({
-        id: 'step-2',
-        conversationId: 'conv-1',
-        messageId: 'ai-msg-1',
-        order: 1,
-        type: 'CreateComponent',
-        description: 'Create the Customers page',
-        status: 'pending',
-      })
-      .mockResolvedValueOnce({
-        id: 'step-3',
-        conversationId: 'conv-1',
-        messageId: 'ai-msg-1',
-        order: 2,
-        type: 'CreateComponent',
-        description: 'Add a form to create customers',
-        status: 'pending',
-      });
+      .mockResolvedValueOnce(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'))
+      .mockResolvedValueOnce(pendingStep('step-2', 1, 'CreateComponent', 'Create the Customers page'))
+      .mockResolvedValueOnce(pendingStep('step-3', 2, 'CreateComponent', 'Add a Save button'))
+      .mockResolvedValueOnce(pendingStep('step-4', 3, 'CreateComponent', 'Add a form to create customers'));
 
     agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
-    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Customers' }).mockResolvedValueOnce({
-      id: 'form-1',
-      pageId: 'page-1',
-      type: 'Form',
-    });
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Customers' })
+      .mockResolvedValueOnce({ id: 'button-1', pageId: 'page-1', type: 'Button' })
+      // createFormComponent's real return shape: the widget plus its table/query wiring.
+      .mockResolvedValueOnce({
+        id: 'form-1',
+        pageId: 'page-1',
+        type: 'Form',
+        tableId: 'tjdb-uuid',
+        queryId: 'query-1',
+        queryName: 'create_customers',
+      });
 
     artifactRepository.createOne
       .mockResolvedValueOnce({
@@ -1431,34 +1432,41 @@ describe('AiService.approvePrd', () => {
         content: { id: 'tjdb-uuid', table_name: 'customers', columns: [] },
         identifier: 'customers',
       })
+      // The Page's content carries no pageId of its own; the Button's does — that difference
+      // is the whole basis of the check under test.
       .mockResolvedValueOnce({ id: 'artifact-2', content: { id: 'page-1', name: 'Customers' }, identifier: 'page-1' })
       .mockResolvedValueOnce({
         id: 'artifact-3',
+        content: { id: 'button-1', pageId: 'page-1', type: 'Button' },
+        identifier: 'button-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
         content: { id: 'form-1', pageId: 'page-1', type: 'Form' },
         identifier: 'form-1',
       });
 
     await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
 
-    // The rejected attempt never reached AgentsService — no Form bound to a table id as if it
-    // were a page ever got persisted.
-    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(2);
+    // Three calls: the Page, the Button, and the Form's successful (second) attempt — the
+    // Form-nested-inside-a-Button attempt never reached AgentsService.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(3);
     expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(
-      2,
+      3,
       'version-1',
       'org-1',
       'Form',
       expect.objectContaining({ pageId: 'page-1' })
     );
     expect(stepRepository.updateOne).toHaveBeenCalledWith(
-      'step-3',
+      'step-4',
       expect.objectContaining({
         attempts: 1,
-        errorMessage: expect.stringContaining('pageId "tjdb-uuid" does not match any Page'),
+        errorMessage: expect.stringContaining('pageId "button-1" does not match any Page'),
       })
     );
     expect(stepRepository.updateOne).toHaveBeenCalledWith(
-      'step-3',
+      'step-4',
       expect.objectContaining({ status: 'succeeded', attempts: 2 })
     );
   });
