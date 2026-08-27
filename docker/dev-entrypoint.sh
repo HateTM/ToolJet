@@ -71,5 +71,13 @@ else
   npm run db:setup
 fi
 
+# The server requires @tooljet/plugins/dist/server on boot, which the `plugins`
+# container builds into the shared ./plugins bind mount. On a fresh checkout that
+# build has not finished yet when we get here.
+if [ -x /app/wait-for-plugins.sh ]; then
+  echo "Waiting for plugins..."
+  /app/wait-for-plugins.sh
+fi
+
 echo "Starting server..."
 exec "$@"

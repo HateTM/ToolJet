@@ -33,4 +33,8 @@ COPY ./server/ ./server/
 COPY ./docker/dev-entrypoint.sh ./server/dev-entrypoint.sh
 RUN chmod +x ./server/dev-entrypoint.sh
 
+# Kept at /app so the ./plugins bind mount cannot shadow it.
+COPY ./docker/wait-for-plugins.sh /app/wait-for-plugins.sh
+RUN chmod +x /app/wait-for-plugins.sh
+
 ENTRYPOINT ["./server/dev-entrypoint.sh"]

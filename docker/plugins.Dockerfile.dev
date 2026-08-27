@@ -11,7 +11,24 @@ COPY ./package.json ./package.json
 # Fix for heap limit allocation issue
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Build plugins
+# Install plugins. packages/ has to be present before `npm install`: every
+# connector is a `file:packages/<name>` dependency, so npm reads their
+# package.json files while building the tree.
+#
+# What lands in /app/plugins/node_modules here is what seeds the
+# `plugins_node_modules` volume that docker-compose mounts over that path in both
+# `plugins` and `server` — which is how those containers get a node_modules built
+# against this image's glibc instead of whatever the host happens to have.
 COPY ./plugins/package.json ./plugins/package-lock.json ./plugins/
+COPY ./plugins/packages/ ./plugins/packages/
 RUN npm --prefix plugins install
 COPY ./plugins/ ./plugins/
+
+# Kept outside /app/plugins so the ./plugins bind mount cannot shadow it.
+# The actual build runs from here at container start, not at image build time:
+# the bind mount hides anything we would write into /app/plugins now.
+COPY ./docker/plugins-entrypoint.sh /app/plugins-entrypoint.sh
+RUN chmod +x /app/plugins-entrypoint.sh
+
+ENTRYPOINT ["/app/plugins-entrypoint.sh"]
+CMD ["npm", "run", "--prefix", "plugins", "start"]

@@ -1,9 +1,28 @@
 import { ConnectionTestResult, QueryService, QueryResult, QueryError, isEmpty } from '@tooljet-plugins/common';
 import { SourceOptions, QueryOptions } from './types';
 
-// ibm_db is a native C++ addon; CommonJS require avoids ESM interop issues.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const ibmdb = require('ibm_db');
+// ibm_db is a native C++ addon whose bundled clidriver does not load on every
+// platform we ship (e.g. it needs a newer glibc than debian bullseye provides).
+// The server eagerly imports every connector through @tooljet/plugins/dist/server,
+// so a top-level require here would take down server boot for everyone, DB2 user
+// or not. Resolve it lazily instead, and surface the load failure as a normal
+// query error on the DB2 data source only.
+let ibmdbModule: any;
+
+function getIbmdb(): any {
+  if (ibmdbModule) return ibmdbModule;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    ibmdbModule = require('ibm_db');
+  } catch (err: any) {
+    throw new QueryError(
+      'IBM DB2 driver could not be loaded',
+      err?.message || 'The ibm_db native driver is not available on this platform',
+      {}
+    );
+  }
+  return ibmdbModule;
+}
 
 export default class Db2QueryService implements QueryService {
   async run(
@@ -64,6 +83,7 @@ export default class Db2QueryService implements QueryService {
   }
 
   private openConnection(sourceOptions: SourceOptions): Promise<any> {
+    const ibmdb = getIbmdb();
     const connStr = this.buildConnectionString(sourceOptions);
     return new Promise((resolve, reject) => {
       ibmdb.open(connStr, (err: any, conn: any) => {

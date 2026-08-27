@@ -21,6 +21,11 @@ COPY ./frontend/package.json ./frontend/package-lock.json ./frontend/
 RUN npm --prefix frontend install
 COPY ./frontend/ ./frontend/
 
+# Kept at /app so the ./plugins bind mount cannot shadow it. The webpack build
+# imports @tooljet/plugins/client, which the `plugins` container generates.
+COPY ./docker/wait-for-plugins.sh /app/wait-for-plugins.sh
+RUN chmod +x /app/wait-for-plugins.sh
+
 # start app
 CMD ["npm", "--prefix", "frontend", "start"]
 
