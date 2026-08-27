@@ -303,6 +303,9 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     regeneratingMessageId,
     promotingMessageId,
     error,
+    handoffStatus,
+    handoffAppId,
+    consumeHandoffPrompt,
     fetchZeroState,
     listConversations,
     loadConversation,
@@ -331,6 +334,9 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.regeneratingMessageId,
       state.promotingMessageId,
       state.error,
+      state.handoffStatus,
+      state.handoffAppId,
+      state.consumeHandoffPrompt,
       state.fetchZeroState,
       state.listConversations,
       state.loadConversation,
@@ -351,21 +357,38 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
 
   useEffect(() => {
     if (!appId) return;
-    // ADR-0010: the homepage-prompt handoff (useAppData.js) sets this synchronously right
-    // before it opens the sidebar — this mount is its very first render, so the flag is
-    // already there. Consume it and skip this bootstrap: the handoff is already populating
-    // the store via its own createConversation/sendMessage, and racing this panel's
+    // ADR-0010: the homepage-prompt handoff (useAppData.js) moves this to 'pending'
+    // synchronously right before it opens the sidebar — this mount is its very first render,
+    // so the status is already there. Stand down while it runs and once it lands: the handoff
+    // populates the store via its own createConversation/sendMessage, and racing this panel's
     // listConversations/loadConversation against that would overwrite the in-flight prompt.
-    if (useAiBuilderStore.getState().skipConversationBootstrap) {
-      useAiBuilderStore.setState({ skipConversationBootstrap: false });
-      return;
-    }
+    //
+    // ADR-0017: 'failed' deliberately falls through to the bootstrap below. The handoff put
+    // nothing in the store, so skipping here too would leave this panel empty behind an error
+    // banner for the rest of the session — the effect only re-runs on appId/conversationType
+    // (and now handoffStatus) change. Bootstrapping instead shows whatever really does exist
+    // server-side, including a conversation the handoff created before failing on the message.
+    //
+    // Scoped to handoffAppId: unlike ADR-0010's boolean, a status isn't consumed by the mount
+    // that reads it, and this store outlives any one app — so a 'succeeded' handoff for the
+    // app the user just came from must not stop the next app's threads from loading.
+    const handoffOwnsThisApp = handoffAppId === appId;
+    if (handoffOwnsThisApp && (handoffStatus === 'pending' || handoffStatus === 'succeeded')) return;
+    const recoveringFromFailedHandoff = handoffOwnsThisApp && handoffStatus === 'failed';
     listConversations(appId, conversationType).then((existing) => {
       // Something already put us on a thread while the list was in flight — Promote is the
       // real case: it lands on a brand new Generate conversation and flips the mode, which
       // re-runs this effect. Loading "the active conversation" over it would throw away the
       // context seed the store is already showing.
-      if (useAiBuilderStore.getState().currentConversationId) return;
+      const alreadyOnAThread = useAiBuilderStore.getState().currentConversationId;
+      if (alreadyOnAThread) {
+        // Except when that thread is the wreckage of a failed handoff: createConversation
+        // succeeded and only the message failed, so we're pointed at a real conversation whose
+        // only local content is sendMessage's optimistic user bubble, which was never
+        // confirmed. Re-read it so the panel shows what the server actually stored (ADR-0017).
+        if (recoveringFromFailedHandoff) loadConversation(alreadyOnAThread);
+        return;
+      }
       const active = existing?.find((conversation) => conversation.active) || existing?.[0];
       if (active) {
         loadConversation(active.id);
@@ -377,9 +400,21 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     });
     // Re-runs when switching apps or modes — a mode switch is a different set of threads
     // (conversationType is fixed per conversation), so it needs the same bootstrap a fresh
-    // mount does. Not on every store update: this is bootstrap, not a subscription.
+    // mount does. Also on handoffStatus, which is what turns the stood-down mount above into
+    // a real bootstrap the moment a handoff fails. Not on every store update: this is
+    // bootstrap, not a subscription.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appId, conversationType]);
+  }, [appId, conversationType, handoffStatus, handoffAppId]);
+
+  // ADR-0017: a failed handoff never delivered what the user typed on the homepage, and the
+  // navigation state it came from is only cleared on success — so put it back in the composer
+  // rather than making them retype it. Read-and-clear, so it can't clobber a later edit, and
+  // scoped to the app it was typed for, so it can't land in a different app's composer.
+  useEffect(() => {
+    if (handoffStatus !== 'failed' || handoffAppId !== appId) return;
+    const prompt = consumeHandoffPrompt();
+    if (prompt) setDraft(prompt);
+  }, [appId, handoffStatus, handoffAppId, consumeHandoffPrompt]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' });
@@ -531,7 +566,10 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       )}
 
       {error && (
-        <div className="tw-flex tw-items-center tw-justify-between tw-bg-background-error-weak tw-px-3 tw-py-2 tw-text-xs tw-text-text-danger">
+        <div
+          data-cy="ai-builder-error-banner"
+          className="tw-flex tw-items-center tw-justify-between tw-bg-background-error-weak tw-px-3 tw-py-2 tw-text-xs tw-text-text-danger"
+        >
           <span>{error}</span>
           <button type="button" className="tw-border-none tw-bg-transparent tw-text-text-danger" onClick={clearError}>
             <X width="14" height="14" />

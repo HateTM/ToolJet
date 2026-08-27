@@ -38,14 +38,35 @@ const initialState = {
   regeneratingMessageId: null,
   // id of the Learn answer currently being promoted into a Generate conversation, or null.
   promotingMessageId: null,
-  // Set synchronously (via useAiBuilderStore.setState, not the async actions below) by the
-  // homepage-prompt handoff in useAppData.js, right before it opens the AI sidebar — tells
-  // AiBuilderChatPanel's own mount bootstrap (listConversations -> loadConversation) to
-  // stand down for that one mount, since the handoff is already populating this store via
-  // createConversation/sendMessage. Without this, both fire for the same appId within a few
-  // ms of each other, and loadConversation's unconditional overwrite of `messages`/
-  // `streamingMessage` can wipe the in-flight prompt/reply the handoff just started (ADR-0010).
-  skipConversationBootstrap: false,
+  // Where the homepage-prompt handoff has got to: 'idle' | 'pending' | 'succeeded' | 'failed'.
+  // Moved to 'pending' synchronously (via beginHandoff, before the sidebar opens) by
+  // useAppData.js, so AiBuilderChatPanel's mount bootstrap (listConversations ->
+  // loadConversation) already sees it on its very first render and stands down: the handoff
+  // is populating this store itself via createConversation/sendMessage, and racing the two
+  // lets loadConversation's unconditional overwrite of `messages`/`streamingMessage` wipe the
+  // in-flight prompt/reply (ADR-0010).
+  //
+  // A status rather than ADR-0010's original boolean because the panel needs to tell a handoff
+  // that is still running from one that failed: on failure it must bootstrap after all, or the
+  // panel sits empty for the rest of the session with nothing but an error banner (ADR-0017).
+  handoffStatus: 'idle',
+  // The prompt the handoff is delivering, held only until it lands. Kept on failure so the
+  // panel can put it back in the composer instead of the user having to retype it (ADR-0017).
+  handoffPrompt: null,
+  // The app the handoff belongs to. ADR-0010's boolean was consumed by the first mount that
+  // saw it, which is what kept it from leaking; a status has no such moment, and this store
+  // is a module singleton that outlives any one app. Without this, a 'succeeded' handoff for
+  // app A would still be telling the panel to stand down after an SPA switch to app B — so
+  // B's threads would never load and A's conversation would sit there instead. Every read of
+  // handoffStatus is therefore scoped to the app it was recorded for (ADR-0017).
+  handoffAppId: null,
+  // Cleared by whatever can replace it — a write that fails again, an explicit clearError, a
+  // mode switch, a new chat — but deliberately NOT by the read actions (listConversations /
+  // loadConversation / fetchZeroState). ADR-0017 made a failed handoff trigger the panel's
+  // bootstrap as its fallback, and those reads used to null this on start: the fallback would
+  // have wiped the very banner explaining why the prompt was handed back to the composer,
+  // leaving the user with an unexplained draft. A background read is not an answer to a failed
+  // write, so it no longer dismisses one.
   error: null,
 };
 
@@ -89,6 +110,14 @@ const useAiBuilderStore = create(
             state.votes = {};
             state.regeneratingMessageId = null;
             state.promotingMessageId = null;
+            // The handoff is cleared for the same reason everything above it is: this switch
+            // throws away the very thread the handoff produced, so it no longer owns the
+            // panel's bootstrap. Leaving it would keep the bootstrap gate below closed while
+            // there is nothing left in the store to show — the other mode's thread list would
+            // never load, and neither would this one on switching back (ADR-0017).
+            state.handoffStatus = 'idle';
+            state.handoffPrompt = null;
+            state.handoffAppId = null;
             state.error = null;
           },
           false,
@@ -109,12 +138,72 @@ const useAiBuilderStore = create(
             state.votes = {};
             state.regeneratingMessageId = null;
             state.promotingMessageId = null;
-            state.skipConversationBootstrap = false;
+            // The handoff is deliberately left alone here, unlike in setConversationType.
+            // This is "New chat", which starts an empty thread and fetches its own zero state
+            // — it doesn't need the panel's bootstrap, and the bootstrap effect now watches
+            // handoffStatus/handoffAppId, so clearing them would re-run it and reload the very
+            // thread the user just cleared. Leaving a spent handoff in place is harmless: both
+            // terminal states are scoped to handoffAppId, and 'failed' only ever *permits* a
+            // bootstrap while its prompt has already been consumed (ADR-0017).
             state.error = null;
           },
           false,
           'aiBuilder/resetConversation'
         );
+      },
+
+      // ADR-0017. These three are the handoff's whole lifecycle, and they're deliberately
+      // plain synchronous setters: useAppData.js has to move the status before the sidebar
+      // mounts the panel, which rules out doing it from inside an async action.
+      beginHandoff: (prompt, appId) => {
+        set(
+          (state) => {
+            state.handoffStatus = 'pending';
+            state.handoffPrompt = prompt;
+            state.handoffAppId = appId ?? null;
+          },
+          false,
+          'aiBuilder/beginHandoff'
+        );
+      },
+
+      // The prompt is dropped here, not kept: it was delivered, and it's now the first message
+      // in the thread. Leaving it would re-prefill the composer with what the user already sent.
+      finishHandoff: () => {
+        set(
+          (state) => {
+            state.handoffStatus = 'succeeded';
+            state.handoffPrompt = null;
+          },
+          false,
+          'aiBuilder/finishHandoff'
+        );
+      },
+
+      failHandoff: () => {
+        set(
+          (state) => {
+            state.handoffStatus = 'failed';
+          },
+          false,
+          'aiBuilder/failHandoff'
+        );
+      },
+
+      // Read-and-clear: the panel prefills its composer from this exactly once, so editing or
+      // sending that draft isn't undone by the next render. The status survives — it's what
+      // tells the panel's bootstrap effect that this mount still has to run after all.
+      consumeHandoffPrompt: () => {
+        const prompt = get().handoffPrompt;
+        if (prompt === null) return null;
+        set(
+          (state) => {
+            state.handoffPrompt = null;
+          },
+          false,
+          'aiBuilder/consumeHandoffPrompt'
+        );
+        return prompt;
       },
 
       clearError: () => {
@@ -131,7 +220,6 @@ const useAiBuilderStore = create(
         set(
           (state) => {
             state.isZeroStateLoading = true;
-            state.error = null;
           },
           false,
           'aiBuilder/fetchZeroState/start'
@@ -164,7 +252,6 @@ const useAiBuilderStore = create(
         set(
           (state) => {
             state.isLoadingConversations = true;
-            state.error = null;
           },
           false,
           'aiBuilder/listConversations/start'
@@ -197,7 +284,6 @@ const useAiBuilderStore = create(
         set(
           (state) => {
             state.isLoadingConversation = true;
-            state.error = null;
           },
           false,
           'aiBuilder/loadConversation/start'
@@ -281,9 +367,13 @@ const useAiBuilderStore = create(
       // response: `chunk` events append to `streamingMessage.content`, `done`
       // replaces the streaming buffer with the authoritative persisted message,
       // `error` surfaces a failure and stops "streaming".
+      // Resolves to whether the message was actually delivered (ADR-0017). It never rejects —
+      // the chat panel calls it as a fire-and-forget click handler — so callers that need to
+      // know, like the homepage-prompt handoff deciding whether the prompt is safe to drop,
+      // read this boolean instead of attaching a .catch().
       sendMessage: async ({ appId, content, conversationType = get().conversationType }) => {
         const trimmedContent = (content ?? '').trim();
-        if (!trimmedContent) return;
+        if (!trimmedContent) return false;
 
         const userMessage = {
           id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -330,7 +420,7 @@ const useAiBuilderStore = create(
               false,
               'aiBuilder/sendMessage/createConversationFailed'
             );
-            return;
+            return false;
           }
         }
 
@@ -386,6 +476,11 @@ const useAiBuilderStore = create(
           // in a freshly-assembled App inventory, not a PRD prompt) — same SSE events, so
           // everything above this line is shared between the two modes.
           await aiService.sendMessage(body, onMessage, conversationType === 'learn');
+          // An `error` SSE event ends the request normally — the stream opened, then the
+          // backend reported a failure mid-flight and onMessage recorded it. A resolved
+          // promise therefore isn't proof of delivery; the error state set during this send
+          // (cleared at its start, just above) is what settles it.
+          return !get().error;
         } catch (error) {
           set(
             (state) => {
@@ -396,6 +491,7 @@ const useAiBuilderStore = create(
             false,
             'aiBuilder/sendMessage/catch'
           );
+          return false;
         }
       },
 

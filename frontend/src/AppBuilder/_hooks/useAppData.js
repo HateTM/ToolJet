@@ -469,31 +469,51 @@ const useAppData = (
         // this one; promptSentRef, scoped to this hook instance, is the correct one-shot gate.
         if (state?.prompt && !promptSentRef.current) {
           promptSentRef.current = true;
-          // Set synchronously, before the sidebar opens and mounts AiBuilderChatPanel, so its
-          // own mount effect (listConversations -> loadConversation) sees the flag on its very
-          // first render and skips its bootstrap instead of racing this handoff (ADR-0010).
-          // `conversationType` is set alongside it because the panel's mode selector writes to
-          // the same singleton store: a homepage prompt always builds, so it must land on a
-          // Generate thread even if the user last left the panel in Learn mode.
-          useAiBuilderStore.setState({ skipConversationBootstrap: true, conversationType: 'generate' });
-          setSelectedSidebarItem('tooljetai');
-          toggleLeftSidebar(true);
-          const aiBuilderStore = useAiBuilderStore.getState();
-          aiBuilderStore
-            .createConversation({ appId: effectiveAppId, conversationType: 'generate', handoff: true })
-            .then(() => aiBuilderStore.sendMessage({ appId: effectiveAppId, content: state.prompt }))
-            .catch(() => {
-              // createConversation/sendMessage already record the failure on aiBuilderStore's
-              // own `error` state, surfaced once the sidebar renders — nothing else to do here.
-            });
-          setIsQueryPaneExpanded(false);
-          // Clear prompt from navigation state so it doesn't re-trigger on page refresh
+          // Moved to 'pending' synchronously, before the sidebar opens and mounts
+          // AiBuilderChatPanel, so its own mount effect (listConversations -> loadConversation)
+          // sees it on its very first render and stands down instead of racing this handoff
+          // (ADR-0010). `conversationType` is set alongside it because the panel's mode selector
+          // writes to the same singleton store: a homepage prompt always builds, so it must land
+          // on a Generate thread even if the user last left the panel in Learn mode.
+          useAiBuilderStore.setState({ conversationType: 'generate' });
+          useAiBuilderStore.getState().beginHandoff(state.prompt, effectiveAppId);
+          // Cleared as soon as the store is holding it, success or failure alike. ADR-0010
+          // strips it so a refresh can't re-send the prompt; ADR-0017 keeps that guard rather
+          // than making it conditional, because the failure path now recovers the prompt from
+          // the store instead. Leaving it here on failure would mean that a user who recovers
+          // the draft, edits it and sends it successfully still has the original sitting in
+          // navigation state — and their next refresh would silently create a second
+          // conversation and send it again.
           const {
             prompt: _prompt,
             taggedResources: _taggedResources,
             ...restUsrState
           } = window.history.state?.usr || {};
           window.history.replaceState({ ...window.history.state, usr: restUsrState }, '', window.location.href);
+          setSelectedSidebarItem('tooljetai');
+          toggleLeftSidebar(true);
+          const aiBuilderStore = useAiBuilderStore.getState();
+          aiBuilderStore
+            .createConversation({ appId: effectiveAppId, conversationType: 'generate', handoff: true })
+            .then(() => aiBuilderStore.sendMessage({ appId: effectiveAppId, content: state.prompt }))
+            // sendMessage reports delivery by resolving false rather than rejecting (ADR-0017),
+            // so a lost prompt has to be caught here, not only in .catch() below — which sees
+            // createConversation's rejection alone.
+            .then((delivered) => {
+              if (!delivered) {
+                aiBuilderStore.failHandoff();
+                return;
+              }
+              aiBuilderStore.finishHandoff();
+            })
+            .catch(() => {
+              // createConversation/sendMessage already recorded the failure on aiBuilderStore's
+              // own `error` state; this additionally releases the panel's bootstrap (which stood
+              // down for this mount) and hands the typed prompt back to the composer, so the
+              // user isn't left with an empty panel and no way to recover but retyping.
+              aiBuilderStore.failHandoff();
+            });
+          setIsQueryPaneExpanded(false);
         }
 
         if (initialLoadRef.current && !isPublicAccess && mode === 'edit') {
