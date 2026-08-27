@@ -20,6 +20,7 @@ export const aiService = {
   approvePrd,
   rewindStep,
   regenerateMessage,
+  promoteConversation,
 };
 
 function handleAITextResponse(response) {
@@ -98,9 +99,20 @@ async function postSSE(url, body, onMessage) {
   return fullResponse;
 }
 
+// `isDocs` picks the Learn conversation's endpoint (see AiService.sendUserDocsMessage on the
+// backend): a different prompt and an App inventory for grounding, but the same SSE event
+// contract (chunk/done/error), so callers handle both identically.
 async function sendMessage(body, onMessage, isDocs = false) {
   const url = isDocs ? `${config.apiUrl}/ai/conversation/docs-message` : `${config.apiUrl}/ai/conversation/message`;
   return postSSE(url, body, onMessage);
+}
+
+// body: { conversationId, messageId }. Starts a new Generate conversation seeded with the
+// promoted question/answer (ADR-0012) — the Learn conversation is left untouched. Not SSE:
+// there's no LLM call on this path, just conversation/message creation.
+async function promoteConversation(body) {
+  const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
+  return fetch(`${config.apiUrl}/ai/conversation/promote`, requestOptions).then(handleResponse);
 }
 
 // body: { conversationId, prd }. SSE event contract (see AiService.approvePrd on the

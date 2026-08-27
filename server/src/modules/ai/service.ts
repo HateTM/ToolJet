@@ -10,10 +10,15 @@ import { AiConversationMessageRepository } from './repositories/ai-conversation-
 import { ArtifactRepository } from './repositories/artifact.repository';
 import { StepRepository } from './repositories/step.repository';
 import { AiResponseVoteRepository } from './repositories/ai-response-vote.repository';
+import { AppInventoryService } from './services/app-inventory.service';
 import { VersionRepository } from '@modules/versions/repository';
 import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
+import { AiConversation } from '@entities/ai_conversation.entity';
 import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
+
+const CONVERSATION_TYPES = ['generate', 'learn'] as const;
+type ConversationType = (typeof CONVERSATION_TYPES)[number];
 
 // Grounds the assistant in the Generate-conversation contract (see CONTEXT.md's
 // "PRD" entry and ADR-0001): a Generate conversation only ever proposes a PRD in
@@ -24,6 +29,17 @@ const PRD_SYSTEM_PROMPT = `You are the AI Builder assistant for ToolJet, a low-c
 Your job in this conversation is to help the user turn their app idea into a clear Product Requirements Document (PRD): a structured description of the app to build — its pages, and for each page the components (Page, Table, Form, Button, Text, TextInput, Container) and any data queries it needs.
 
 Ask clarifying questions if the request is ambiguous or underspecified. Once you have enough detail, respond with a structured PRD covering the app's purpose, its pages, and the components/queries each page needs. The user can keep refining the PRD by chatting further — nothing is built until they explicitly approve it.`;
+
+// Grounds a Learn conversation (CONTEXT.md's "Learn conversation"): it answers questions
+// about the App from the freshly-assembled App inventory it's given, and it never builds.
+// The "point at Promote" instruction is what keeps a build request inside a Learn thread from
+// turning into an implicit escalation — ADR-0012 makes starting a Generate conversation an
+// explicit user action, so the assistant's only correct move is to say so.
+const LEARN_SYSTEM_PROMPT = `You are the AI Builder assistant for ToolJet, a low-code app platform, answering questions about one specific app the user has open.
+
+Answer strictly from the app inventory below — the app's pages, the components on each page, its data sources, its queries, and the summaries of what has already been built into it. It is a complete snapshot of the app's structure, so if something is not in it, it does not exist in this app; say so plainly rather than guessing. The inventory deliberately omits layout and styling details, so questions about exact positions, sizes, or colors can't be answered from it.
+
+You cannot change this app in this conversation — you have no ability to create, edit, or delete pages, components, queries, or tables here. If the user asks you to build or change something, do not attempt it and do not claim you have: tell them to use the "Start building" action on your answer, which opens a new build conversation carrying this question and answer over as context.`;
 
 // v1 step vocabulary (ADR-0002). The planner is free to propose any of these — see
 // ADR-0006 — even though only CreateTable has a real handler in this ticket.
@@ -190,8 +206,34 @@ export class AiService implements IAiService {
     private readonly artifactRepository: ArtifactRepository,
     private readonly stepRepository: StepRepository,
     private readonly versionRepository: VersionRepository,
-    private readonly aiResponseVoteRepository: AiResponseVoteRepository
+    private readonly aiResponseVoteRepository: AiResponseVoteRepository,
+    private readonly appInventoryService: AppInventoryService
   ) {}
+
+  /**
+   * Loads the conversation `conversationId` names and asserts it is of `expectedType`.
+   *
+   * Every entry point that only makes sense for one kind of conversation goes through here:
+   * `approvePrd`/`rewindStep` are Generate-only (a Learn conversation has no PRD, no Steps and
+   * no Artifacts — CONTEXT.md), and `sendUserDocsMessage`/`promoteConversation` are Learn-only.
+   * Since `conversationType` is fixed at creation and never mutated (ADR-0012), a mismatch is
+   * always a caller error rather than a state the conversation can grow out of.
+   */
+  private async loadConversationOfType(
+    conversationId: string,
+    expectedType: ConversationType
+  ): Promise<AiConversation> {
+    const conversation = await this.aiConversationRepository.findById(conversationId);
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+    if (conversation.conversationType !== expectedType) {
+      throw new BadRequestException(
+        `This action is only available in a "${expectedType}" conversation, but this one is "${conversation.conversationType}"`
+      );
+    }
+    return conversation;
+  }
 
   /**
    * Static, hardcoded landing-state content for the chat panel's empty state.
@@ -289,10 +331,10 @@ export class AiService implements IAiService {
       throw new BadRequestException('conversationId and prd are required');
     }
 
-    const conversation = await this.aiConversationRepository.findById(conversationId);
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
+    // Raised before any SSE header is written, so a Learn conversation's caller gets a real
+    // non-2xx + JSON body (which the client's `onopen` handler surfaces) rather than a stream
+    // that opens and then immediately errors.
+    const conversation = await this.loadConversationOfType(conversationId, 'generate');
 
     const conversationMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
     const prdMessage = [...conversationMessages].reverse().find((message) => message.messageType === 'ai');
@@ -366,17 +408,21 @@ export class AiService implements IAiService {
   }
 
   /**
-   * Resolves "the" AppVersion an approved plan builds into — the app's earliest-created
-   * version, matching the intent of the human-triggered pages endpoint's convention
-   * (`pages.controller.ts`: `app.appVersions[0].id`). VersionRepository.getAllVersions
+   * Resolves "the" AppVersion an AI Builder conversation is scoped to — the app's
+   * earliest-created version, matching the intent of the human-triggered pages endpoint's
+   * convention (`pages.controller.ts`: `app.appVersions[0].id`). VersionRepository.getAllVersions
    * doesn't sort its result, so sorting here (rather than trusting array order) is what
    * actually makes "the first version" deterministic — the AI Builder doesn't yet
    * distinguish draft/released versions, so this is simply the app's original version.
+   *
+   * Shared by both conversation types on purpose: the version an approved plan builds into and
+   * the version a Learn conversation's App inventory is read from have to be the same one, or
+   * the assistant would be answering questions about a version nothing was built into.
    */
   private async resolveAppVersionId(appId: string): Promise<string> {
     const versions = await this.versionRepository.getAllVersions(appId);
     if (!versions?.length) {
-      throw new Error('This app has no version to build into');
+      throw new Error('This app has no version to work with');
     }
     const sorted = [...versions].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     return sorted[0].id;
@@ -729,10 +775,10 @@ export class AiService implements IAiService {
       throw new BadRequestException('conversationId and content are required');
     }
 
-    const conversation = await this.aiConversationRepository.findById(conversationId);
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
+    // Generate-only, the mirror of sendUserDocsMessage being Learn-only: this path answers
+    // with a PRD, and a PRD in a Learn conversation could never be approved (approvePrd
+    // refuses one), so it would be a proposal with no way to act on it.
+    await this.loadConversationOfType(conversationId, 'generate');
 
     // Conversation history precedes the new user message; it's fetched before
     // persisting so the new message isn't accidentally double-counted.
@@ -779,8 +825,176 @@ export class AiService implements IAiService {
     }
   }
 
-  async sendUserDocsMessage(body, response, organizationId) {
-    throw new Error('Method not implemented.');
+  /**
+   * Shared Learn-conversation message shape, the counterpart to `buildPrdMessages`. The App
+   * inventory rides as a second system message rather than being spliced into
+   * LEARN_SYSTEM_PROMPT so the two stay separable: the prompt is a constant, the inventory is
+   * re-assembled per message (ADR-0011) and is the only part that changes as the App does.
+   */
+  private buildLearnMessages(inventory: string, priorMessages: AiConversationMessage[], trailingUserContent?: string) {
+    return [
+      { role: 'system', content: LEARN_SYSTEM_PROMPT },
+      { role: 'system', content: `App inventory (current, assembled just now):\n\n${inventory}` },
+      ...priorMessages.map((message) => ({
+        role: message.messageType === 'user' ? 'user' : 'assistant',
+        content: message.content,
+      })),
+      ...(trailingUserContent ? [{ role: 'user', content: trailingUserContent }] : []),
+    ];
+  }
+
+  /**
+   * The Learn-conversation counterpart to `sendUserMessage`: answers a question about the App
+   * instead of proposing a PRD. Same persistence and same SSE contract (`chunk`/`done`/
+   * `error`) — the chat panel renders both kinds of thread through one code path — and the
+   * same LocalAI-compatible chat endpoint via AIGateway.
+   *
+   * What differs is the grounding: a fresh `App inventory` is assembled for *this* message and
+   * passed as context (ADR-0011 — no retrieval, no embeddings, no persisted index). Assembly
+   * happens inside the try/catch, so a failure to read the App surfaces as the same chat
+   * `error` an LLM/network failure would, and the user resends manually; nothing here retries
+   * or silently degrades to an answer with no grounding.
+   */
+  async sendUserDocsMessage(
+    body: { conversationId: string; content: string; references?: any },
+    response: Response,
+    organizationId: string
+  ): Promise<any> {
+    const { conversationId, content, references } = body ?? ({} as typeof body);
+
+    if (!conversationId || !content) {
+      throw new BadRequestException('conversationId and content are required');
+    }
+
+    const conversation = await this.loadConversationOfType(conversationId, 'learn');
+
+    const priorMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+
+    const userMessage = await this.aiConversationMessageRepository.createOne({
+      aiConversationId: conversationId,
+      messageType: 'user',
+      content,
+      references: references ?? null,
+      isLatest: true,
+    });
+
+    response.setHeader('Content-Type', 'text/event-stream');
+    response.setHeader('Cache-Control', 'no-cache');
+    response.setHeader('Connection', 'keep-alive');
+
+    let fullText = '';
+
+    try {
+      const inventory = await this.assembleAppInventory(conversation.appId);
+      const messages = this.buildLearnMessages(inventory, priorMessages, content);
+
+      const result = await this.aiUtilService.AIGateway('openai', 'send-docs-message', { messages }, organizationId);
+
+      for await (const chunk of result.textStream) {
+        fullText += chunk;
+        this.aiUtilService.sendSSE(response, 'chunk', { content: chunk });
+      }
+
+      const aiMessage = await this.aiConversationMessageRepository.createOne({
+        aiConversationId: conversationId,
+        messageType: 'ai',
+        content: fullText,
+        parentId: userMessage.id,
+        isLatest: true,
+      });
+
+      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
+      response.end();
+    } catch (error) {
+      this.logger.error(
+        `[sendUserDocsMessage] conversationId=${conversationId} failed: ${error?.message}`,
+        error?.stack
+      );
+      this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Something went wrong' });
+      response.end();
+    }
+  }
+
+  private async assembleAppInventory(appId: string): Promise<string> {
+    const appVersionId = await this.resolveAppVersionId(appId);
+    return this.appInventoryService.assemble(appId, appVersionId);
+  }
+
+  /**
+   * Promotes a Learn conversation into building (ADR-0012): creates a *new* Generate
+   * conversation and seeds it with a `Context seed` — the one question and answer that
+   * triggered the promotion, not the whole Learn thread. The Learn conversation itself is not
+   * touched, keeps its `conversationType`, and stays independently accessible.
+   *
+   * `messageId` names the AI answer being promoted; its `parentId` is the question that
+   * prompted it. Omitting it promotes the conversation's latest AI answer, which is what the
+   * chat panel's action does when the user promotes from the bottom of the thread.
+   *
+   * The seed is persisted as the new conversation's first *user* message, so the Generate
+   * flow reads it as ordinary conversation history: the next message the user sends produces
+   * a PRD that already has this context, with no special-casing anywhere in `sendUserMessage`.
+   */
+  async promoteConversation(conversationId: string, messageId: string, userId: string): Promise<any> {
+    if (!conversationId) {
+      throw new BadRequestException('conversationId is required');
+    }
+
+    const conversation = await this.loadConversationOfType(conversationId, 'learn');
+    if (conversation.userId !== userId) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const answer = messageId
+      ? messages.find((message) => message.id === messageId && message.messageType === 'ai')
+      : [...messages].reverse().find((message) => message.messageType === 'ai');
+    if (!answer) {
+      throw new BadRequestException('No answer to promote in this conversation');
+    }
+
+    const question = messages.find((message) => message.id === answer.parentId);
+
+    const generateConversation = await this.aiUtilService.createNewConversation(
+      userId,
+      conversation.appId,
+      'generate',
+      undefined,
+      true
+    );
+
+    // Recorded alongside `handoff` so the originating thread stays traceable from the new one —
+    // the two conversations are otherwise unrelated rows, which is exactly ADR-0012's point.
+    const metadata = { ...(generateConversation.metadata || {}), promotedFromConversationId: conversationId };
+    await this.aiConversationRepository.updateOne(generateConversation.id, { metadata });
+    generateConversation.metadata = metadata;
+
+    const seedMessage = await this.aiConversationMessageRepository.createOne({
+      aiConversationId: generateConversation.id,
+      messageType: 'user',
+      content: this.buildContextSeed(question?.content, answer.content),
+      isLatest: true,
+    });
+
+    return { ...generateConversation, messages: [seedMessage] };
+  }
+
+  // Both halves are truncated: the seed is a condensed handoff (CONTEXT.md's "Context seed"),
+  // and a Learn answer can run long enough to dominate the PRD conversation it's seeding.
+  private buildContextSeed(question: string, answer: string): string {
+    const MAX_SEED_PART_CHARS = 1500;
+    const condense = (text: string) =>
+      (text || '').trim().length > MAX_SEED_PART_CHARS
+        ? `${(text || '').trim().slice(0, MAX_SEED_PART_CHARS)}…`
+        : (text || '').trim();
+
+    return [
+      'Context carried over from a Learn conversation about this app:',
+      '',
+      ...(question ? [`Question: ${condense(question)}`, ''] : []),
+      `Answer: ${condense(answer)}`,
+      '',
+      'I want to build on this.',
+    ].join('\n');
   }
 
   /**
@@ -798,10 +1012,7 @@ export class AiService implements IAiService {
       throw new BadRequestException('conversationId and stepId are required');
     }
 
-    const conversation = await this.aiConversationRepository.findById(conversationId);
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
+    const conversation = await this.loadConversationOfType(conversationId, 'generate');
 
     const targetStep = await this.stepRepository.findById(stepId);
     if (!targetStep || targetStep.conversationId !== conversationId) {
@@ -870,7 +1081,16 @@ export class AiService implements IAiService {
     }
 
     const priorMessages = latestMessages.slice(0, parentIndex + 1);
-    const messages = this.buildPrdMessages(priorMessages);
+    // Regenerate works identically for both conversation types, but "the same history the
+    // original reply was generated from" means a different prompt in each: a Learn reply came
+    // from the Learn prompt plus an App inventory, and regenerating it against the PRD prompt
+    // would silently turn a Q&A answer into a build proposal. The inventory is re-assembled
+    // rather than reused (ADR-0011) — the App may well have changed since the first attempt.
+    const conversation = await this.aiConversationRepository.findById(conversationId);
+    const messages =
+      conversation?.conversationType === 'learn'
+        ? this.buildLearnMessages(await this.assembleAppInventory(conversation.appId), priorMessages)
+        : this.buildPrdMessages(priorMessages);
 
     const result = await this.aiUtilService.AIGatewayGenerate(
       'openai',
@@ -901,8 +1121,27 @@ export class AiService implements IAiService {
     };
   }
 
+  /**
+   * Both conversation types are listed and created through the same pair of endpoints,
+   * separated only by `conversationType` — a Learn thread and a Generate thread for the same
+   * App are independent lists, never interleaved.
+   *
+   * The type is normalized here rather than trusted from the request: it's an enum column and
+   * a fixed-for-life property (ADR-0012), so an unrecognized value has no meaningful behaviour
+   * to fall back to — failing at the boundary beats persisting a row that no listing can find.
+   */
+  private resolveConversationType(conversationType: string): ConversationType {
+    if (!conversationType) return 'generate';
+    if (!(CONVERSATION_TYPES as readonly string[]).includes(conversationType)) {
+      throw new BadRequestException(
+        `Unsupported conversationType "${conversationType}" — supported types are: ${CONVERSATION_TYPES.join(', ')}`
+      );
+    }
+    return conversationType as ConversationType;
+  }
+
   async listConversations(appId: string, userId: string, conversationType: string): Promise<any> {
-    return this.aiUtilService.getConversationsList(appId, userId, conversationType);
+    return this.aiUtilService.getConversationsList(appId, userId, this.resolveConversationType(conversationType));
   }
 
   /**
@@ -918,7 +1157,13 @@ export class AiService implements IAiService {
     currentConversationId?: string,
     handoff?: boolean
   ): Promise<any> {
-    return this.aiUtilService.createNewConversation(userId, appId, conversationType, currentConversationId, handoff);
+    return this.aiUtilService.createNewConversation(
+      userId,
+      appId,
+      this.resolveConversationType(conversationType),
+      currentConversationId,
+      handoff
+    );
   }
 
   async getConversationById(conversationId: string, userId: string): Promise<any> {

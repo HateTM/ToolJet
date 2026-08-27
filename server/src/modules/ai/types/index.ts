@@ -7,6 +7,7 @@ interface Features {
   [FEATURE_KEY.FETCH_ZERO_STATE]: FeatureConfig;
   [FEATURE_KEY.SEND_USER_MESSAGE]: FeatureConfig;
   [FEATURE_KEY.SEND_DOCS_MESSAGE]: FeatureConfig;
+  [FEATURE_KEY.PROMOTE_CONVERSATION]: FeatureConfig;
   [FEATURE_KEY.APPROVE_PRD]: FeatureConfig;
   [FEATURE_KEY.REWIND_STEP]: FeatureConfig;
   [FEATURE_KEY.REGENERATE_MESSAGE]: FeatureConfig;

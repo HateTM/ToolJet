@@ -9,6 +9,12 @@ import { aiService } from '@/_services/ai.service';
 // authoritative, persisted AI message.
 const initialState = {
   currentConversationId: null,
+  // Which kind of thread the panel is currently on — 'generate' (build an app through the
+  // PRD → approve → build cycle) or 'learn' (ask questions about the app). Fixed per
+  // conversation on the backend (ADR-0012); here it's what the mode selector switches
+  // between, and it decides both which conversations are listed and which endpoint a
+  // message goes to.
+  conversationType: 'generate',
   conversations: [],
   messages: [],
   streamingMessage: null, // { messageType: 'ai', content: string } while a response is in flight
@@ -30,6 +36,8 @@ const initialState = {
   votes: {},
   // id of the AI message currently being regenerated, or null.
   regeneratingMessageId: null,
+  // id of the Learn answer currently being promoted into a Generate conversation, or null.
+  promotingMessageId: null,
   // Set synchronously (via useAiBuilderStore.setState, not the async actions below) by the
   // homepage-prompt handoff in useAppData.js, right before it opens the AI sidebar — tells
   // AiBuilderChatPanel's own mount bootstrap (listConversations -> loadConversation) to
@@ -60,6 +68,34 @@ const useAiBuilderStore = create(
     immer((set, get) => ({
       ...initialState,
 
+      // Switches the panel between Generate and Learn. The current thread is dropped rather
+      // than kept per-mode: a conversation belongs to exactly one type on the backend, so
+      // "the conversation I'm on" has no meaning across a mode switch — the panel bootstraps
+      // the other mode's thread list from scratch. A no-op when the mode is unchanged, so a
+      // stray re-select can't wipe an in-flight thread.
+      setConversationType: (conversationType) => {
+        if (get().conversationType === conversationType) return;
+        set(
+          (state) => {
+            state.conversationType = conversationType;
+            state.currentConversationId = null;
+            state.conversations = [];
+            state.messages = [];
+            state.streamingMessage = null;
+            state.isSending = false;
+            state.steps = [];
+            state.isApproving = false;
+            state.rewindingStepId = null;
+            state.votes = {};
+            state.regeneratingMessageId = null;
+            state.promotingMessageId = null;
+            state.error = null;
+          },
+          false,
+          'aiBuilder/setConversationType'
+        );
+      },
+
       resetConversation: () => {
         set(
           (state) => {
@@ -72,6 +108,7 @@ const useAiBuilderStore = create(
             state.rewindingStepId = null;
             state.votes = {};
             state.regeneratingMessageId = null;
+            state.promotingMessageId = null;
             state.skipConversationBootstrap = false;
             state.error = null;
           },
@@ -123,7 +160,7 @@ const useAiBuilderStore = create(
         }
       },
 
-      listConversations: async (appId, conversationType = 'generate') => {
+      listConversations: async (appId, conversationType = get().conversationType) => {
         set(
           (state) => {
             state.isLoadingConversations = true;
@@ -194,7 +231,12 @@ const useAiBuilderStore = create(
 
       // Creates a brand new conversation, or resolves the existing one for the app
       // (backend decides based on currentConversationId/handoff).
-      createConversation: async ({ appId, conversationType = 'generate', currentConversationId, handoff } = {}) => {
+      createConversation: async ({
+        appId,
+        conversationType = get().conversationType,
+        currentConversationId,
+        handoff,
+      } = {}) => {
         set(
           (state) => {
             state.isLoadingConversation = true;
@@ -239,7 +281,7 @@ const useAiBuilderStore = create(
       // response: `chunk` events append to `streamingMessage.content`, `done`
       // replaces the streaming buffer with the authoritative persisted message,
       // `error` surfaces a failure and stops "streaming".
-      sendMessage: async ({ appId, content, conversationType = 'generate' }) => {
+      sendMessage: async ({ appId, content, conversationType = get().conversationType }) => {
         const trimmedContent = (content ?? '').trim();
         if (!trimmedContent) return;
 
@@ -340,7 +382,10 @@ const useAiBuilderStore = create(
         };
 
         try {
-          await aiService.sendMessage(body, onMessage);
+          // A Learn message goes to the docs-message endpoint instead (its answer is grounded
+          // in a freshly-assembled App inventory, not a PRD prompt) — same SSE events, so
+          // everything above this line is shared between the two modes.
+          await aiService.sendMessage(body, onMessage, conversationType === 'learn');
         } catch (error) {
           set(
             (state) => {
@@ -520,6 +565,53 @@ const useAiBuilderStore = create(
             false,
             'aiBuilder/voteMessage/error'
           );
+        }
+      },
+
+      // Promotes a Learn answer into building (ADR-0012): the backend creates a *new* Generate
+      // conversation seeded with that question/answer and leaves the Learn one untouched, so
+      // this switches the panel over to the new thread — mode included. The Learn conversation
+      // stays listed under Learn and can be switched back to from the history menu.
+      promoteConversation: async (messageId) => {
+        const conversationId = get().currentConversationId;
+        if (!conversationId || !messageId) return null;
+
+        set(
+          (state) => {
+            state.promotingMessageId = messageId;
+            state.error = null;
+          },
+          false,
+          'aiBuilder/promoteConversation/start'
+        );
+
+        try {
+          const conversation = await aiService.promoteConversation({ conversationId, messageId });
+          set(
+            (state) => {
+              state.conversationType = 'generate';
+              state.currentConversationId = conversation?.id ?? null;
+              state.conversations = [];
+              state.messages = conversation?.messages || [];
+              state.votes = {};
+              state.streamingMessage = null;
+              state.steps = [];
+              state.promotingMessageId = null;
+            },
+            false,
+            'aiBuilder/promoteConversation/success'
+          );
+          return conversation;
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to start building from this answer');
+              state.promotingMessageId = null;
+            },
+            false,
+            'aiBuilder/promoteConversation/error'
+          );
+          return null;
         }
       },
 

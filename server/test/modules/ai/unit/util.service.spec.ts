@@ -18,7 +18,7 @@ jest.mock('ai', () => ({
   generateText: (...args: unknown[]) => mockGenerateText(...args),
 }));
 
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AiUtilService } from '@modules/ai/util.service';
 
 const buildMockConversationRepository = () => ({
@@ -171,14 +171,51 @@ describe('AiUtilService.sendSSE', () => {
 describe('AiUtilService.createNewConversation', () => {
   it('reactivates and returns the given conversation when currentConversationId is provided', async () => {
     const conversationRepo = buildMockConversationRepository();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1' });
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', conversationType: 'generate' });
     const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
 
     const result = await service.createNewConversation('user-1', 'app-1', 'generate', 'conv-1');
 
     expect(conversationRepo.setActive).toHaveBeenCalledWith('conv-1', 'app-1', 'user-1', 'generate');
     expect(conversationRepo.createNewConversation).not.toHaveBeenCalled();
-    expect(result).toEqual({ id: 'conv-1' });
+    expect(result).toEqual({ id: 'conv-1', conversationType: 'generate' });
+  });
+
+  it('reactivates a learn conversation the same way', async () => {
+    const conversationRepo = buildMockConversationRepository();
+    conversationRepo.findById.mockResolvedValue({ id: 'learn-1', conversationType: 'learn' });
+    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+
+    const result = await service.createNewConversation('user-1', 'app-1', 'learn', 'learn-1');
+
+    expect(conversationRepo.setActive).toHaveBeenCalledWith('learn-1', 'app-1', 'user-1', 'learn');
+    expect(result).toEqual({ id: 'learn-1', conversationType: 'learn' });
+  });
+
+  // conversationType is fixed for a conversation's whole lifetime (CONTEXT.md; ADR-0012 is built
+  // on it). Reactivating is the one path that touches an existing conversation from outside, so
+  // it's where a caller could otherwise re-label a Learn thread by continuing it as Generate.
+  it('refuses to continue a conversation under a different conversationType', async () => {
+    const conversationRepo = buildMockConversationRepository();
+    conversationRepo.findById.mockResolvedValue({ id: 'learn-1', conversationType: 'learn' });
+    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+
+    await expect(service.createNewConversation('user-1', 'app-1', 'generate', 'learn-1')).rejects.toBeInstanceOf(
+      BadRequestException
+    );
+    expect(conversationRepo.setActive).not.toHaveBeenCalled();
+    expect(conversationRepo.createNewConversation).not.toHaveBeenCalled();
+  });
+
+  it('404s when the conversation to continue does not exist', async () => {
+    const conversationRepo = buildMockConversationRepository();
+    conversationRepo.findById.mockResolvedValue(null);
+    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+
+    await expect(service.createNewConversation('user-1', 'app-1', 'generate', 'gone')).rejects.toBeInstanceOf(
+      NotFoundException
+    );
+    expect(conversationRepo.setActive).not.toHaveBeenCalled();
   });
 
   it('creates a brand new conversation when no currentConversationId is given', async () => {

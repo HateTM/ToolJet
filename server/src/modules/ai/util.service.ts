@@ -1,4 +1,4 @@
-import { Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, generateText } from 'ai';
 import { IAiUtilService } from './interfaces/IUtilService';
@@ -145,8 +145,9 @@ export class AiUtilService implements IAiUtilService {
    *  - otherwise: start a brand new conversation, deactivating whatever was
    *    previously active (see AiConversationRepository.createNewConversation).
    *
-   * `handoff` (e.g. moving from a "learn" thread into "generate") is recorded
-   * on the conversation's metadata for later tickets to key off of.
+   * `handoff` marks a Generate conversation that was started by promoting a Learn one
+   * (ADR-0012) — Promote never converts the Learn thread, it always lands here creating a new
+   * conversation, and this is what distinguishes such a thread from one started from scratch.
    */
   async createNewConversation(
     userId: string,
@@ -158,7 +159,22 @@ export class AiUtilService implements IAiUtilService {
     const type = conversationType as ConversationType;
 
     if (currentConversationId) {
+      const existing = await this.aiConversationRepository.findById(currentConversationId);
+      if (!existing) {
+        throw new NotFoundException('Conversation not found');
+      }
+      // A conversation's type is fixed for its whole lifetime (CONTEXT.md; ADR-0012 is
+      // built on it). Reactivating is the only path that touches an existing conversation
+      // from the outside, so it's where a caller could otherwise quietly re-label a Learn
+      // thread as Generate by reactivating it under the wrong type.
+      if (existing.conversationType !== type) {
+        throw new BadRequestException(
+          `Conversation is a "${existing.conversationType}" conversation and cannot be continued as "${type}"`
+        );
+      }
       await this.aiConversationRepository.setActive(currentConversationId, appId, userId, type);
+      // Re-read rather than returning `existing`: setActive is what flips `active` to true,
+      // so the row fetched before it still says otherwise.
       return this.aiConversationRepository.findById(currentConversationId);
     }
 

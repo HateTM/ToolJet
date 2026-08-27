@@ -8,6 +8,8 @@ export interface IAiController {
 
   sendUserDocsMessage(user: User, body: any, response: Response): Promise<any>;
 
+  promoteConversation(user: User, body: any): Promise<any>;
+
   approvePrd(user: User, conversationId: string, body: any, response: Response): Promise<any>;
 
   rewindStep(user: User, body: any): Promise<any>;
