@@ -217,6 +217,16 @@ describe('AgentsService.CreateComponent — Form', () => {
     { column_name: 'customer_name', data_type: 'character varying', constraints_type: { is_primary_key: false } },
     { column_name: 'quantity', data_type: 'integer', constraints_type: { is_primary_key: false } },
   ];
+  const fullTypeColumns = [
+    { column_name: 'id', data_type: 'serial', constraints_type: { is_primary_key: true } },
+    { column_name: 'title', data_type: 'character varying', constraints_type: { is_primary_key: false } },
+    { column_name: 'amount', data_type: 'integer', constraints_type: { is_primary_key: false } },
+    { column_name: 'big_amount', data_type: 'bigint', constraints_type: { is_primary_key: false } },
+    { column_name: 'ratio', data_type: 'double precision', constraints_type: { is_primary_key: false } },
+    { column_name: 'active', data_type: 'boolean', constraints_type: { is_primary_key: false } },
+    { column_name: 'created_at', data_type: 'timestamp with time zone', constraints_type: { is_primary_key: false } },
+    { column_name: 'metadata', data_type: 'jsonb', constraints_type: { is_primary_key: false } },
+  ];
 
   it('builds a create-record Form with JSONSchema fields for every non-primary-key column', async () => {
     const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
@@ -244,6 +254,49 @@ describe('AgentsService.CreateComponent — Form', () => {
     expect(Object.keys(schema.properties)).toEqual(['customer_name', 'quantity']);
     expect(schema.properties.customer_name.type).toBe('textinput');
     expect(schema.properties.quantity.type).toBe('number');
+  });
+  it('maps each TJDB column type to the matching Form field type', async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'insert_full' });
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Full types form',
+      tableId: 'table-1',
+      columns: fullTypeColumns,
+    });
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    const schemaMatch = definition.properties.JSONSchema.value.match(/\{\{ (.*) \}\}/);
+    const schema = JSON.parse(schemaMatch[1]);
+    expect(schema.properties.title.type).toBe('textinput');
+    expect(schema.properties.amount.type).toBe('number');
+    expect(schema.properties.big_amount.type).toBe('number');
+    expect(schema.properties.ratio.type).toBe('number');
+    expect(schema.properties.active.type).toBe('checkbox');
+    expect(schema.properties.created_at.type).toBe('datepicker');
+    expect(schema.properties.metadata.type).toBe('textarea');
+  });
+  it('falls back to textinput for an unknown TJDB column type', async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'insert_full' });
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Unknown type form',
+      tableId: 'table-1',
+      columns: [
+        { column_name: 'id', data_type: 'serial', constraints_type: { is_primary_key: true } },
+        { column_name: 'blob', data_type: 'unknown_type', constraints_type: { is_primary_key: false } },
+      ],
+    });
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    const schemaMatch = definition.properties.JSONSchema.value.match(/\{\{ (.*) \}\}/);
+    const schema = JSON.parse(schemaMatch[1]);
+    expect(schema.properties.blob.type).toBe('textinput');
   });
 
   it('gives the Form a valid-JS-identifier name even when the title starts with a digit ({{components.<name>.data}} is evaluated as JS)', async () => {

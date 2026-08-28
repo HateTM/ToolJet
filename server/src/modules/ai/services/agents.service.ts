@@ -11,10 +11,19 @@ import { VersionRepository } from '@modules/versions/repository';
 import { Target } from '@entities/event_handler.entity';
 import { StepType } from '@entities/step.entity';
 
-// ToolJet DB column data types that map to a numeric form field; everything else (text,
-// boolean, timestamp, jsonb) falls back to a plain text input — safe/functional, if not
-// the most precise widget for every column type.
-const NUMERIC_TJDB_TYPES = ['integer', 'bigint', 'serial', 'double precision'];
+// Maps a ToolJet DB column data type to the Form field type the widget's JSON schema
+// understands. Every TJDB type from service.ts gets a deliberate choice; the fallback
+// is a text input, never an accidental implicit fall-through.
+const TJDB_TO_FORM_FIELD_TYPE: Record<string, string> = {
+  'character varying': 'textinput',
+  integer: 'number',
+  bigint: 'number',
+  serial: 'number',
+  'double precision': 'number',
+  boolean: 'checkbox',
+  'timestamp with time zone': 'datepicker',
+  jsonb: 'textarea',
+};
 
 @Injectable()
 export class AgentsService implements IAgentsService {
@@ -276,7 +285,7 @@ export class AgentsService implements IAgentsService {
 
     const schemaProperties = writableColumns.reduce((acc: Record<string, any>, column: any) => {
       acc[column.column_name] = {
-        type: NUMERIC_TJDB_TYPES.includes(column.data_type) ? 'number' : 'textinput',
+        type: TJDB_TO_FORM_FIELD_TYPE[column.data_type] ?? 'textinput',
         label: column.column_name,
       };
       return acc;
