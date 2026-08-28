@@ -35,7 +35,18 @@
     "header": "ЗАГОЛОВОК",
     "path": "ПУТЬ",
     "query": "ЗАПРОС",
-    "requestBody": "ТЕЛО ЗАПРОСА"
+    "requestBody": "ТЕЛО ЗАПРОСА",
+    "savechanges": "Сохранить изменения",
+    "execute": "Выполнить",
+    "Build": "Собрать",
+    "remove": "Удалить",
+    "connectionVerified": "подключение проверено",
+    "page": "Страница",
+    "searchItem": "Поиск приложений в этом рабочем пространстве",
+    "workflowsSearchItem": "Поиск воркфлоу в этом рабочем пространстве",
+    "searchComponents": "Поиск компонентов",
+    "promote": "Продвинуть",
+    "release": "Выпустить"
   },
   "errorBoundary": "Что-то пошло не так.",
   "viewer": "Извините! Это приложение находится на тех.обслуживании",
@@ -87,7 +98,18 @@
     "noLoginMethodsEnabled": "Не найдено методов логина для этого рабочего пространства",
     "emailConfirmLink": "Пожалуйста, поищите письмо с подтверждением на вашей электронной почте",
     "newPassword": "Новый Пароль",
-    "passwordConfirmation": "Подтверждение Пароля"
+    "passwordConfirmation": "Подтверждение Пароля",
+    "newToTooljet": "Впервые в {{whiteLabelText}}?",
+    "newToWorkspace": "Впервые в этом рабочем пространстве?",
+    "enterWorkEmail": "Введите рабочую электронную почту",
+    "enterPassword": "Введите пароль",
+    "forgot": "Забыли?",
+    "workEmail": "Электронная почта",
+    "joinTooljet": "Присоединиться к {{whiteLabelText}}",
+    "getStartedForFree": "Начать бесплатно",
+    "passwordCharacter": "Пароль должен содержать не менее 5 символов",
+    "enterFullName": "Введите ваше полное имя",
+    "enterNewPassword": "Введите новый пароль"
   },
   "editor": {
     "fixWithAi": {
@@ -129,7 +151,13 @@
       "editVersion": "Редактировать версию",
       "deleteVersion": "Вы действительно хотите удалить эту версию ({{version}})?",
       "enterVersionName": "Введите имя версии",
-      "versionAlreadyReleased": "Версия уже выпущена. Пожалуйста, создайте новую версию или переключитесь на другую, чтобы продолжить работу."
+      "versionAlreadyReleased": "Версия уже выпущена. Пожалуйста, создайте новую версию или переключитесь на другую, чтобы продолжить работу.",
+      "saveVersion": "Сохранить версию",
+      "createDraftVersion": "Создать черновую версию",
+      "versionDescription": "Описание версии",
+      "enterVersionDescription": "Введите описание версии",
+      "versionNameHelper": "Имя версии не может содержать пробелы, спецсимволы или превышать 25 символов",
+      "versionDescriptionHelper": "Описание должно быть не более 500 символов"
     },
     "queries": "Запросы",
     "inspectComponent": "Пожалуйста, выберите компонент для инспекции",
@@ -178,7 +206,9 @@
       "transformation": {
         "transformationToolTip": "Трансформации могут быть использованы для преобразования результатов запросов. Все переменные доступны для преобразователей и поддерживают JS-библиотеки, такие как Lodash и Moment",
         "transformations": "Трансформации"
-      }
+      },
+      "runQueryOnApplicationLoad": "Выполнять этот запрос при загрузке приложения",
+      "runOnDependencyChange": "Выполнять этот запрос при изменении зависимостей"
     },
     "inspector": {
       "eventManager": {
@@ -201,7 +231,11 @@
         "component": "Компонент",
         "addHandler": "+ добавить обработчик",
         "addEventHandler": "+ добавить обработчик событий",
-        "emptyMessage": "Этот {{componentName}} не имеет ни одного обработчика"
+        "emptyMessage": "Этот {{componentName}} не имеет ни одного обработчика",
+        "debounce": "Дебаунс",
+        "addNewEvent": "Добавить новое событие",
+        "page": "Страница",
+        "addKeyValueParam": "Добавить {{parameter}}"
       }
     }
   },
@@ -249,7 +283,10 @@
           "createUser": "Создать пользователя",
           "enterFirstName": "Введите Имя",
           "enterLastName": "Введитя Фамилию",
-          "enterEmail": "Введите Почту"
+          "enterEmail": "Введите Почту",
+          "inviteUsers": "Пригласить пользователей",
+          "enterFullName": "Введите полное имя",
+          "inviteNewUsers": "Пригласить новых пользователей"
         },
         "manageGroups": {
           "permissions": {
@@ -259,7 +296,8 @@
             "addNewGroup": "Добавить новую группу",
             "enterName": "Введите имя",
             "createGroup": "Создать группу",
-            "name": "Имя"
+            "name": "Имя",
+            "updateGroup": "Обновить группу"
           },
           "permissionResources": {
             "userGroup": "Группа пользователей",
@@ -272,7 +310,15 @@
             "email": "электронная почта",
             "resource": "ресурс",
             "createUpdateDelete": "Создать/Обновить/Удалить",
-            "folder": "Папка"
+            "folder": "Папка",
+            "workflows": "Воркфлоу",
+            "addWorkflowsToGroup": "Выберите воркфлоу для добавления в группу",
+            "dataSource": "Источники данных",
+            "tooljetDatabase": "База данных ToolJet"
+          },
+          "groupOptions": {
+            "deleteGroup": "Удалить группу",
+            "duplicateGroup": "Дублировать группу"
           }
         },
         "manageSSO": {
@@ -287,7 +333,8 @@
             "loginUrl": "Ссылка на логин",
             "workspaceLogin": "Используйте эту чтобы напрямую залогиниться в рабочую область",
             "allowDefaultSso": "Разрешить стандартный SSO",
-            "ssoAuth": "Разрешить пользователям вход через стандартный SSO. Стандартная конфигурация SSO будут перезаписана."
+            "ssoAuth": "Разрешить пользователям вход через стандартный SSO. Стандартная конфигурация SSO будут перезаписана.",
+            "customLogoutUrl": "Пользовательский URL выхода"
           },
           "google": {
             "title": "Google",
@@ -332,8 +379,16 @@
               "secret": "secret"
             }
           }
+        },
+        "instanceLogout": {
+          "title": "Выход из инстанса",
+          "customLogoutUrl": {
+            "label": "Пользовательский URL выхода",
+            "helperText": "Укажите индивидуальный URL выхода для пользователей этого инстанса."
+          }
         }
-      }
+      },
+      "addNewWorkSpace": "Добавить новое рабочее пространство"
     },
     "profileSettingPage": {
       "profileSettings": "Настройки профиля",
@@ -350,7 +405,8 @@
       "newPassword": "Новый пароль",
       "confirmNewPassword": "Подтвердить новый пароль",
       "enterCurrentPassword": "Ввести текущий пароль",
-      "enterNewPassword": "Ввести новый пароль"
+      "enterNewPassword": "Ввести новый пароль",
+      "inviteUsers": "Пригласить пользователей"
     },
     "profile": "Профиль",
     "logout": "Разлогиниться"
@@ -417,7 +473,8 @@
     "templateLibraryModal": {
       "select": "Выбрать шаблон",
       "createAppfromTemplate": "Создать приложение из шаблона"
-    }
+    },
+    "nonAccessibleFolderApps": "У вас нет доступа ни к одному приложению в этой папке."
   },
   "confirmationPage": {
     "setupAccount": "Настройте свою учетную запись",
@@ -436,7 +493,8 @@
     "finishAccountSetup": "Закончить настройку учетной записи",
     "acceptInvite": "принять инвайт",
     "accountExists": "У вас уже есть учетная запись?",
-    "and": "и"
+    "and": "и",
+    "signupWithOpenid": "Зарегистрироваться с помощью"
   },
   "onBoarding": {
     "finishToolJetInstallation": "Закончить установку ToolJet",
@@ -478,7 +536,8 @@
     "others": "другие",
     "noResults": "Не найдено результатов",
     "tryAdjustingFilterMessage": "Попробуйте изменить свой поисковой запрос или фильтр чтобы найти то, что вы ищете.",
-    "clearQuery": "очистить запрос"
+    "clearQuery": "очистить запрос",
+    "integrations": "интеграции"
   },
   "widget": {
     "common": {
@@ -494,7 +553,8 @@
       "documentation": "{{componentMeta}} документация",
       "widgetNameEmptyError": "Имя виджета не может быть пустым",
       "componentNameExistsError": "Имя компонента уже существует",
-      "invalidWidgetName": "Неправильное имя виджеть. Оно должно быть уникальным и включать буквы, цифры и тире."
+      "invalidWidgetName": "Неправильное имя виджеть. Оно должно быть уникальным и включать буквы, цифры и тире.",
+      "structure": "Структура"
     },
     "commonProperties": {
       "visibility": "Видимость",
@@ -698,7 +758,8 @@
       "setColor": "Установить цвет",
       "structure": "Структура",
       "checkedValues": "Выбранные значения",
-      "expandedValues": "Расширенные значения"
+      "expandedValues": "Расширенные значения",
+      "transformation": "Трансформация"
     },
     "Table": {
       "displayName": "Таблица",
@@ -725,7 +786,12 @@
       "remove": "Удалить",
       "addButton": "+ Добавить кнопку",
       "addColumn": "+ Добавить колонку",
-      "noActionMessage": "У этой таблицы нет ни одной кнопки действий"
+      "noActionMessage": "У этой таблицы нет ни одной кнопки действий",
+      "addNewColumn": "Добавить новый столбец",
+      "horizontalAlignment": "Горизонтальное выравнивание",
+      "textAlignment": "Выравнивание текста",
+      "deciamalPlaces": "Десятичные знаки",
+      "imageFit": "Подгонка изображения"
     },
     "Button": {
       "displayName": "Кнопка",
@@ -945,7 +1011,8 @@
       "tip": "Отладчик",
       "errors": "Ошибки",
       "noErrors": "Ошибок нет",
-      "clear": "очистить"
+      "clear": "очистить",
+      "noLogs": "Логи не найдены"
     },
     "Comments": {
       "text": "Комментарии",
@@ -960,7 +1027,9 @@
       "maintenanceMode": "Режим тех.обслуживания",
       "maxWidthOfCanvas": "Максимальная ширина поверхности",
       "maxHeightOfCanvas": "Максимальная высота поверхности",
-      "backgroundColorOfCanvas": "Задний фон поверхности"
+      "backgroundColorOfCanvas": "Задний фон поверхности",
+      "appMode": "Режим приложения",
+      "exportApp": "Экспорт приложения"
     },
     "Back": {
       "text": "Назад",
@@ -982,5 +1051,74 @@
       "november": "Ноябрь",
       "december": "Декабрь"
     }
+  },
+  "zendesk": {
+    "enableReadAndWrite": "Если вы хотите, чтобы ваши приложения {{whiteLabelText}} изменяли ресурсы Zendesk, выберите доступ на чтение и запись",
+    "readDataFromResources": "Ваши приложения {{whiteLabelText}} могут только читать данные из ресурсов",
+    "readModifySheets": "Ваши приложения {{whiteLabelText}} могут читать данные из ресурсов, изменять их и многое другое."
+  },
+  "verificationSuccessPage": {
+    "workEmail": "Электронная почта",
+    "enterFullName": "Введите ваше полное имя",
+    "enterNewPassword": "Введите новый пароль",
+    "name": "Имя",
+    "password": "Пароль",
+    "acceptInvite": "Принять приглашение",
+    "successfullyVerifiedEmail": "Электронная почта успешно подтверждена",
+    "setupTooljet": "Настройка {{whiteLabelText}}"
+  },
+  "workflowsDashboard": {
+    "appCard": {
+      "run": "Запустить",
+      "openInWorkflowEditor": "Открыть в редакторе воркфлоу"
+    },
+    "blankPage": {
+      "welcomeToToolJet": "Добро пожаловать в ваше новое рабочее пространство ToolJet",
+      "getStartedCreateNewApp": "Вы можете начать с создания нового приложения или из шаблона в библиотеке ToolJet.",
+      "importApplication": "Импортировать приложение"
+    },
+    "foldersSection": {
+      "allApplications": "Все воркфлоу",
+      "folders": "Папки",
+      "createNewFolder": "+ Создать новую",
+      "noFolders": "Вы еще не создали ни одной папки. Используйте папки для организации приложений",
+      "createFolder": "Создать папку",
+      "updateFolder": "Обновить папку",
+      "editFolder": "Редактировать папку",
+      "deleteFolder": "Удалить папку",
+      "folderName": "Название папки",
+      "wishToDeleteFolder": "Вы уверены, что хотите удалить папку? Приложения внутри папки удалены не будут."
+    },
+    "header": {
+      "createNewApplication": "Создать новый воркфлоу",
+      "import": "Импорт",
+      "chooseFromTemplate": "Выбрать из шаблона"
+    },
+    "pagination": {
+      "showing": "Показано",
+      "of": "из",
+      "to": "по"
+    },
+    "noApplicationFound": "Приложения не найдены",
+    "thisFolderIsEmpty": "Эта папка пуста",
+    "deleteAppAndData": "Приложение и связанные данные будут удалены безвозвратно. Продолжить?",
+    "removeAppFromFolder": "Приложение будет удалено из этой папки. Продолжить?",
+    "change": "Изменить",
+    "templateCard": {
+      "use": "Использовать",
+      "preview": "Предпросмотр",
+      "leadGeneretion": "Генерация лидов"
+    },
+    "templateLibraryModal": {
+      "select": "Выберите шаблон",
+      "createAppfromTemplate": "Создать приложение из шаблона"
+    }
+  },
+  "notifications": {
+    "empty": "Нет уведомлений",
+    "markAllRead": "Отметить все как прочитанные",
+    "technicalDetails": "Технические детали",
+    "copy": "Копировать",
+    "copied": "Скопировано"
   }
 }

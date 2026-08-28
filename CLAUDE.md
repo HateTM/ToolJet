@@ -55,4 +55,3 @@ Example: AI Builder bug → search `server/src/modules/ai/` + `frontend/src/modu
 - Branch prefixes: `feature/<issue-id>-<name>`, `fix/<issue-id>-<name>`, `docs/<name>`, `chore/<name>`; short imperative commit subjects; `Closes #<id>` when applicable. Issues tracked via `gh issue` against `HateTM/ToolJet` (origin, not upstream), not upstream.
 - Full frontend/backend convention list: `.github/copilot-instructions.md`.
 
-Example: adding a component → check `frontend/src/_ui/`, use `tw-` classes and tokens, no new npm icon package.
