@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { User } from '@entities/user.entity';
+import { UserPermissions } from '@modules/ability/types';
 
 export interface IAiController {
   fetchZeroStateConfig(user: User): Promise<any>;
@@ -10,7 +11,7 @@ export interface IAiController {
 
   promoteConversation(user: User, body: any): Promise<any>;
 
-  approvePrd(user: User, conversationId: string, body: any, response: Response): Promise<any>;
+  approvePrd(user: User, userPermissions: UserPermissions, body: any, response: Response): Promise<any>;
 
   rewindStep(user: User, body: any): Promise<any>;
 

@@ -34,6 +34,7 @@ export class AiModule extends SubModule {
     const { AiUtilService } = await import(`${importPath}/ai/util.service`);
     const { AgentsService } = await import(`${importPath}/ai/services/agents.service`);
     const { AppInventoryService } = await import(`${importPath}/ai/services/app-inventory.service`);
+    const { DataSourceInventoryService } = await import(`${importPath}/ai/services/data-source-inventory.service`);
     const { ComponentsService } = await import(`${importPath}/apps/services/component.service`);
     const { EventsService } = await import(`${importPath}/apps/services/event.service`);
     const { PageService } = await import(`${importPath}/apps/services/page.service`);
@@ -58,6 +59,7 @@ export class AiModule extends SubModule {
         AiUtilService,
         AgentsService,
         AppInventoryService,
+        DataSourceInventoryService,
         ComponentsService,
         // ImportExportResourcesService,
         AiConversationRepository,

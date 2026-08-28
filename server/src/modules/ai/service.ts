@@ -11,12 +11,19 @@ import { ArtifactRepository } from './repositories/artifact.repository';
 import { StepRepository } from './repositories/step.repository';
 import { AiResponseVoteRepository } from './repositories/ai-response-vote.repository';
 import { AppInventoryService } from './services/app-inventory.service';
+import {
+  DataSourceInventoryService,
+  QueryableDataSource,
+  renderConnectedDataSources,
+} from './services/data-source-inventory.service';
 import { VersionRepository } from '@modules/versions/repository';
 import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
 import { AiConversation } from '@entities/ai_conversation.entity';
 import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
 import { Completion, CopilotContext, ErrorContext, Suggestion } from './types';
+import { User } from '@entities/user.entity';
+import { UserPermissions } from '@modules/ability/types';
 
 const CONVERSATION_TYPES = ['generate', 'learn'] as const;
 type ConversationType = (typeof CONVERSATION_TYPES)[number];
@@ -50,7 +57,7 @@ const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Docum
 
 Call proposeStepPlan exactly once with the ordered list of steps needed to build what the PRD describes. Each step is one of:
 - CreateTable: creates a ToolJet DB table.
-- CreateQuery: creates a data query against a ToolJet DB table.
+- CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
 
 Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.`;
@@ -171,19 +178,85 @@ const createComponentTool = tool({
   ]),
 });
 
-const CREATE_QUERY_SYSTEM_PROMPT = `You create one data query against a ToolJet DB table for this step, based on the PRD and the table(s) already created earlier in this plan (listed below).
+const CREATE_QUERY_SYSTEM_PROMPT = `You create one data query for this step, based on the PRD, the table(s) already created earlier in this plan, and the connected data sources listed below (if any).
 
-Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the real id of the ToolJet DB table to list rows from — that id must come from context below, never invented.`;
+Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the query itself:
+- source "tooljetdb" — the default. Give the real id of a ToolJet DB table created earlier in this plan to list rows from.
+- source "sql" — only when this step is meant to read from a data source the user has already connected. Give that source's real id and one SQL SELECT statement against a table that source actually has.
 
+Every id must come from the context below, never invented. Prefer ToolJet DB unless the PRD or this step clearly asks for data that lives in a connected source.`;
+
+// Discriminated on `source` rather than left as one loose object, for the same reason
+// createComponentTool is: the two branches share only a name, and a single flat schema would
+// let the model return an SQL string with a ToolJet DB table id, which is unbuildable.
 const createQueryTool = tool({
-  description: 'Create a query that lists rows from an existing ToolJet DB table.',
-  parameters: z.object({
-    name: z
-      .string()
-      .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
-    table_id: z.string().describe('id of an already-created ToolJet DB table (from context)'),
-  }),
+  description: 'Create a query against an existing ToolJet DB table, or against a connected SQL data source.',
+  parameters: z.discriminatedUnion('source', [
+    z.object({
+      source: z.literal('tooljetdb'),
+      name: z
+        .string()
+        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
+      table_id: z.string().describe('id of an already-created ToolJet DB table (from context)'),
+    }),
+    z.object({
+      source: z.literal('sql'),
+      name: z
+        .string()
+        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
+      data_source_id: z.string().describe('id of a connected data source (from the list in context)'),
+      sql: z
+        .string()
+        .describe('One SELECT statement against a table that data source has, e.g. SELECT * FROM orders LIMIT 100'),
+    }),
+  ]),
 });
+
+// Planning-time only. It is the *plan* that must not contain a CreateTable against an
+// external source (ADR-0018); a CreateQuery step has no CreateTable to propose, so telling it
+// the same thing is noise in a prompt that already carries the whole PRD.
+const NO_TABLES_IN_EXTERNAL_SOURCES =
+  'Tables can only be created in ToolJet DB — never plan a CreateTable step against one of these sources; query the tables it already has instead.';
+
+// Both the planner and every CreateQuery step are grounded in the same connected-sources
+// block, appended the same way, and neither gains anything when nothing is connected.
+const withConnectedDataSources = (
+  body: string,
+  dataSources: QueryableDataSource[],
+  { forPlanning = false }: { forPlanning?: boolean } = {}
+): string => {
+  const connectedSources = renderConnectedDataSources(dataSources);
+  if (!connectedSources) return body;
+
+  return [body, connectedSources, ...(forPlanning ? [NO_TABLES_IN_EXTERNAL_SOURCES] : [])].join('\n\n');
+};
+
+// SQL keywords that must not appear in a generated query. The tool schema and the prompt both
+// ask for one SELECT, and nothing in this flow runs the statement to find out what it really
+// is — a stored DELETE or DROP would sit in the app until a user pressed Run, and then it
+// would be their data. ADR-0019 declines to validate what a statement *means*; this only
+// checks what kind of statement it is, which is cheap and does not require running anything.
+//
+// `SELECT ... FOR UPDATE` is caught by this too. That is the intended reading: a query the
+// AI wrote to feed a Table widget has no business taking row locks.
+const WRITE_STATEMENT_KEYWORDS =
+  /\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|merge|call|do|copy|vacuum|comment)\b/i;
+
+const isSingleReadOnlyStatement = (sql: string): boolean => {
+  const stripped = (sql || '')
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .trim()
+    .replace(/;\s*$/, '')
+    .trim();
+
+  if (!stripped) return false;
+  // A second statement after the first is how a read turns into a write without the opening
+  // keyword ever changing.
+  if (stripped.includes(';')) return false;
+  if (!/^(select|with)\b/i.test(stripped)) return false;
+  return !WRITE_STATEMENT_KEYWORDS.test(stripped);
+};
 
 // Grounds a `Fix with AI` request (CONTEXT.md). The binding-syntax primer is the part that
 // does the work: the model is being handed one expression with no surrounding app context
@@ -293,6 +366,9 @@ type StepExecutionContext = {
   organizationId: string;
   appVersionId: string;
   priorResults: Array<{ type: StepType; artifact: Artifact }>;
+  // Assembled once per approval, not per step: reading it opens a real connection to each
+  // connected source, and the answer cannot change while a plan is being executed.
+  dataSources: QueryableDataSource[];
 };
 
 @Injectable()
@@ -311,7 +387,8 @@ export class AiService implements IAiService {
     private readonly stepRepository: StepRepository,
     private readonly versionRepository: VersionRepository,
     private readonly aiResponseVoteRepository: AiResponseVoteRepository,
-    private readonly appInventoryService: AppInventoryService
+    private readonly appInventoryService: AppInventoryService,
+    private readonly dataSourceInventoryService: DataSourceInventoryService
   ) {}
 
   /**
@@ -430,10 +507,17 @@ export class AiService implements IAiService {
    * AiConversationMessage is posted so the failure is visible in conversation history too,
    * not just in the SSE stream that already ended.
    */
-  async approvePrd(conversationId: string, prd: any, organizationId: string, response: Response): Promise<any> {
+  async approvePrd(
+    conversationId: string,
+    prd: any,
+    user: User,
+    userPermissions: UserPermissions,
+    response: Response
+  ): Promise<any> {
     if (!conversationId || !prd) {
       throw new BadRequestException('conversationId and prd are required');
     }
+    const organizationId = user.organizationId;
 
     // Raised before any SSE header is written, so a Learn conversation's caller gets a real
     // non-2xx + JSON body (which the client's `onopen` handler surfaces) rather than a stream
@@ -452,13 +536,14 @@ export class AiService implements IAiService {
 
     try {
       const appVersionId = await this.resolveAppVersionId(conversation.appId);
-      const steps = await this.generateStepPlan(prd, conversationId, prdMessage.id, organizationId);
+      const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
+      const steps = await this.generateStepPlan(prd, conversationId, prdMessage.id, organizationId, dataSources);
 
       this.aiUtilService.sendSSE(response, 'plan', {
         steps: steps.map((step) => ({ id: step.id, type: step.type, description: step.description })),
       });
 
-      const context: StepExecutionContext = { prd, organizationId, appVersionId, priorResults: [] };
+      const context: StepExecutionContext = { prd, organizationId, appVersionId, priorResults: [], dataSources };
 
       for (let index = 0; index < steps.length; index++) {
         const step = steps[index];
@@ -540,14 +625,15 @@ export class AiService implements IAiService {
     prd: string,
     conversationId: string,
     messageId: string,
-    organizationId: string
+    organizationId: string,
+    dataSources: QueryableDataSource[]
   ): Promise<Step[]> {
     const result = await this.aiUtilService.AIGatewayGenerate(
       'openai',
       'approve-prd-plan',
       {
         system: STEP_PLAN_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: prd }],
+        messages: [{ role: 'user', content: withConnectedDataSources(prd, dataSources, { forPlanning: true }) }],
         tools: { proposeStepPlan: proposeStepPlanTool },
         toolChoice: { type: 'tool', toolName: 'proposeStepPlan' },
       },
@@ -808,12 +894,14 @@ export class AiService implements IAiService {
     context: StepExecutionContext,
     previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
+    const stepContext = this.buildStepContextLines(step, context, previousError);
+
     const result = await this.aiUtilService.AIGatewayGenerate(
       'openai',
       'approve-prd-create-query',
       {
         system: CREATE_QUERY_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: this.buildStepContextLines(step, context, previousError) }],
+        messages: [{ role: 'user', content: withConnectedDataSources(stepContext, context.dataSources) }],
         tools: { createQuery: createQueryTool },
         toolChoice: { type: 'tool', toolName: 'createQuery' },
       },
@@ -825,15 +913,71 @@ export class AiService implements IAiService {
       throw new Error('The assistant did not produce a query definition');
     }
 
-    const args = call.args as { name: string; table_id: string };
-    const props = {
-      name: args.name,
-      options: { operation: 'list_rows', table_id: args.table_id, list_rows: { limit: 100 } },
+    const args = call.args as {
+      source?: string;
+      name: string;
+      table_id?: string;
+      data_source_id?: string;
+      sql?: string;
     };
+    const props =
+      args.source === 'sql' ? this.buildExternalQueryProps(args, context) : this.buildTooljetDbQueryProps(args);
 
     const created = await this.agentsService.CreateQuery(context.appVersionId, context.organizationId, props);
 
     return { content: created, identifier: created.name, props };
+  }
+
+  /**
+   * The default branch, and the only one that existed before ADR-0019 — which is why an
+   * absent `source` lands here rather than being rejected: a plan the model writes without
+   * naming a source is a ToolJet DB plan, exactly as it always was.
+   */
+  private buildTooljetDbQueryProps(args: { name: string; table_id?: string }) {
+    return {
+      name: args.name,
+      options: { operation: 'list_rows', table_id: args.table_id, list_rows: { limit: 100 } },
+    };
+  }
+
+  /**
+   * A query against a connected source, validated the same way `pageId` and `queryName` are
+   * in executeComponentStep: the tool schema can only ask for a string, so an id the model
+   * invented has to be caught here. Failing is retryable — the model picks the id per attempt,
+   * and the error names what it was actually offered so the next attempt can correct itself.
+   *
+   * There is no equivalent check on the SQL itself. Nothing in this flow runs the query, so a
+   * table name that doesn't exist would not surface here either way; showing the model the
+   * source's real tables (renderConnectedDataSources) is what keeps the statement honest.
+   */
+  private buildExternalQueryProps(
+    args: { name: string; data_source_id?: string; sql?: string },
+    context: StepExecutionContext
+  ) {
+    if (!args.sql?.trim()) {
+      throw new Error('An external data source query needs a SQL statement, but none was given');
+    }
+    if (!isSingleReadOnlyStatement(args.sql)) {
+      throw new Error(
+        `The query must be a single read-only SELECT statement against ${'`'}${args.data_source_id}${'`'}, but it was: ${args.sql}`
+      );
+    }
+
+    const dataSource = context.dataSources.find((candidate) => candidate.id === args.data_source_id);
+    if (!dataSource) {
+      const available = context.dataSources.length
+        ? context.dataSources.map((candidate) => `${candidate.name} (${candidate.id})`).join(', ')
+        : 'none — this app has no connected data source, so the query must target ToolJet DB';
+      throw new Error(
+        `data_source_id "${args.data_source_id}" does not match any connected data source. Available: ${available}`
+      );
+    }
+
+    return {
+      name: args.name,
+      dataSourceId: dataSource.id,
+      options: { mode: 'sql', query: args.sql },
+    };
   }
 
   /**

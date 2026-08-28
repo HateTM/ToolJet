@@ -2,6 +2,14 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AiService } from '@modules/ai/service';
 
+// approvePrd takes the acting user, not just their organization id: assembling the connected
+// data sources (ADR-0019) goes through the same connector plumbing a query run does, which
+// resolves the source's options against the user.
+const USER = { id: 'user-1', organizationId: 'org-1' } as any;
+// The connected sources are read through the same permission-filtered listing the data source
+// panel uses, so approvePrd carries the caller's permissions as well as their identity.
+const PERMISSIONS = { isAdmin: true } as any;
+
 const buildMockAiUtilService = () => ({
   AIGateway: jest.fn(),
   AIGatewayGenerate: jest.fn(),
@@ -20,6 +28,12 @@ const buildMockConversationRepository = () => ({
 
 const buildMockAppInventoryService = () => ({
   assemble: jest.fn().mockResolvedValue('App: Test app'),
+});
+
+// Defaults to "nothing external connected", which is every pre-ADR-0019 test's world: the
+// plan targets ToolJet DB and no data-source block reaches any prompt.
+const buildMockDataSourceInventoryService = () => ({
+  listQueryableSources: jest.fn().mockResolvedValue([]),
 });
 
 const buildMockMessageRepository = () => ({
@@ -68,7 +82,7 @@ const buildMockResponse = () => ({
   end: jest.fn(),
 });
 
-// Builds an AiService with all 9 constructor dependencies mocked, any of which can be
+// Builds an AiService with all 10 constructor dependencies mocked, any of which can be
 // overridden. Centralizing this avoids repeating the full mock/constructor wiring in
 // every test (and having to update all of them whenever the constructor's shape changes).
 const buildService = (overrides: Partial<Record<string, any>> = {}) => {
@@ -81,6 +95,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const versionRepository = overrides.versionRepository ?? buildMockVersionRepository();
   const aiResponseVoteRepository = overrides.aiResponseVoteRepository ?? buildMockAiResponseVoteRepository();
   const appInventoryService = overrides.appInventoryService ?? buildMockAppInventoryService();
+  const dataSourceInventoryService = overrides.dataSourceInventoryService ?? buildMockDataSourceInventoryService();
 
   const service = new AiService(
     aiUtilService as any,
@@ -91,7 +106,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     stepRepository as any,
     versionRepository as any,
     aiResponseVoteRepository as any,
-    appInventoryService as any
+    appInventoryService as any,
+    dataSourceInventoryService as any
   );
 
   return {
@@ -105,6 +121,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     versionRepository,
     aiResponseVoteRepository,
     appInventoryService,
+    dataSourceInventoryService,
   };
 };
 
@@ -383,7 +400,7 @@ describe('AiService.approvePrd', () => {
     });
 
     const response = buildMockResponse();
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', response as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
     expect(stepRepository.createOne).toHaveBeenCalledWith({
       conversationId: 'conv-1',
@@ -459,7 +476,7 @@ describe('AiService.approvePrd', () => {
     artifactRepository.createOne.mockResolvedValue({ id: 'artifact-1', identifier: 'customers_v2' });
 
     const response = buildMockResponse();
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', response as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
     expect(agentsService.CreateTable).toHaveBeenCalledTimes(2);
     // The retry's per-step call is told what the previous attempt's error was.
@@ -521,7 +538,7 @@ describe('AiService.approvePrd', () => {
     artifactRepository.createOne.mockResolvedValue({ id: 'artifact-1', identifier: 'customers' });
 
     const response = buildMockResponse();
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', response as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
     // Retried exactly MAX_STEP_ATTEMPTS (3) times for the failing step, on top of the one
     // successful call for the first step.
@@ -579,7 +596,7 @@ describe('AiService.approvePrd', () => {
     });
 
     const response = buildMockResponse();
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', response as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
     // Only the plan-generation call happened — no per-step LLM call or agentsService call
     // for a step type with no handler at all.
@@ -597,7 +614,7 @@ describe('AiService.approvePrd', () => {
   it('throws BadRequestException when conversationId or prd is missing', async () => {
     const { service, conversationRepo } = buildService();
 
-    await expect(service.approvePrd('', 'PRD text', 'org-1', buildMockResponse() as any)).rejects.toThrow(
+    await expect(service.approvePrd('', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any)).rejects.toThrow(
       BadRequestException
     );
     expect(conversationRepo.findById).not.toHaveBeenCalled();
@@ -607,9 +624,9 @@ describe('AiService.approvePrd', () => {
     const { service, conversationRepo } = buildService();
     conversationRepo.findById.mockResolvedValue(null);
 
-    await expect(service.approvePrd('conv-x', 'PRD text', 'org-1', buildMockResponse() as any)).rejects.toThrow(
-      NotFoundException
-    );
+    await expect(
+      service.approvePrd('conv-x', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any)
+    ).rejects.toThrow(NotFoundException);
   });
 
   it('sends an SSE error event when the plan-generation call fails', async () => {
@@ -621,7 +638,7 @@ describe('AiService.approvePrd', () => {
     aiUtilService.AIGatewayGenerate.mockRejectedValue(new Error('LLM gateway timed out'));
 
     const response = buildMockResponse();
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', response as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
     expect(aiUtilService.sendSSE).toHaveBeenCalledWith(
       response,
@@ -675,7 +692,7 @@ describe('AiService.approvePrd', () => {
       identifier: 'page-1',
     });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     expect(versionRepository.getAllVersions).toHaveBeenCalledWith('app-1');
     expect(agentsService.CreateComponent).toHaveBeenCalledWith('version-1', 'org-1', 'Page', { name: 'Orders' });
@@ -713,7 +730,7 @@ describe('AiService.approvePrd', () => {
     });
     agentsService.CreateComponent.mockResolvedValue({ id: 'page-1', name: 'Orders' });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     expect(agentsService.CreateComponent).toHaveBeenCalledWith('version-oldest', 'org-1', 'Page', { name: 'Orders' });
   });
@@ -741,7 +758,7 @@ describe('AiService.approvePrd', () => {
     });
     agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     expect(agentsService.CreateQuery).toHaveBeenCalledWith('version-1', 'org-1', {
       name: 'list_orders',
@@ -784,7 +801,7 @@ describe('AiService.approvePrd', () => {
       identifier: 'page-1',
     });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     // Only called once — the first (Chart) attempt never reached AgentsService at all.
     expect(agentsService.CreateComponent).toHaveBeenCalledTimes(1);
@@ -882,7 +899,7 @@ describe('AiService.approvePrd', () => {
         identifier: 'component-1',
       });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     // CreateComponent is called twice total: once for the Page, once for the Table's
     // successful (second) attempt — the hallucinated-pageId attempt never reached it.
@@ -988,7 +1005,7 @@ describe('AiService.approvePrd', () => {
       });
 
     const response = buildMockResponse();
-    await service.approvePrd('conv-1', 'PRD: build me an app to track orders', 'org-1', response as any);
+    await service.approvePrd('conv-1', 'PRD: build me an app to track orders', USER, PERMISSIONS, response as any);
 
     // The CreateQuery step's prompt includes the real table id CreateTable produced.
     const queryStepPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[3][2];
@@ -1031,7 +1048,7 @@ describe('AiService.approvePrd', () => {
     });
     agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'orders' });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     expect(artifactRepository.createOne).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1103,7 +1120,7 @@ describe('AiService.approvePrd', () => {
         identifier: 'button-1',
       });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     expect(agentsService.CreateComponent).toHaveBeenCalledTimes(2);
     expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(2, 'version-1', 'org-1', 'Button', {
@@ -1176,7 +1193,7 @@ describe('AiService.approvePrd', () => {
           identifier: 'widget-1',
         });
 
-      await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
       expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(2, 'version-1', 'org-1', type, props);
     }
@@ -1267,7 +1284,7 @@ describe('AiService.approvePrd', () => {
         identifier: 'form-1',
       });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     // The Form step's execution passes the real prior CreateTable artifact's columns
     // through — that's what lets AgentsService build correct JSONSchema fields.
@@ -1355,7 +1372,7 @@ describe('AiService.approvePrd', () => {
         identifier: 'form-1',
       });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     // Only two CreateComponent calls total: the Page, and the Form's successful (second)
     // attempt — the hallucinated-tableId attempt never reached AgentsService.
@@ -1446,7 +1463,7 @@ describe('AiService.approvePrd', () => {
         identifier: 'form-1',
       });
 
-    await service.approvePrd('conv-1', 'PRD text', 'org-1', buildMockResponse() as any);
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
     // Three calls: the Page, the Button, and the Form's successful (second) attempt — the
     // Form-nested-inside-a-Button attempt never reached AgentsService.
@@ -1469,6 +1486,249 @@ describe('AiService.approvePrd', () => {
       'step-4',
       expect.objectContaining({ status: 'succeeded', attempts: 2 })
     );
+  });
+});
+
+/** @group platform */
+describe('AiService.approvePrd - queries against connected external data sources', () => {
+  const planToolCall = (steps: any[]) => ({ toolCalls: [{ toolName: 'proposeStepPlan', args: { steps } }] });
+  const queryToolCall = (args: any) => ({ toolCalls: [{ toolName: 'createQuery', args }] });
+
+  const WAREHOUSE = { id: 'ds-warehouse', name: 'Warehouse', kind: 'postgresql', tables: ['orders', 'customers'] };
+
+  // One CreateQuery step, with the conversation/message/step plumbing every test here needs.
+  const buildQueryStepService = (overrides: Partial<Record<string, any>> = {}) => {
+    const harness = buildService(overrides);
+    const { conversationRepo, messageRepo, stepRepository } = harness;
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', appId: 'app-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'CreateQuery',
+      description: 'List customers',
+      status: 'pending',
+    });
+
+    return harness;
+  };
+
+  it("creates the query against the source the model picked, in that source's own query shape", async () => {
+    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
+    ).mockResolvedValueOnce(
+      queryToolCall({
+        source: 'sql',
+        name: 'list_customers',
+        data_source_id: 'ds-warehouse',
+        sql: 'SELECT * FROM customers LIMIT 100',
+      })
+    );
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_customers' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).toHaveBeenCalledWith('version-1', 'org-1', {
+      name: 'list_customers',
+      dataSourceId: 'ds-warehouse',
+      options: { mode: 'sql', query: 'SELECT * FROM customers LIMIT 100' },
+    });
+  });
+
+  it('assembles the connected sources once per approval, not once per query step', async () => {
+    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateQuery', description: 'List customers' },
+        { type: 'CreateQuery', description: 'List orders' },
+      ])
+    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql: 'SELECT 1' }));
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'q' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(dataSourceInventoryService.listQueryableSources).toHaveBeenCalledTimes(1);
+    expect(dataSourceInventoryService.listQueryableSources).toHaveBeenCalledWith(USER, PERMISSIONS);
+  });
+
+  // Same reasoning as the pageId/queryName guards: the tool schema can only ask for a string,
+  // so an id the model invented is caught here. Retryable - the model picks it per attempt.
+  it('rejects a data source id that is not one of the connected sources, and retries', async () => {
+    const { service, aiUtilService, agentsService, stepRepository, dataSourceInventoryService } =
+      buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
+    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-invented', sql: 'SELECT 1' }));
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).not.toHaveBeenCalled();
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-1',
+      expect.objectContaining({ status: 'failed', errorMessage: expect.stringContaining('ds-invented') })
+    );
+    // 1 planner call + 1 initial attempt + 2 retries, each asking the model again.
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(4);
+  });
+
+  // The tool schema and the prompt both ask for one SELECT, and nothing here runs the
+  // statement to find out what it really is: a stored DELETE would sit in the app until a
+  // user pressed Run, and then it would be their data.
+  it.each([
+    ['a write', 'DELETE FROM customers'],
+    ['a schema change', 'DROP TABLE customers'],
+    ['a second statement smuggled in after the SELECT', 'SELECT * FROM customers; DROP TABLE customers'],
+    ['a write hidden behind a comment', 'SELECT 1 -- ok\nUPDATE customers SET name = 1'],
+    ['a row lock', 'SELECT * FROM customers FOR UPDATE'],
+  ])('refuses to store %s as a query', async (_name, sql) => {
+    const { service, aiUtilService, agentsService, stepRepository, dataSourceInventoryService } =
+      buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
+    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql }));
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).not.toHaveBeenCalled();
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('accepts a read that leads with a CTE', async () => {
+    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    const sql = 'WITH recent AS (SELECT * FROM orders) SELECT * FROM recent';
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List recent orders' }])
+    ).mockResolvedValueOnce(
+      queryToolCall({ source: 'sql', name: 'recent_orders', data_source_id: 'ds-warehouse', sql })
+    );
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'recent_orders' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).toHaveBeenCalledWith(
+      'version-1',
+      'org-1',
+      expect.objectContaining({ options: { mode: 'sql', query: sql } })
+    );
+  });
+
+  it('refuses to store a query with no SQL at all rather than persisting an undefined body', async () => {
+    const { service, aiUtilService, agentsService, stepRepository, dataSourceInventoryService } =
+      buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
+    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse' }));
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).not.toHaveBeenCalled();
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('rejects an external query when nothing external is connected at all', async () => {
+    const { service, aiUtilService, agentsService, stepRepository } = buildQueryStepService();
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
+    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql: 'SELECT 1' }));
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).not.toHaveBeenCalled();
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('still targets ToolJet DB when the model names no source, which is what every existing plan does', async () => {
+    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List orders' }])
+    ).mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'table-uuid' }));
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateQuery).toHaveBeenCalledWith('version-1', 'org-1', {
+      name: 'list_orders',
+      options: { operation: 'list_rows', table_id: 'table-uuid', list_rows: { limit: 100 } },
+    });
+  });
+
+  it("shows the planner and the query step the connected sources and each source's real tables", async () => {
+    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
+    ).mockResolvedValueOnce(
+      queryToolCall({ source: 'sql', name: 'list_customers', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
+    );
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_customers' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    const plannerPrompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
+    expect(plannerPrompt).toContain('Warehouse');
+    expect(plannerPrompt).toContain('ds-warehouse');
+
+    const queryStepPrompt = aiUtilService.AIGatewayGenerate.mock.calls[1][2].messages[0].content;
+    expect(queryStepPrompt).toContain('ds-warehouse');
+    expect(queryStepPrompt).toContain('customers');
+  });
+
+  // ADR-0018: an external source can never receive a CreateTable, so the planner has to be
+  // told that before it proposes one it cannot build.
+  it('tells the planner that tables cannot be created in a connected external source', async () => {
+    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
+    ).mockResolvedValueOnce(
+      queryToolCall({ source: 'sql', name: 'list_customers', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
+    );
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_customers' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    const plannerPrompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
+    expect(plannerPrompt).toMatch(/CreateTable/);
+    expect(plannerPrompt).toMatch(/ToolJet DB/);
+  });
+
+  it('says nothing about external data sources in any prompt when none are connected', async () => {
+    const { service, aiUtilService, agentsService } = buildQueryStepService();
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateQuery', description: 'List orders' }])
+    ).mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'table-uuid' }));
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    const plannerPrompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
+    const queryStepPrompt = aiUtilService.AIGatewayGenerate.mock.calls[1][2].messages[0].content;
+    expect(plannerPrompt).not.toContain('Connected data sources');
+    expect(queryStepPrompt).not.toContain('Connected data sources');
   });
 });
 
@@ -2047,7 +2307,7 @@ describe('AiService — Generate-only actions are unreachable from a Learn conve
 
     const response = buildMockResponse();
 
-    await expect(service.approvePrd('conv-1', 'some PRD', 'org-1', response as any)).rejects.toBeInstanceOf(
+    await expect(service.approvePrd('conv-1', 'some PRD', USER, PERMISSIONS, response as any)).rejects.toBeInstanceOf(
       BadRequestException
     );
     expect(response.setHeader).not.toHaveBeenCalled();

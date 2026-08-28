@@ -346,18 +346,29 @@ export class AgentsService implements IAgentsService {
   }
 
   /**
-   * `props`: { name, options } — options is TooljetDbDataOperationsService's query-options
-   * shape (e.g. { operation: 'list_rows'|'create_row'|'update_rows', table_id, ... }). The
-   * built-in ToolJet DB data source is per-organization (created once at org setup), looked
-   * up here rather than passed in.
+   * `props`: { name, options, dataSourceId? }.
+   *
+   * Without `dataSourceId` the query targets the built-in ToolJet DB, and `options` is
+   * TooljetDbDataOperationsService's query-options shape (e.g. { operation:
+   * 'list_rows'|'create_row'|'update_rows', table_id, ... }). That data source is
+   * per-organization (created once at org setup), which is why it is looked up here rather
+   * than passed in — no caller has ever had to know its id.
+   *
+   * With `dataSourceId` the query targets an already-connected external data source
+   * (ADR-0019), and `options` is whatever that connector's own query shape is — for the SQL
+   * family that is { mode: 'sql', query }. Nothing here interprets `options`; the plugin
+   * does, at run time. The caller is responsible for the two matching, since a query whose
+   * options don't fit its data source fails only when someone runs it.
    */
   async CreateQuery(appVersionId: string, organizationId: string, props: any): Promise<any> {
-    const dataSource = await this.dataSourcesRepository.getStaticDataSourceByKind(organizationId, 'tooljetdb');
+    const dataSourceId =
+      props.dataSourceId ??
+      (await this.dataSourcesRepository.getStaticDataSourceByKind(organizationId, 'tooljetdb')).id;
 
     return this.dataQueryRepository.createOne({
       name: props.name,
       options: props.options,
-      dataSourceId: dataSource.id,
+      dataSourceId,
       appVersionId,
     } as any);
   }

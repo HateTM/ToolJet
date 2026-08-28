@@ -379,6 +379,28 @@ describe('AgentsService.CreateQuery', () => {
     );
     expect(result.name).toBe('list_orders');
   });
+
+  it('creates the query against an explicitly given data source, without looking up ToolJet DB', async () => {
+    const { service, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-2', name: 'list_customers' });
+
+    const result = await service.CreateQuery('version-1', 'org-1', {
+      name: 'list_customers',
+      dataSourceId: 'ds-postgres',
+      options: { mode: 'sql', query: 'SELECT * FROM customers LIMIT 100' },
+    });
+
+    expect(dataSourcesRepository.getStaticDataSourceByKind).not.toHaveBeenCalled();
+    expect(dataQueryRepository.createOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'list_customers',
+        dataSourceId: 'ds-postgres',
+        appVersionId: 'version-1',
+        options: { mode: 'sql', query: 'SELECT * FROM customers LIMIT 100' },
+      })
+    );
+    expect(result.name).toBe('list_customers');
+  });
 });
 
 /** @group platform */
