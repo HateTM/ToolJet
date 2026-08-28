@@ -19,7 +19,7 @@ _Avoid_: Plan, spec, proposal
 The user action that locks in a PRD and starts execution. Generates the full ordered `Step` list once, from the PRD — the plan's shape doesn't change after this point, only each Step's concrete props get filled in as execution reaches it (see [ADR-0004](docs/adr/0004-fixed-step-plan-at-approve.md)). One-way: there's no "un-approve," only rewinding executed steps.
 
 **Step**:
-One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container) or creates a Query against a ToolJet DB table — see [ADR-0002](docs/adr/0002-generic-component-tool.md).
+One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container), creates a ToolJet DB table, or creates a Query — against a ToolJet DB table, or against a `Queryable data source` — see [ADR-0002](docs/adr/0002-generic-component-tool.md) and [ADR-0019](docs/adr/0019-createquery-targets-connected-sql-sources-from-a-schema-it-was-shown.md).
 
 **Artifact**:
 The concrete output of one `Step` — the generated/changed piece of the `App` (e.g. a component, a table). Persisted as `Artifact`, linked to the `Conversation` and to the specific AI `Message` that produced it.
@@ -39,6 +39,10 @@ _Avoid_: Docs mode, Q&A mode, chat mode
 **App inventory**:
 A distilled, freshly-assembled snapshot of the current `App` — its pages, the type and name of each page's components, its data sources, and its queries — plus a condensed summary of past approved PRDs. Assembled fresh for every message in a `Learn conversation`; never indexed or persisted (see [ADR-0011](docs/adr/0011-learn-conversation-context-assembled-directly-no-rag.md)). Omits layout and styling: a `Learn conversation` answers "what does my app do," not "what is this button's border-radius."
 _Avoid_: Docs, knowledge base, context
+
+**Queryable data source**:
+One data source the user has already connected that a `Step` may write a query against, together with the tables it actually contains — read through the connector's own schema introspection at plan time, never from the PRD's wording. Enumerated once per approval and shown to both the planner and each query Step, which may only name a source from that list. Limited to the SQL family, and never a place tables get created: only ToolJet DB receives a `CreateTable` (see [ADR-0018](docs/adr/0018-data-source-selection-removes-createtable-from-the-plan.md) and [ADR-0019](docs/adr/0019-createquery-targets-connected-sql-sources-from-a-schema-it-was-shown.md)).
+_Avoid_: External database, connection, datasource
 
 **Promote** (a Learn conversation):
 The user action that starts a new `Generate conversation` seeded with a `Context seed` drawn from a `Learn conversation`. The originating `Learn conversation` is untouched and stays separately accessible — `conversationType` never changes on an existing `Conversation` (see [ADR-0012](docs/adr/0012-promote-creates-a-new-conversation.md)).

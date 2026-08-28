@@ -1,5 +1,7 @@
 import { Controller, Get, Post, Body, Param, Res, Query } from '@nestjs/common';
 import { User } from '@modules/app/decorators/user.decorator';
+import { UserPermissionsDecorator } from '@modules/app/decorators/user-permission.decorator';
+import { UserPermissions } from '@modules/ability/types';
 import { Response } from 'express';
 import { IAiController } from './interfaces/IController';
 import { InitFeature } from '@modules/app/decorators/init-feature.decorator';
@@ -37,9 +39,14 @@ export class AiController implements IAiController {
 
   @InitFeature(FEATURE_KEY.APPROVE_PRD)
   @Post('conversation/approve-prd')
-  async approvePrd(@User() user, @Body() body, @Res() response: Response) {
+  async approvePrd(
+    @User() user,
+    @UserPermissionsDecorator() userPermissions: UserPermissions,
+    @Body() body,
+    @Res() response: Response
+  ) {
     const { conversationId, prd } = body ?? {};
-    return await this.aiService.approvePrd(conversationId, prd, user.organizationId, response);
+    return await this.aiService.approvePrd(conversationId, prd, user, userPermissions, response);
   }
 
   @InitFeature(FEATURE_KEY.REWIND_STEP)

@@ -1,5 +1,7 @@
 import { Response } from 'express';
 import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
+import { User } from '@entities/user.entity';
+import { UserPermissions } from '@modules/ability/types';
 import { Completion, CopilotContext, ErrorContext, Suggestion } from '../types';
 
 export interface IAiService {
@@ -33,7 +35,13 @@ export interface IAiService {
 
   promoteConversation(conversationId: string, messageId: string, userId: string): Promise<any>;
 
-  approvePrd(conversationId: string, prd: any, organizationId: string, response: Response): Promise<any>;
+  approvePrd(
+    conversationId: string,
+    prd: any,
+    user: User,
+    userPermissions: UserPermissions,
+    response: Response
+  ): Promise<any>;
 
   rewindStep(conversationId: string, stepId: string, organizationId: string): Promise<any>;
 
