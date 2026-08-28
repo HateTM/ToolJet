@@ -40,7 +40,8 @@ export interface IAiService {
     prd: any,
     user: User,
     userPermissions: UserPermissions,
-    response: Response
+    response: Response,
+    dataSourceId?: string
   ): Promise<any>;
 
   rewindStep(conversationId: string, stepId: string, organizationId: string): Promise<any>;

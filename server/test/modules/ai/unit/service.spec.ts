@@ -1730,6 +1730,34 @@ describe('AiService.approvePrd - queries against connected external data sources
     expect(plannerPrompt).not.toContain('Connected data sources');
     expect(queryStepPrompt).not.toContain('Connected data sources');
   });
+  it('strips CreateTable steps from the plan when an external dataSourceId is provided', async () => {
+    const { service, agentsService, dataSourceInventoryService, aiUtilService } = buildQueryStepService();
+    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateTable', description: 'Create orders table' },
+        { type: 'CreateQuery', description: 'List orders' },
+      ])
+    ).mockResolvedValueOnce(
+      queryToolCall({ source: 'sql', name: 'list_orders', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
+    );
+    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any, 'ds-warehouse');
+    // The planner may still propose CreateTable, but agentsService.CreateTable must never
+    // be called when the user selected an external data source.
+    expect(agentsService.CreateTable).not.toHaveBeenCalled();
+    expect(agentsService.CreateQuery).toHaveBeenCalled();
+  });
+  it('keeps CreateTable steps when no dataSourceId is provided (default ToolJet DB path)', async () => {
+    const { service, stepRepository, agentsService, aiUtilService } = buildQueryStepService();
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'orders' });
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'CreateTable', description: 'Create orders table' }])
+    ).mockResolvedValueOnce({ toolCalls: [] });
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+    const callTypes = stepRepository.createOne.mock.calls.map((c) => c[0].type);
+    expect(callTypes).toContain('CreateTable');
+  });
 });
 
 /** @group platform */
