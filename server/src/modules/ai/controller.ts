@@ -21,13 +21,13 @@ export class AiController implements IAiController {
   @InitFeature(FEATURE_KEY.SEND_USER_MESSAGE)
   @Post('conversation/message')
   async sendUserMessage(@User() user, @Body() body, @Res() response: Response) {
-    return await this.aiService.sendUserMessage(body, response, user.organizationId);
+    return await this.aiService.sendUserMessage(body, response, user.id, user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.SEND_DOCS_MESSAGE)
   @Post('conversation/docs-message')
   async sendUserDocsMessage(@User() user, @Body() body, @Res() response: Response) {
-    return await this.aiService.sendUserDocsMessage(body, response, user.organizationId);
+    return await this.aiService.sendUserDocsMessage(body, response, user.id, user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.PROMOTE_CONVERSATION)
@@ -45,22 +45,22 @@ export class AiController implements IAiController {
     @Body() body,
     @Res() response: Response
   ) {
-    const { conversationId, prd } = body ?? {};
-    return await this.aiService.approvePrd(conversationId, prd, user, userPermissions, response);
+    const { conversationId, prd, dataSourceId } = body ?? {};
+    return await this.aiService.approvePrd(conversationId, prd, user, userPermissions, response, dataSourceId);
   }
 
   @InitFeature(FEATURE_KEY.REWIND_STEP)
   @Post('conversation/rewind-step')
   async rewindStep(@User() user, @Body() body) {
     const { conversationId, stepId } = body ?? {};
-    return await this.aiService.rewindStep(conversationId, stepId, user.organizationId);
+    return await this.aiService.rewindStep(conversationId, stepId, user.id, user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.REGENERATE_MESSAGE)
   @Post('conversation/regenerate-message')
   async regenerateAiMessage(@User() user, @Body() body) {
     const { parentMessageId } = body ?? {};
-    return await this.aiService.regenerateAiMessage(parentMessageId, user.organizationId);
+    return await this.aiService.regenerateAiMessage(parentMessageId, user.id, user.organizationId);
   }
 
   @InitFeature(FEATURE_KEY.VOTE_MESSAGE)

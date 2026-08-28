@@ -160,7 +160,10 @@ export class AiUtilService implements IAiUtilService {
 
     if (currentConversationId) {
       const existing = await this.aiConversationRepository.findById(currentConversationId);
-      if (!existing) {
+      // Reactivation flips `active` on an existing conversation, so it must belong to the caller
+      // — otherwise knowing a conversation UUID would let a user hijack someone else's active
+      // thread. Folded into the same NotFoundException as the existence check (no enumeration).
+      if (!existing || existing.userId !== userId) {
         throw new NotFoundException('Conversation not found');
       }
       // A conversation's type is fixed for its whole lifetime (CONTEXT.md; ADR-0012 is

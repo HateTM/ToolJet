@@ -400,12 +400,28 @@ export class AiService implements IAiService {
    * Since `conversationType` is fixed at creation and never mutated (ADR-0012), a mismatch is
    * always a caller error rather than a state the conversation can grow out of.
    */
+  /**
+   * Loads the conversation `conversationId` names and asserts it is of `expectedType` and
+   * owned by `userId`.
+   *
+   * Every entry point that only makes sense for one kind of conversation goes through here:
+   * `approvePrd`/`rewindStep` are Generate-only (a Learn conversation has no PRD, no Steps and
+   * no Artifacts — CONTEXT.md), and `sendUserDocsMessage`/`promoteConversation` are Learn-only.
+   * Since `conversationType` is fixed at creation and never mutated (ADR-0012), a mismatch is
+   * always a caller error rather than a state the conversation can grow out of.
+   *
+   * Ownership is enforced here (the single choke-point for every conversation-scoped entry
+   * point) so a caller can't read or mutate a conversation they don't own just by knowing its
+   * UUID. The owner check is folded into the same `NotFoundException` as the existence check so
+   * the route doesn't leak whether a foreign conversation exists.
+   */
   private async loadConversationOfType(
     conversationId: string,
-    expectedType: ConversationType
+    expectedType: ConversationType,
+    userId: string
   ): Promise<AiConversation> {
     const conversation = await this.aiConversationRepository.findById(conversationId);
-    if (!conversation) {
+    if (!conversation || conversation.userId !== userId) {
       throw new NotFoundException('Conversation not found');
     }
     if (conversation.conversationType !== expectedType) {
@@ -475,6 +491,14 @@ export class AiService implements IAiService {
       throw new NotFoundException('Message not found');
     }
 
+    // A vote is written against a conversation, so ownership is verified through it even though
+    // the endpoint takes the message id directly (otherwise knowing a message UUID lets any user
+    // attach a vote row to someone else's thread).
+    const conversation = await this.aiConversationRepository.findById(message.aiConversationId);
+    if (!conversation || conversation.userId !== userId) {
+      throw new NotFoundException('Message not found');
+    }
+
     const vote = voteType as 'up' | 'down';
     const existingVote = await this.aiResponseVoteRepository.findByMessageId(messageId);
     if (existingVote) {
@@ -523,7 +547,7 @@ export class AiService implements IAiService {
     // Raised before any SSE header is written, so a Learn conversation's caller gets a real
     // non-2xx + JSON body (which the client's `onopen` handler surfaces) rather than a stream
     // that opens and then immediately errors.
-    const conversation = await this.loadConversationOfType(conversationId, 'generate');
+    const conversation = await this.loadConversationOfType(conversationId, 'generate', user.id);
 
     const conversationMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
     const prdMessage = [...conversationMessages].reverse().find((message) => message.messageType === 'ai');
@@ -1024,6 +1048,7 @@ export class AiService implements IAiService {
   async sendUserMessage(
     body: { conversationId: string; content: string; references?: any },
     response: Response,
+    userId: string,
     organizationId: string
   ): Promise<any> {
     const { conversationId, content, references } = body ?? ({} as typeof body);
@@ -1035,7 +1060,7 @@ export class AiService implements IAiService {
     // Generate-only, the mirror of sendUserDocsMessage being Learn-only: this path answers
     // with a PRD, and a PRD in a Learn conversation could never be approved (approvePrd
     // refuses one), so it would be a proposal with no way to act on it.
-    await this.loadConversationOfType(conversationId, 'generate');
+    await this.loadConversationOfType(conversationId, 'generate', userId);
 
     // Conversation history precedes the new user message; it's fetched before
     // persisting so the new message isn't accidentally double-counted.
@@ -1115,6 +1140,7 @@ export class AiService implements IAiService {
   async sendUserDocsMessage(
     body: { conversationId: string; content: string; references?: any },
     response: Response,
+    userId: string,
     organizationId: string
   ): Promise<any> {
     const { conversationId, content, references } = body ?? ({} as typeof body);
@@ -1123,7 +1149,7 @@ export class AiService implements IAiService {
       throw new BadRequestException('conversationId and content are required');
     }
 
-    const conversation = await this.loadConversationOfType(conversationId, 'learn');
+    const conversation = await this.loadConversationOfType(conversationId, 'learn', userId);
 
     const priorMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
 
@@ -1196,10 +1222,7 @@ export class AiService implements IAiService {
       throw new BadRequestException('conversationId is required');
     }
 
-    const conversation = await this.loadConversationOfType(conversationId, 'learn');
-    if (conversation.userId !== userId) {
-      throw new NotFoundException('Conversation not found');
-    }
+    const conversation = await this.loadConversationOfType(conversationId, 'learn', userId);
 
     const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
     const answer = messageId
@@ -1264,12 +1287,12 @@ export class AiService implements IAiService {
    * left as-is — rewind returns the plan to the state right after it finished, not before.
    * Not a streaming endpoint: there's no LLM call on this path, just DB/App-state undos.
    */
-  async rewindStep(conversationId: string, stepId: string, organizationId: string): Promise<any> {
+  async rewindStep(conversationId: string, stepId: string, userId: string, organizationId: string): Promise<any> {
     if (!conversationId || !stepId) {
       throw new BadRequestException('conversationId and stepId are required');
     }
 
-    const conversation = await this.loadConversationOfType(conversationId, 'generate');
+    const conversation = await this.loadConversationOfType(conversationId, 'generate', userId);
 
     const targetStep = await this.stepRepository.findById(stepId);
     if (!targetStep || targetStep.conversationId !== conversationId) {
@@ -1312,7 +1335,7 @@ export class AiService implements IAiService {
    * regenerated PRD automatically replaces the prior one as the pending-approval PRD —
    * nothing there needs to change for that.
    */
-  async regenerateAiMessage(parentMessageId: string, organizationId: string): Promise<any> {
+  async regenerateAiMessage(parentMessageId: string, userId: string, organizationId: string): Promise<any> {
     if (!parentMessageId) {
       throw new BadRequestException('parentMessageId is required');
     }
@@ -1323,6 +1346,13 @@ export class AiService implements IAiService {
     }
 
     const conversationId = parentMessage.aiConversationId;
+    // Regeneration reads the target conversation's history and re-runs an LLM call grounded in
+    // it, so ownership is enforced up front — otherwise a known message UUID lets any user
+    // consume AI credits and read/mutate a thread that isn't theirs.
+    const conversation = await this.aiConversationRepository.findById(conversationId);
+    if (!conversation || conversation.userId !== userId) {
+      throw new NotFoundException('Conversation not found');
+    }
     const latestMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
     const parentIndex = latestMessages.findIndex((message) => message.id === parentMessageId);
     if (parentIndex === -1) {
@@ -1343,7 +1373,6 @@ export class AiService implements IAiService {
     // from the Learn prompt plus an App inventory, and regenerating it against the PRD prompt
     // would silently turn a Q&A answer into a build proposal. The inventory is re-assembled
     // rather than reused (ADR-0011) — the App may well have changed since the first attempt.
-    const conversation = await this.aiConversationRepository.findById(conversationId);
     const messages =
       conversation?.conversationType === 'learn'
         ? this.buildLearnMessages(await this.assembleAppInventory(conversation.appId), priorMessages)

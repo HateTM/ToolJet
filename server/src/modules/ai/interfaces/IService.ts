@@ -24,12 +24,14 @@ export interface IAiService {
   sendUserMessage(
     body: { conversationId: string; content: string; references?: any },
     response: Response,
+    userId: string,
     organizationId: string
   ): Promise<any>;
 
   sendUserDocsMessage(
     body: { conversationId: string; content: string },
     response: Response,
+    userId: string,
     organizationId: string
   ): Promise<any>;
 
@@ -44,9 +46,9 @@ export interface IAiService {
     dataSourceId?: string
   ): Promise<any>;
 
-  rewindStep(conversationId: string, stepId: string, organizationId: string): Promise<any>;
+  rewindStep(conversationId: string, stepId: string, userId: string, organizationId: string): Promise<any>;
 
-  regenerateAiMessage(parentMessageId: string, organizationId: string): Promise<AiConversationMessage | any>;
+  regenerateAiMessage(parentMessageId: string, userId: string, organizationId: string): Promise<AiConversationMessage | any>;
 
   voteAiMessage(messageId: string, voteType: string, userId: string): Promise<any>;
 
