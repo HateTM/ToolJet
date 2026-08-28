@@ -1515,6 +1515,440 @@ describe('AiService.approvePrd', () => {
       expect.objectContaining({ status: 'succeeded', attempts: 2 })
     );
   });
+
+  it('builds an edit-mode Form bound to a Table widget created earlier in the plan on the same underlying table', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', appId: 'app-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    const customersColumns = [
+      {
+        column_name: 'id',
+        data_type: 'serial',
+        constraints_type: { is_primary_key: true, is_not_null: true, is_unique: true },
+      },
+      {
+        column_name: 'name',
+        data_type: 'character varying',
+        constraints_type: { is_primary_key: false, is_not_null: true, is_unique: false },
+      },
+    ];
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateTable', description: 'Create a customers table' },
+        { type: 'CreateComponent', description: 'Create the Customers page' },
+        { type: 'CreateQuery', description: 'List customers' },
+        { type: 'CreateComponent', description: 'Add a customers table' },
+        { type: 'CreateComponent', description: 'Add a form to edit customers' },
+      ])
+    )
+      .mockResolvedValueOnce(
+        createTableToolCall({
+          table_name: 'customers',
+          columns: [
+            { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
+            {
+              column_name: 'name',
+              data_type: 'character varying',
+              is_primary_key: false,
+              is_not_null: true,
+              is_unique: false,
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
+      .mockResolvedValueOnce(queryToolCall({ name: 'list_customers', table_id: 'tjdb-uuid' }))
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Table', pageId: 'page-1', title: 'customers_table', queryName: 'list_customers' })
+      )
+      .mockResolvedValueOnce(
+        componentToolCall({
+          type: 'Form',
+          pageId: 'page-1',
+          tableId: 'tjdb-uuid',
+          title: 'Edit customer',
+          mode: 'edit',
+          tableName: 'customers_table',
+        })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'))
+      .mockResolvedValueOnce(pendingStep('step-2', 1, 'CreateComponent', 'Create the Customers page'))
+      .mockResolvedValueOnce(pendingStep('step-3', 2, 'CreateQuery', 'List customers'))
+      .mockResolvedValueOnce(pendingStep('step-4', 3, 'CreateComponent', 'Add a customers table'))
+      .mockResolvedValueOnce(pendingStep('step-5', 4, 'CreateComponent', 'Add a form to edit customers'));
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
+    agentsService.CreateQuery.mockResolvedValue({
+      id: 'query-1',
+      name: 'list_customers',
+      options: { operation: 'list_rows', table_id: 'tjdb-uuid' },
+    });
+    agentsService.CreateComponent
+      .mockResolvedValueOnce({ id: 'page-1', name: 'Customers' })
+      .mockResolvedValueOnce({
+        id: 'table-widget-1',
+        pageId: 'page-1',
+        type: 'Table',
+        name: 'customers_table',
+        queryName: 'list_customers',
+      })
+      .mockResolvedValueOnce({
+        id: 'form-1',
+        pageId: 'page-1',
+        type: 'Form',
+        tableId: 'tjdb-uuid',
+        queryId: 'query-2',
+        queryName: 'update_edit_customer',
+        mode: 'edit',
+        tableName: 'customers_table',
+      });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'artifact-1',
+        content: { id: 'tjdb-uuid', table_name: 'customers', columns: customersColumns },
+        identifier: 'customers',
+      })
+      .mockResolvedValueOnce({ id: 'artifact-2', content: { id: 'page-1', name: 'Customers' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'query-1', name: 'list_customers', options: { operation: 'list_rows', table_id: 'tjdb-uuid' } },
+        identifier: 'list_customers',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
+        content: {
+          id: 'table-widget-1',
+          pageId: 'page-1',
+          type: 'Table',
+          name: 'customers_table',
+          queryName: 'list_customers',
+        },
+        identifier: 'table-widget-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-5',
+        content: { id: 'form-1', pageId: 'page-1', type: 'Form' },
+        identifier: 'form-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    // The edit-mode Form reaches AgentsService with its mode, the referenced Table's component
+    // name, and the real table columns (for field generation) — exactly what lets
+    // AgentsService pre-fill fields from that Table's selectedRow and wire an update_rows query.
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(3, 'version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      tableId: 'tjdb-uuid',
+      title: 'Edit customer',
+      mode: 'edit',
+      tableName: 'customers_table',
+      columns: customersColumns,
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-5',
+      expect.objectContaining({ status: 'succeeded', attempts: 1 })
+    );
+  });
+
+  it('rejects an edit-mode Form whose tableName does not match any Table widget in the plan, then succeeds once the retry references the real one', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', appId: 'app-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    const customersColumns = [
+      {
+        column_name: 'id',
+        data_type: 'serial',
+        constraints_type: { is_primary_key: true, is_not_null: true, is_unique: true },
+      },
+      {
+        column_name: 'name',
+        data_type: 'character varying',
+        constraints_type: { is_primary_key: false, is_not_null: true, is_unique: false },
+      },
+    ];
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateTable', description: 'Create a customers table' },
+        { type: 'CreateComponent', description: 'Create the Customers page' },
+        { type: 'CreateQuery', description: 'List customers' },
+        { type: 'CreateComponent', description: 'Add a customers table' },
+        { type: 'CreateComponent', description: 'Add a form to edit customers' },
+      ])
+    )
+      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
+      .mockResolvedValueOnce(queryToolCall({ name: 'list_customers', table_id: 'tjdb-uuid' }))
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Table', pageId: 'page-1', title: 'customers_table', queryName: 'list_customers' })
+      )
+      // Attempt 1: hallucinated tableName — no such Table widget was created.
+      .mockResolvedValueOnce(
+        componentToolCall({
+          type: 'Form',
+          pageId: 'page-1',
+          tableId: 'tjdb-uuid',
+          title: 'Edit customer',
+          mode: 'edit',
+          tableName: 'made-up-table',
+        })
+      )
+      // Attempt 2 (retry): the real Table widget.
+      .mockResolvedValueOnce(
+        componentToolCall({
+          type: 'Form',
+          pageId: 'page-1',
+          tableId: 'tjdb-uuid',
+          title: 'Edit customer',
+          mode: 'edit',
+          tableName: 'customers_table',
+        })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'))
+      .mockResolvedValueOnce(pendingStep('step-2', 1, 'CreateComponent', 'Create the Customers page'))
+      .mockResolvedValueOnce(pendingStep('step-3', 2, 'CreateQuery', 'List customers'))
+      .mockResolvedValueOnce(pendingStep('step-4', 3, 'CreateComponent', 'Add a customers table'))
+      .mockResolvedValueOnce(pendingStep('step-5', 4, 'CreateComponent', 'Add a form to edit customers'));
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
+    agentsService.CreateQuery.mockResolvedValue({
+      id: 'query-1',
+      name: 'list_customers',
+      options: { operation: 'list_rows', table_id: 'tjdb-uuid' },
+    });
+    agentsService.CreateComponent
+      .mockResolvedValueOnce({ id: 'page-1', name: 'Customers' })
+      .mockResolvedValueOnce({
+        id: 'table-widget-1',
+        pageId: 'page-1',
+        type: 'Table',
+        name: 'customers_table',
+        queryName: 'list_customers',
+      })
+      .mockResolvedValueOnce({
+        id: 'form-1',
+        pageId: 'page-1',
+        type: 'Form',
+        tableId: 'tjdb-uuid',
+        queryId: 'query-2',
+        queryName: 'update_edit_customer',
+        mode: 'edit',
+        tableName: 'customers_table',
+      });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'artifact-1',
+        content: { id: 'tjdb-uuid', table_name: 'customers', columns: customersColumns },
+        identifier: 'customers',
+      })
+      .mockResolvedValueOnce({ id: 'artifact-2', content: { id: 'page-1', name: 'Customers' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'query-1', name: 'list_customers', options: { operation: 'list_rows', table_id: 'tjdb-uuid' } },
+        identifier: 'list_customers',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
+        content: {
+          id: 'table-widget-1',
+          pageId: 'page-1',
+          type: 'Table',
+          name: 'customers_table',
+          queryName: 'list_customers',
+        },
+        identifier: 'table-widget-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-5',
+        content: { id: 'form-1', pageId: 'page-1', type: 'Form' },
+        identifier: 'form-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    // Only three CreateComponent calls total: Page, Table, and the Form's successful (second)
+    // attempt — the hallucinated-tableName attempt never reached AgentsService.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(3);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(
+      3,
+      'version-1',
+      'org-1',
+      'Form',
+      expect.objectContaining({ tableName: 'customers_table', mode: 'edit' })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-5',
+      expect.objectContaining({
+        errorMessage: expect.stringContaining('tableName "made-up-table" does not match any Table widget'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-5',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
+  it('rejects an edit-mode Form whose referenced Table widget is bound to a different table, then succeeds once the retry matches them', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', appId: 'app-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateTable', description: 'Create a customers table' },
+        { type: 'CreateTable', description: 'Create a products table' },
+        { type: 'CreateComponent', description: 'Create the Catalog page' },
+        { type: 'CreateQuery', description: 'List products' },
+        { type: 'CreateComponent', description: 'Add a products table' },
+        { type: 'CreateComponent', description: 'Add a form to edit products' },
+      ])
+    )
+      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('products')))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Catalog' }))
+      .mockResolvedValueOnce(queryToolCall({ name: 'list_products', table_id: 'tjdb-products-uuid' }))
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Table', pageId: 'page-1', title: 'products_table', queryName: 'list_products' })
+      )
+      // Attempt 1: the Form targets customers, but the referenced Table widget is bound (via its
+      // query) to products — the two must agree.
+      .mockResolvedValueOnce(
+        componentToolCall({
+          type: 'Form',
+          pageId: 'page-1',
+          tableId: 'tjdb-customers-uuid',
+          title: 'Edit product',
+          mode: 'edit',
+          tableName: 'products_table',
+        })
+      )
+      // Attempt 2 (retry): the Form now targets the same table the Table widget actually shows.
+      .mockResolvedValueOnce(
+        componentToolCall({
+          type: 'Form',
+          pageId: 'page-1',
+          tableId: 'tjdb-products-uuid',
+          title: 'Edit product',
+          mode: 'edit',
+          tableName: 'products_table',
+        })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'))
+      .mockResolvedValueOnce(pendingStep('step-2', 1, 'CreateTable', 'Create a products table'))
+      .mockResolvedValueOnce(pendingStep('step-3', 2, 'CreateComponent', 'Create the Catalog page'))
+      .mockResolvedValueOnce(pendingStep('step-4', 3, 'CreateQuery', 'List products'))
+      .mockResolvedValueOnce(pendingStep('step-5', 4, 'CreateComponent', 'Add a products table'))
+      .mockResolvedValueOnce(pendingStep('step-6', 5, 'CreateComponent', 'Add a form to edit products'));
+
+    agentsService.CreateTable.mockResolvedValueOnce({ id: 'tjdb-customers-uuid', table_name: 'customers' })
+      .mockResolvedValueOnce({ id: 'tjdb-products-uuid', table_name: 'products' });
+    agentsService.CreateQuery.mockResolvedValue({
+      id: 'query-1',
+      name: 'list_products',
+      options: { operation: 'list_rows', table_id: 'tjdb-products-uuid' },
+    });
+    agentsService.CreateComponent
+      .mockResolvedValueOnce({ id: 'page-1', name: 'Catalog' })
+      .mockResolvedValueOnce({
+        id: 'table-widget-1',
+        pageId: 'page-1',
+        type: 'Table',
+        name: 'products_table',
+        queryName: 'list_products',
+      })
+      .mockResolvedValueOnce({
+        id: 'form-1',
+        pageId: 'page-1',
+        type: 'Form',
+        tableId: 'tjdb-products-uuid',
+        queryId: 'query-2',
+        queryName: 'update_edit_product',
+        mode: 'edit',
+        tableName: 'products_table',
+      });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'artifact-1',
+        content: { id: 'tjdb-customers-uuid', table_name: 'customers', columns: [] },
+        identifier: 'customers',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'tjdb-products-uuid', table_name: 'products', columns: [] },
+        identifier: 'products',
+      })
+      .mockResolvedValueOnce({ id: 'artifact-3', content: { id: 'page-1', name: 'Catalog' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
+        content: {
+          id: 'query-1',
+          name: 'list_products',
+          options: { operation: 'list_rows', table_id: 'tjdb-products-uuid' },
+        },
+        identifier: 'list_products',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-5',
+        content: {
+          id: 'table-widget-1',
+          pageId: 'page-1',
+          type: 'Table',
+          name: 'products_table',
+          queryName: 'list_products',
+        },
+        identifier: 'table-widget-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-6',
+        content: { id: 'form-1', pageId: 'page-1', type: 'Form' },
+        identifier: 'form-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(3);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(
+      3,
+      'version-1',
+      'org-1',
+      'Form',
+      expect.objectContaining({ tableId: 'tjdb-products-uuid' })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-6',
+      expect.objectContaining({
+        errorMessage: expect.stringContaining('is not bound to the same ToolJet DB table'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-6',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
 });
 
 /** @group platform */

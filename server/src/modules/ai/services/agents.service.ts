@@ -148,11 +148,12 @@ export class AgentsService implements IAgentsService {
    */
   private async createTableComponent(appVersionId: string, props: any) {
     const { pageId, title, queryName } = props ?? {};
+    const name = title || 'Table';
     const created = await this.createWidgetComponent(
       appVersionId,
       pageId,
       'Table',
-      title || 'Table',
+      name,
       {
         title: { value: title || 'Table' },
         visible: { value: '{{true}}' },
@@ -175,7 +176,10 @@ export class AgentsService implements IAgentsService {
       },
       { width: 25, height: 460 }
     );
-    return { ...created, queryName };
+    // `name` is the widget's component name (== its title) — surfaced here so the plan
+    // context shows it to the model, letting an edit-mode Form reference this Table's
+    // selectedRow by that name.
+    return { ...created, name, queryName };
   }
 
   // defaultSize per button.js: { width: 4, height: 40 }.
@@ -270,23 +274,46 @@ export class AgentsService implements IAgentsService {
   }
 
   /**
-   * Builds a working create-record Form for `tableId` (ADR-0007): fields are generated from
-   * the table's real columns (skipping the primary key, which is auto-generated) via the
-   * Form widget's own JSONSchema mechanism (`advanced: true` + a `{{ {...} }}` binding —
-   * form.js's real default value uses exactly this shape), then a `create_row` DataQuery is
-   * created against the same table with each column's value bound to this Form's own field
+   * Builds a working Form for `tableId` (ADR-0007). Fields are generated from the table's
+   * real columns (skipping the primary key, which is auto-generated) via the Form widget's
+   * own JSONSchema mechanism (`advanced: true` + a `{{ {...} }}` binding — form.js's real
+   * default value uses exactly this shape), then a DataQuery is created against the same
+   * table with each column's value bound to this Form's own field
    * (`{{components.<name>.data.<column>}}`), and an EventHandler wires the Form's `onSubmit`
-   * to run that query. v1 is create-mode only (see ADR-0007 for why edit is deferred).
+   * to run that query.
+   *
+   * `mode` picks the write semantics:
+   *  - 'create' (default): a `create_row` query; fields start blank.
+   *  - 'edit': an `update_rows` query keyed on the referenced Table widget's `selectedRow`
+   *    primary key, and fields pre-filled from `{{components.<tableName>.selectedRow.<column>}}`
+   *    — the "selected record" context ADR-0007 once thought didn't exist, which the Table
+   *    widget's `selectedRow` exposed variable actually already provides. Requires the plan
+   *    to also have created a Table widget (named `tableName`) bound to the same table.
    */
   private async createFormComponent(appVersionId: string, organizationId: string, props: any) {
-    const { pageId, title, tableId, columns } = props ?? {};
+    const { pageId, title, tableId, columns, mode = 'create', tableName } = props ?? {};
     const formName = this.buildSafeFormName(title);
+    const isEdit = mode === 'edit';
     const writableColumns = (columns || []).filter((column: any) => !column?.constraints_type?.is_primary_key);
+    const primaryKeyColumn = (columns || []).find((column: any) => column?.constraints_type?.is_primary_key);
+
+    if (isEdit && !tableName) {
+      throw new Error('An edit-mode Form must reference the Table widget (tableName) whose selectedRow it binds to');
+    }
+    if (isEdit && !primaryKeyColumn) {
+      throw new Error(
+        `Cannot build an edit-mode Form for table "${tableId}": it has no primary key column to key the update on`
+      );
+    }
 
     const schemaProperties = writableColumns.reduce((acc: Record<string, any>, column: any) => {
       acc[column.column_name] = {
         type: TJDB_TO_FORM_FIELD_TYPE[column.data_type] ?? 'textinput',
         label: column.column_name,
+        // Edit-mode fields pre-fill from the referenced Table's selected row (the input's
+        // `value` binding — form.js reads it as the field's initial value); create-mode
+        // fields stay blank (no `value`).
+        ...(isEdit ? { value: `{{components.${tableName}.selectedRow.${column.column_name}}}` } : {}),
       };
       return acc;
     }, {});
@@ -319,19 +346,41 @@ export class AgentsService implements IAgentsService {
       { width: 15, height: 450 }
     );
 
-    const insertQuery = await this.CreateQuery(appVersionId, organizationId, {
-      name: `insert_${formName}`.toLowerCase(),
-      options: {
-        operation: 'create_row',
-        table_id: tableId,
-        create_row: writableColumns.reduce((acc: Record<string, any>, column: any, index: number) => {
-          acc[`col_${index}`] = {
-            column: column.column_name,
-            value: `{{components.${formName}.data.${column.column_name}}}`,
-          };
-          return acc;
-        }, {}),
-      },
+    // Column bindings are identical across modes: each writable column's value template-binds
+    // to this Form's own field data on submit. What differs is the operation and, for edit,
+    // the row identity filter keyed on the referenced Table's selectedRow primary key.
+    const columnBindings = writableColumns.reduce((acc: Record<string, any>, column: any, index: number) => {
+      acc[`col_${index}`] = {
+        column: column.column_name,
+        value: `{{components.${formName}.data.${column.column_name}}}`,
+      };
+      return acc;
+    }, {});
+
+    const queryOptions = isEdit
+      ? {
+          operation: 'update_rows',
+          table_id: tableId,
+          update_rows: {
+            where_filters: {
+              filter_0: {
+                column: primaryKeyColumn.column_name,
+                operator: 'eq',
+                value: `{{components.${tableName}.selectedRow.${primaryKeyColumn.column_name}}}`,
+              },
+            },
+            columns: columnBindings,
+          },
+        }
+      : {
+          operation: 'create_row',
+          table_id: tableId,
+          create_row: columnBindings,
+        };
+
+    const dataQuery = await this.CreateQuery(appVersionId, organizationId, {
+      name: `${isEdit ? 'update' : 'insert'}_${formName}`.toLowerCase(),
+      options: queryOptions,
     });
 
     await this.eventsService.createEvent(
@@ -340,8 +389,8 @@ export class AgentsService implements IAgentsService {
         event: {
           eventId: 'onSubmit',
           actionId: 'run-query',
-          queryId: insertQuery.id,
-          queryName: insertQuery.name,
+          queryId: dataQuery.id,
+          queryName: dataQuery.name,
           parameters: {},
         },
         eventType: Target.component,
@@ -351,7 +400,13 @@ export class AgentsService implements IAgentsService {
       appVersionId
     );
 
-    return { ...created, tableId, queryId: insertQuery.id, queryName: insertQuery.name };
+    return {
+      ...created,
+      tableId,
+      queryId: dataQuery.id,
+      queryName: dataQuery.name,
+      ...(isEdit ? { mode: 'edit', tableName } : {}),
+    };
   }
 
   /**

@@ -130,7 +130,7 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - Text: reference a Page id, give it the text to display.
 - TextInput: reference a Page id, give it a label (and an optional placeholder).
 - Container: reference a Page id, give it a short title.
-- Form: reference a Page id, the id of a ToolJet DB table already created in this plan to create records in, and a form title. This produces a working create-record form — you don't need a separate query or event step for it.
+- Form: reference a Page id, the id of a ToolJet DB table already created in this plan, and a form title. By default (mode "create") this produces a working create-record form — you don't need a separate query or event step for it. When the PRD wants to edit existing records, set mode "edit" and also reference the name of a Table widget already created in this plan that is bound to the same underlying table — the form's fields then pre-fill from that Table's selected row and submitting runs an update keyed on that row.
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
@@ -172,8 +172,22 @@ const createComponentTool = tool({
       pageId: z.string().describe('id of an already-created Page (from context) to place this form on'),
       tableId: z
         .string()
-        .describe('id of an already-created ToolJet DB table (from context) this form creates records in'),
+        .describe(
+          'id of an already-created ToolJet DB table (from context) this form creates records in or edits records in'
+        ),
       title: z.string().describe('Form title'),
+      mode: z
+        .enum(['create', 'edit'])
+        .default('create')
+        .describe(
+          "'create' (default) wires a create_row query to submit; 'edit' wires an update_rows query keyed on the referenced Table's selectedRow and pre-fills the fields from it"
+        ),
+      tableName: z
+        .string()
+        .optional()
+        .describe(
+          "name of an already-created Table widget (from context) whose selectedRow this form binds to — required when mode='edit'"
+        ),
     }),
   ]),
 });
@@ -568,9 +582,7 @@ export class AiService implements IAiService {
       // persisted or executed. The planner is also told this constraint via the connected-
       // sources block, but the filter is the safety net — the planner can still propose one
       // in edge cases (e.g. when the prompt is long and the constraint is buried).
-      const filteredSteps = dataSourceId
-        ? steps.filter((step) => step.type !== 'CreateTable')
-        : steps;
+      const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
 
       this.aiUtilService.sendSSE(response, 'plan', {
         steps: filteredSteps.map((step) => ({ id: step.id, type: step.type, description: step.description })),
@@ -620,7 +632,10 @@ export class AiService implements IAiService {
         return;
       }
 
-      this.aiUtilService.sendSSE(response, 'done', { succeeded: context.priorResults.length, total: filteredSteps.length });
+      this.aiUtilService.sendSSE(response, 'done', {
+        succeeded: context.priorResults.length,
+        total: filteredSteps.length,
+      });
       response.end();
     } catch (error) {
       this.logger.error(`[approvePrd] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
@@ -915,6 +930,37 @@ export class AiService implements IAiService {
       // AgentsService.createFormComponent needs the table's real columns (to build the
       // form's fields) — only available from the CreateTable step's Artifact content.
       props.columns = tableResult.artifact.content.columns;
+
+      // An edit-mode Form binds its fields and its update_rows identity filter to another
+      // Table widget's selectedRow, so that Table must actually exist in this plan AND be
+      // bound (via the query it displays) to the same underlying ToolJet DB table this
+      // form edits. Both are retryable failures — the model picks the name/id per attempt,
+      // and the error names what it was actually offered so the next attempt can correct.
+      if (props.mode === 'edit') {
+        if (!props.tableName) {
+          throw new Error('An edit-mode Form must reference a Table widget (tableName) to bind its selectedRow to');
+        }
+        const tableWidget = context.priorResults.find(
+          (result) =>
+            result.type === 'CreateComponent' &&
+            result.artifact.content?.type === 'Table' &&
+            result.artifact.content?.name === props.tableName
+        );
+        if (!tableWidget) {
+          throw new Error(
+            `tableName "${props.tableName}" does not match any Table widget created earlier in this plan`
+          );
+        }
+        const boundQuery = context.priorResults.find(
+          (result) =>
+            result.type === 'CreateQuery' && result.artifact.content?.name === tableWidget.artifact.content?.queryName
+        );
+        if (!boundQuery || boundQuery.artifact.content?.options?.table_id !== props.tableId) {
+          throw new Error(
+            `Table "${props.tableName}" is not bound to the same ToolJet DB table (${props.tableId}) this edit-mode form edits`
+          );
+        }
+      }
     }
 
     const created = await this.agentsService.CreateComponent(context.appVersionId, context.organizationId, type, props);

@@ -403,6 +403,115 @@ describe('AgentsService.CreateComponent — Form', () => {
     );
     expect(result).toMatchObject({ tableId: 'table-1', queryId: 'query-1', queryName: 'insert_orders_form' });
   });
+
+  it("builds an edit-mode Form whose fields are pre-filled from the referenced Table's selectedRow", async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'update_orders_form' });
+
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Edit orders form',
+      tableId: 'table-1',
+      columns: orderColumns,
+      mode: 'edit',
+      tableName: 'orders_table',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    const schemaMatch = definition.properties.JSONSchema.value.match(/\{\{ (.*) \}\}/);
+    const schema = JSON.parse(schemaMatch[1]);
+    // Same column set as create-mode (non-PK only), but every field pre-fills from the
+    // referenced Table's selectedRow instead of starting blank.
+    expect(Object.keys(schema.properties)).toEqual(['customer_name', 'quantity']);
+    expect(schema.properties.customer_name.value).toBe('{{components.orders_table.selectedRow.customer_name}}');
+    expect(schema.properties.quantity.value).toBe('{{components.orders_table.selectedRow.quantity}}');
+  });
+
+  it("wires an edit-mode Form's update_rows query keyed on the selected row's primary key, with the PK excluded from the update body", async () => {
+    const { service, componentsService, dataQueryRepository, dataSourcesRepository } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'update_orders_form' });
+
+    await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Edit orders form',
+      tableId: 'table-1',
+      columns: orderColumns,
+      mode: 'edit',
+      tableName: 'orders_table',
+    });
+
+    const [queryPayload] = dataQueryRepository.createOne.mock.calls[0];
+    expect(queryPayload.options.operation).toBe('update_rows');
+    expect(queryPayload.options.table_id).toBe('table-1');
+    // The row identity filter keys on the selected row's primary key.
+    expect(queryPayload.options.update_rows.where_filters.filter_0).toEqual({
+      column: 'id',
+      operator: 'eq',
+      value: '{{components.orders_table.selectedRow.id}}',
+    });
+    // Updated values come from the Form's own fields; the primary key is never written.
+    const columnBindings = Object.values(queryPayload.options.update_rows.columns) as any[];
+    expect(columnBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ column: 'customer_name', value: expect.stringContaining('.data.customer_name') }),
+        expect.objectContaining({ column: 'quantity', value: expect.stringContaining('.data.quantity') }),
+      ])
+    );
+    expect(columnBindings.some((binding) => binding.column === 'id')).toBe(false);
+  });
+
+  it('throws when an edit-mode Form is missing its referenced tableName', async () => {
+    const { service, dataQueryRepository } = buildAgentsService();
+
+    await expect(
+      service.CreateComponent('version-1', 'org-1', 'Form', {
+        pageId: 'page-1',
+        title: 'Edit orders form',
+        tableId: 'table-1',
+        columns: orderColumns,
+        mode: 'edit',
+      })
+    ).rejects.toThrow(/tableName/);
+    expect(dataQueryRepository.createOne).not.toHaveBeenCalled();
+  });
+
+  it("wires an edit-mode Form's onSubmit to run the update query", async () => {
+    const { service, componentsService, eventsService, dataQueryRepository, dataSourcesRepository } =
+      buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    dataSourcesRepository.getStaticDataSourceByKind.mockResolvedValue({ id: 'ds-1' });
+    dataQueryRepository.createOne.mockResolvedValue({ id: 'query-1', name: 'update_orders_form' });
+
+    const result = await service.CreateComponent('version-1', 'org-1', 'Form', {
+      pageId: 'page-1',
+      title: 'Edit orders form',
+      tableId: 'table-1',
+      columns: orderColumns,
+      mode: 'edit',
+      tableName: 'orders_table',
+    });
+
+    expect(eventsService.createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'component',
+        attachedTo: result.id,
+        event: expect.objectContaining({ eventId: 'onSubmit', actionId: 'run-query', queryId: 'query-1' }),
+      }),
+      'version-1'
+    );
+    expect(result).toMatchObject({
+      tableId: 'table-1',
+      queryId: 'query-1',
+      queryName: 'update_orders_form',
+      mode: 'edit',
+      tableName: 'orders_table',
+    });
+  });
 });
 
 /** @group platform */
