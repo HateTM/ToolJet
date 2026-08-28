@@ -19,7 +19,8 @@ CodeGraph index is available at `.codegraph` — use `codegraph_explore` before 
 
 - **Issue tracker**: GitHub issues on the fork (`origin`), via `gh issue create/view/edit/close`. See `docs/agents/issue-tracker.md`.
 - **Triage labels**: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
-- **Domain docs**: check for a root `CONTEXT.md` and `docs/adr/` before exploring an area; proceed silently if absent (none exist yet as of this writing). See `docs/agents/domain.md`.
+- **Domain docs**: read the root `CONTEXT.md` (the AI Builder's ubiquitous language) and the relevant entries in `docs/adr/` before exploring an area. Both exist and are maintained. See `docs/agents/domain.md`.
+- **Working a ticket**: the loop from picking up an issue to seeing it close — branching, TDD seams, which checks lie about what, review, ADRs, merge. See `docs/agents/ticket-workflow.md`.
 
 ## Architecture
 
