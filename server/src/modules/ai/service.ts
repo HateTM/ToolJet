@@ -88,11 +88,15 @@ const TJDB_DATA_TYPES = [
   'jsonb',
 ] as const;
 
-const CREATE_TABLE_SYSTEM_PROMPT = `You design the exact schema for one ToolJet DB table, based on the PRD and the specific step you've been asked to build.
+export const CREATE_TABLE_SYSTEM_PROMPT = `You design the exact schema for one ToolJet DB table, based on the PRD and the specific step you've been asked to build.
 
-Call createTable exactly once with the table's real name (snake_case) and its columns. Every table needs exactly one primary key column (usually an auto-generated "id" of type serial). Pick sensible, minimal columns that satisfy what this step describes — don't invent columns the PRD doesn't call for.`;
+Call createTable exactly once with the table's real name (snake_case) and its columns. Every table needs exactly one primary key column (usually an auto-generated "id" of type serial). Pick sensible, minimal columns that satisfy what this step describes — don't invent columns the PRD doesn't call for.
 
-const createTableTool = tool({
+If this table's rows must always reference rows in another table in this app (for example a "customer_id" that must exist in the "customers" table), declare that relationship with the optional foreign_keys field: list the column(s) in this table, the referenced table, and the referenced column(s); optionally set on_delete/on_update to one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'. Only reference tables that already exist in this app — the referenced table's columns must match the column names you list. Omit foreign_keys when no such relationship is needed.`;
+
+export const TJDB_FOREIGN_KEY_ACTIONS = ['RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'] as const;
+
+export const createTableTool = tool({
   description: 'Create a ToolJet DB table with the given name and columns.',
   parameters: z.object({
     table_name: z.string().describe('snake_case table name, unique within this app'),
@@ -108,6 +112,38 @@ const createTableTool = tool({
       )
       .min(1)
       .describe('Exactly one column must have is_primary_key: true'),
+    foreign_keys: z
+      .array(
+        z.object({
+          // One or more columns in this table that must reference a column (or columns)
+          // in another table in this app.
+          column_names: z.array(z.string()).min(1).describe('Column(s) in this table that are referenced'),
+          referenced_table_name: z
+            .string()
+            .describe('Name of another table in this app that these columns reference'),
+          referenced_column_names: z
+            .array(z.string())
+            .min(1)
+            .describe('Column(s) in referenced_table_name that these columns reference'),
+          on_delete: z
+            .enum(TJDB_FOREIGN_KEY_ACTIONS)
+            .describe(
+              "Action when a referenced row is deleted; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
+            )
+            .optional(),
+          on_update: z
+            .enum(TJDB_FOREIGN_KEY_ACTIONS)
+            .describe(
+              "Action when a referenced row is updated; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
+            )
+            .optional(),
+        })
+      )
+      .optional()
+      .describe(
+        'Relationships to other tables in this app. Omit this field to create a table with no foreign keys. ' +
+          'Referenced tables must already exist in this app.',
+      ),
   }),
 });
 
@@ -803,7 +839,7 @@ export class AiService implements IAiService {
     return lines.join('\n\n');
   }
 
-  private async executeCreateTableStep(
+  async executeCreateTableStep(
     step: Step,
     context: StepExecutionContext,
     previousError?: string
@@ -834,6 +870,15 @@ export class AiService implements IAiService {
         is_not_null: boolean;
         is_unique: boolean;
       }>;
+      // Optional relationships declared by the model (ticket #23). Forwarded verbatim to the
+      // backend CreatePostgrestTableDto, whose PostgrestForeignKeyDto uses the same field names.
+      foreign_keys?: Array<{
+        column_names: string[];
+        referenced_table_name: string;
+        referenced_column_names: string[];
+        on_delete?: string;
+        on_update?: string;
+      }>;
     };
 
     const tableParams = {
@@ -847,6 +892,7 @@ export class AiService implements IAiService {
           is_unique: column.is_unique,
         },
       })),
+      ...(args.foreign_keys && { foreign_keys: args.foreign_keys }),
     };
 
     const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
