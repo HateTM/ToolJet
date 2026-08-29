@@ -15,6 +15,9 @@ const buildMockAiUtilService = () => ({
 const buildMockAgentsService = () => ({
   CreateTable: jest.fn(),
   SeedTable: jest.fn(),
+  // Ticket #23's FK pre-flight consults the org's existing tables when an FK target is not
+  // among priorResults; tests default to "no pre-existing tables" and override as needed.
+  ViewTables: jest.fn().mockResolvedValue([]),
 });
 
 const buildMockRepositories = () => ({
@@ -72,6 +75,9 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
 
     const created = { id: 'tjdb-uuid', table_name: 'orders' };
     agentsService.CreateTable.mockResolvedValue(created);
+    // 'users' is not among priorResults here — the pre-flight must find it among the org's
+    // pre-existing tables for the step to proceed.
+    agentsService.ViewTables.mockResolvedValue([{ id: 'users-uuid', tableName: 'users' }]);
 
     const result = await service.executeCreateTableStep(
       { type: 'CreateTable', description: 'orders' } as any,
@@ -130,6 +136,7 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
       })],
     });
     agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'payments' });
+    agentsService.ViewTables.mockResolvedValue([{ id: 'customers-uuid', tableName: 'customers' }]);
 
     await service.executeCreateTableStep(
       { type: 'CreateTable', description: 'payments' } as any,
@@ -186,6 +193,46 @@ describe('createTableTool schema accepts foreign keys (axis 1)', () => {
         foreign_keys: [{ column_names: ['customer_id'], referenced_table_name: 'customers', referenced_column_names: ['id'], on_delete: 'BOOM' }],
       })
     ).toThrow(/invalid/i);
+  });
+});
+
+/** @group ai-builder */
+describe('createTableTool schema accepts indexes (ticket #23)', () => {
+  const schema = createTableTool.parameters as any;
+
+  it('accepts an indexes array of column groups with optional uniqueness', () => {
+    const parsed = schema.parse({
+      table_name: 'orders',
+      columns: [
+        { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
+        { column_name: 'customer_id', data_type: 'integer', is_primary_key: false, is_not_null: true, is_unique: false },
+      ],
+      indexes: [{ column_names: ['customer_id'] }, { column_names: ['customer_id', 'created_at'], is_unique: true }],
+    });
+
+    expect(parsed.indexes).toEqual([{ column_names: ['customer_id'] }, { column_names: ['customer_id', 'created_at'], is_unique: true }]);
+  });
+
+  it('rejects an index with no columns', () => {
+    expect(() =>
+      schema.parse({
+        table_name: 'orders',
+        columns: [{ column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true }],
+        indexes: [{ column_names: [] }],
+      })
+    ).toThrow();
+  });
+
+  it('indexes are optional', () => {
+    const parsed = schema.parse({
+      table_name: 'orders',
+      columns: [{ column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true }],
+    });
+    expect(parsed.indexes).toBeUndefined();
+  });
+
+  it('CREATE_TABLE_SYSTEM_PROMPT advertises the indexes field', () => {
+    expect(CREATE_TABLE_SYSTEM_PROMPT).toMatch(/indexes/i);
   });
 });
 

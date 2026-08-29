@@ -56,7 +56,7 @@ const STEP_TYPES = ['CreateTable', 'CreateQuery', 'CreateComponent'] as const;
 export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
 Call proposeStepPlan exactly once with the ordered list of steps needed to build what the PRD describes. Each step is one of:
-- CreateTable: creates a ToolJet DB table. Include the full table definition you propose in the optional table field — the user previews exactly that definition (tables, columns, foreign keys) before approving, and it is what gets created.
+- CreateTable: creates a ToolJet DB table. Include the full table definition you propose in the optional table field — the user previews exactly that definition (tables, columns, foreign keys, indexes) before approving, and it is what gets created.
   If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
@@ -125,6 +125,19 @@ const tableDefinitionObject = z.object({
     .describe(
       'Relationships to other tables in this app. Omit this field to create a table with no foreign keys. ' +
         'Referenced tables must already exist in this app.'
+    ),
+  indexes: z
+    .array(
+      z.object({
+        column_names: z.array(z.string()).min(1).describe('Column(s) in this table to index'),
+        is_unique: z.boolean().optional().describe('Set true only when uniqueness must be enforced by the index'),
+      })
+    )
+    .optional()
+    .describe(
+      'Indexes to create on this table for query performance (ticket #23). Omit when the table is small ' +
+        'or every column already benefits from an existing constraint. Index foreign-key columns and ' +
+        'columns frequently filtered or sorted on.'
     ),
 });
 
@@ -219,7 +232,9 @@ export const CREATE_TABLE_SYSTEM_PROMPT = `You design the exact schema for one T
 
 Call createTable exactly once with the table's real name (snake_case) and its columns. Every table needs exactly one primary key column (usually an auto-generated "id" of type serial). Pick sensible, minimal columns that satisfy what this step describes — don't invent columns the PRD doesn't call for.
 
-If this table's rows must always reference rows in another table in this app (for example a "customer_id" that must exist in the "customers" table), declare that relationship with the optional foreign_keys field: list the column(s) in this table, the referenced table, and the referenced column(s); optionally set on_delete/on_update to one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'. Only reference tables that already exist in this app — the referenced table's columns must match the column names you list. Omit foreign_keys when no such relationship is needed.`;
+If this table's rows must always reference rows in another table in this app (for example a "customer_id" that must exist in the "customers" table), declare that relationship with the optional foreign_keys field: list the column(s) in this table, the referenced table, and the referenced column(s); optionally set on_delete/on_update to one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'. Only reference tables that already exist in this app — the referenced table's columns must match the column names you list. Omit foreign_keys when no such relationship is needed.
+
+Use the optional indexes field when a table will be filtered, sorted, or joined on columns beyond the primary key — most commonly the columns that foreign keys point from. Each index lists the column(s) to index; set is_unique only when uniqueness must be enforced. Don't index a column that is already the table's primary key, and omit indexes when they wouldn't help.`;
 
 export const createTableTool = tool({
   description: 'Create a ToolJet DB table with the given name and columns.',
@@ -1149,7 +1164,44 @@ export class AiService implements IAiService {
         },
       })),
       ...(table.foreign_keys && { foreign_keys: table.foreign_keys }),
+      ...(table.indexes && { indexes: table.indexes }),
     };
+  }
+
+  /**
+   * Deterministic pre-flight for a table's foreign_keys (ticket #23, the same
+   * validate-and-retry seam as pageId/queryName): a referenced table must either be one
+   * this plan created earlier or already exist in the organization's ToolJet DB. Without
+   * this, a hallucinated reference fails deep inside TooljetDbTableOperationsService with
+   * an error that names neither the missing table nor what does exist — and the planned-
+   * table path (which makes no LLM call) would burn all retries on it. Thrown errors are
+   * retryable: on the LLM path the message is fed back as previousError.
+   */
+  private async validateForeignKeys(tableParams: any, context: StepExecutionContext): Promise<void> {
+    const foreignKeys = tableParams?.foreign_keys ?? [];
+    if (!foreignKeys.length) return;
+
+    const planTableNames = new Set(
+      context.priorResults
+        .filter((result) => result.type === 'CreateTable')
+        .map((result) => result.artifact.content?.table_name)
+        .filter(Boolean)
+    );
+    if (foreignKeys.every((foreignKey) => planTableNames.has(foreignKey.referenced_table_name))) return;
+
+    const existingTables = await this.agentsService.ViewTables(context.organizationId);
+    const existingTableNames = new Set(existingTables.map((table) => table.tableName));
+
+    const unknownTables = [
+      ...new Set(foreignKeys.map((foreignKey) => foreignKey.referenced_table_name).filter((name) => !planTableNames.has(name) && !existingTableNames.has(name))),
+    ];
+    if (unknownTables.length) {
+      const available = [...new Set([...planTableNames, ...existingTableNames])].sort();
+      throw new Error(
+        `foreign_keys reference table(s) that do not exist in this app: ${unknownTables.join(', ')}. ` +
+          `Available tables: ${available.length ? available.join(', ') : '(none yet)'}`
+      );
+    }
   }
 
   async executeCreateTableStep(
@@ -1163,6 +1215,7 @@ export class AiService implements IAiService {
     // #20, or a malformed definition dropped at plan time) fall through to the LLM path.
     if (isWellFormedTableDefinition(step.plannedTable)) {
       const tableParams = this.buildTableParams(step.plannedTable);
+      await this.validateForeignKeys(tableParams, context);
       const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
       // Ticket #48: seed rows the planner proposed (and the preview showed) are inserted
       // here, right after the table exists — same deterministic, no-LLM contract as the
@@ -1205,6 +1258,7 @@ export class AiService implements IAiService {
 
     const args = call.args as TableDefinition;
     const tableParams = this.buildTableParams(args);
+    await this.validateForeignKeys(tableParams, context);
 
     const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
 

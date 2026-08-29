@@ -53,6 +53,15 @@ export class AgentsService implements IAgentsService {
   }
 
   /**
+   * Lists the organization's ToolJet DB tables ({ id, tableName }), for AI-step validation
+   * that needs to know what already exists (ticket #23's foreign-key pre-flight). Errors
+   * propagate to the caller.
+   */
+  async ViewTables(organizationId: string): Promise<Array<{ id: string; tableName: string }>> {
+    return this.tooljetDbTableOperationsService.perform(organizationId, 'view_tables');
+  }
+
+  /**
    * Inserts seed rows into an already-created ToolJet DB table (ticket #48). Delegates to
    * the bulk-upsert backend: rows carrying the primary key values upsert (the planner-
    * provable equivalent of the study apps' `INSERT … ON CONFLICT DO NOTHING`), rows

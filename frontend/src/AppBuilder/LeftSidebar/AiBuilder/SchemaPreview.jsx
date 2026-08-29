@@ -34,6 +34,12 @@ const ForeignKeyLine = ({ foreignKeys }) => (
   </div>
 );
 
+const IndexLine = ({ indexes }) => (
+  <div className="tw-text-xs tw-text-text-placeholder" data-cy="ai-builder-schema-preview-indexes">
+    {indexes.map((index) => `index(${index.column_names.join(', ')})${index.is_unique ? ' unique' : ''}`).join('; ')}
+  </div>
+);
+
 const SeedRowsPreview = ({ rows }) => {
   // Column order = first row's key order; a row missing a key shows an empty cell.
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
@@ -97,6 +103,7 @@ const TableCard = ({ step }) => {
         ))}
       </div>
       {table.foreign_keys?.length > 0 && <ForeignKeyLine foreignKeys={table.foreign_keys} />}
+      {table.indexes?.length > 0 && <IndexLine indexes={table.indexes} />}
       {step.seed_rows?.length > 0 && <SeedRowsPreview rows={step.seed_rows} />}
     </div>
   );

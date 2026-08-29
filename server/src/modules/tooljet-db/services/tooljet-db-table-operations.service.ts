@@ -9,6 +9,7 @@ import {
   Table,
   TableColumn,
   TableForeignKey,
+  TableIndex,
 } from 'typeorm';
 import { InjectEntityManager } from '@nestjs/typeorm';
 import { InternalTable } from 'src/entities/internal_table.entity';
@@ -302,7 +303,7 @@ export class TooljetDbTableOperationsService {
 
     if (isEmpty(primaryKeyColumnList)) throw new BadRequestException('Primary key is mandatory');
 
-    const { table_name: tableName, foreign_keys = [] } = params;
+    const { table_name: tableName, foreign_keys = [], indexes = [] } = params;
     const { appManager, tjdbManager } = connectionManagers;
     const tableWithSameName = await appManager.findOne(InternalTable, {
       where: {
@@ -334,6 +335,20 @@ export class TooljetDbTableOperationsService {
       throw new ConflictException(
         'Foreign key cannot be created as the referenced column is in the composite primary key.'
       );
+
+    // An index on a column the table doesn't define would make CREATE INDEX fail inside the
+    // transaction — fail loud before any side effect instead.
+    const definedColumnNames = new Set(params.columns.map((column) => column.column_name));
+    for (const index of indexes) {
+      const unknownColumns = (index.column_names ?? []).filter(
+        (columnName: string) => !definedColumnNames.has(columnName)
+      );
+      if (unknownColumns.length) {
+        throw new BadRequestException(
+          `Cannot index column(s) ${unknownColumns.join(', ')}: not present in table "${tableName}"`
+        );
+      }
+    }
 
     const queryRunner = appManager?.queryRunner || appManager.connection.createQueryRunner();
     const tjdbQueryRunner = tjdbManager?.queryRunner || tjdbManager.connection.createQueryRunner();
@@ -384,6 +399,21 @@ export class TooljetDbTableOperationsService {
       //   new Table({ schema: tenantSchema, name: internalTable.id }),
       //   primaryKeyColumnList
       // );
+
+      // Indexes are created after the table itself, inside the same transaction, so a failed
+      // index rolls the whole table back. Names are derived from the internal table's uuid to
+      // stay unique per tenant schema, truncated to Postgres's 63-byte identifier limit.
+      for (const [indexPosition, index] of indexes.entries()) {
+        const indexName = `idx_${internalTable.id}_${indexPosition}`.slice(0, 63);
+        await tjdbQueryRunner.createIndex(
+          new Table({ schema: tenantSchema, name: internalTable.id }),
+          new TableIndex({
+            name: indexName,
+            columnNames: index.column_names,
+            isUnique: Boolean(index.is_unique),
+          })
+        );
+      }
 
       await queryRunner.commitTransaction();
       await tjdbQueryRunner.commitTransaction();
