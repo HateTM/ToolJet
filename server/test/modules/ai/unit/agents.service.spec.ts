@@ -33,6 +33,10 @@ const buildMockVersionRepository = () => ({
   findVersion: jest.fn(),
 });
 
+const buildMockTooljetDbBulkUploadService = () => ({
+  bulkUpsertRowsWithPrimaryKey: jest.fn(),
+});
+
 const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
   const tooljetDbTableOperationsService =
     overrides.tooljetDbTableOperationsService ?? buildMockTooljetDbTableOperationsService();
@@ -42,6 +46,7 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
   const dataQueryRepository = overrides.dataQueryRepository ?? buildMockDataQueryRepository();
   const dataSourcesRepository = overrides.dataSourcesRepository ?? buildMockDataSourcesRepository();
   const versionRepository = overrides.versionRepository ?? buildMockVersionRepository();
+  const tooljetDbBulkUploadService = overrides.tooljetDbBulkUploadService ?? buildMockTooljetDbBulkUploadService();
 
   const service = new AgentsService(
     tooljetDbTableOperationsService as any,
@@ -50,7 +55,8 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     eventsService as any,
     dataQueryRepository as any,
     dataSourcesRepository as any,
-    versionRepository as any
+    versionRepository as any,
+    tooljetDbBulkUploadService as any
   );
 
   return {
@@ -62,6 +68,7 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     dataQueryRepository,
     dataSourcesRepository,
     versionRepository,
+    tooljetDbBulkUploadService,
   };
 };
 
@@ -760,6 +767,49 @@ describe('AgentsService.undoArtifact', () => {
 
     await expect(service.undoArtifact('SomeFutureStepType' as any, 'version-1', 'org-1', {})).rejects.toThrow(
       'Cannot undo unsupported step type "SomeFutureStepType"'
+    );
+  });
+});
+
+/** @group ai-builder */
+describe('AgentsService.SeedTable (ticket #48)', () => {
+  const rows = [
+    { title: 'First task', done: false },
+    { title: 'Second task', done: true },
+  ];
+
+  it('delegates to the backend bulk upsert with the table id, primary keys and rows', async () => {
+    const { service, tooljetDbBulkUploadService } = buildAgentsService();
+    tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey.mockResolvedValue({
+      status: 'ok',
+      inserted: 2,
+      updated: 0,
+      rows,
+    });
+
+    const result = await service.SeedTable('org-1', 'tjdb-uuid', ['id'], rows);
+
+    expect(tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey).toHaveBeenCalledWith(
+      rows,
+      'tjdb-uuid',
+      ['id'],
+      'org-1'
+    );
+    expect(result).toEqual({ inserted: 2, updated: 0 });
+  });
+
+  it('throws when the backend reports a failed status instead of returning it as success', async () => {
+    const { service, tooljetDbBulkUploadService } = buildAgentsService();
+    tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey.mockResolvedValue({
+      status: 'failed',
+      error: 'Table not found',
+      inserted: 0,
+      updated: 0,
+      rows: [],
+    });
+
+    await expect(service.SeedTable('org-1', 'tjdb-uuid', ['id'], rows)).rejects.toThrow(
+      'Seeding the table failed: Table not found'
     );
   });
 });

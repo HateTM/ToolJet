@@ -19,12 +19,16 @@ _Avoid_: Plan, spec, proposal
 The user action that locks in a PRD and starts execution ("Looks good, run it" in the schema `Preview`). The full ordered `Step` list is generated once — by a `Preview` if one came first, otherwise at approve time — and the plan's shape doesn't change after this point, only each Step's concrete props get filled in as execution reaches it (see [ADR-0004](docs/adr/0004-fixed-step-plan-at-approve.md)). One-way: there's no "un-approve," only rewinding executed steps.
 
 **Preview** (a plan):
-The user action that shows what a PRD would build *before* anything executes: the plan is generated (or reused) and returned as JSON, with each `CreateTable` Step carrying its **Planned table** — the concrete definition the executor will create verbatim. Two ways forward, neither discarding the PRD: "Looks good, run it" (which becomes the `Approve`) or "I want to make changes" (drop the preview, keep chatting). Previewing twice is idempotent, and refining the PRD by chat makes any earlier preview stale (see [ADR-0020](docs/adr/0020-schema-preview-shows-the-planners-own-table-definitions.md)).
+The user action that shows what a PRD would build *before* anything executes: the plan is generated (or reused) and returned as JSON, with each `CreateTable` Step carrying its **Planned table** — and, when the PRD asks for sample data, its **Planned seed rows** — the concrete definitions the executor will create and insert verbatim. Two ways forward, neither discarding the PRD: "Looks good, run it" (which becomes the `Approve`) or "I want to make changes" (drop the preview, keep chatting). Previewing twice is idempotent, and refining the PRD by chat makes any earlier preview stale (see [ADR-0020](docs/adr/0020-schema-preview-shows-the-planners-own-table-definitions.md)).
 _Avoid_: Dry run, preflight, schema editor
 
 **Planned table**:
 The table definition (name, columns, foreign keys) the planner proposes for a `CreateTable` Step at plan time, persisted on the Step. What the schema `Preview` renders, and what `executeCreateTableStep` creates without a further LLM call — so the preview is always truthful. Steps without one (pre-ADR-0020 plans, malformed proposals) fall back to the per-step LLM path.
-_Avoid_: SQL, DDL, seed data
+_Avoid_: SQL, DDL
+
+**Planned seed rows**:
+The sample-data rows (1–50 plain records of column → primitive value) the planner proposes alongside a **Planned table** when the PRD calls for sample or starting data (ticket #48, [ADR-0024](docs/adr/0024-seed-data-is-planner-proposed-structured-rows-on-the-create-table-step.md)). The `Preview` renders them as a table, and `executeCreateTableStep` inserts them verbatim right after creating the table — no LLM call, no SQL. Malformed rows are dropped at plan time; the per-step LLM fallback never seeds.
+_Avoid_: Seed query, seed SQL, bulk insert step
 
 **Step**:
 One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container), creates a ToolJet DB table, or creates a Query — against a ToolJet DB table, or against a `Queryable data source` — see [ADR-0002](docs/adr/0002-generic-component-tool.md) and [ADR-0019](docs/adr/0019-createquery-targets-connected-sql-sources-from-a-schema-it-was-shown.md).

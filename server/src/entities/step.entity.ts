@@ -63,6 +63,13 @@ export class Step {
   @Column({ name: 'planned_table', type: 'jsonb', nullable: true })
   plannedTable: any;
 
+  // The seed rows the planner proposed for this Step's table (ticket #48) — present only on
+  // CreateTable Steps, and only when the PRD asks for sample data. What the schema preview
+  // renders, and what executeCreateTableStep inserts verbatim after creating the table, so
+  // the preview stays truthful.
+  @Column({ name: 'planned_seed_rows', type: 'jsonb', nullable: true })
+  plannedSeedRows: any;
+
   @Column({ type: 'int', nullable: false, default: 0 })
   attempts: number;
 

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { IAgentsService } from '../interfaces/IAgentsService';
 import { TooljetDbTableOperationsService } from '@modules/tooljet-db/services/tooljet-db-table-operations.service';
+import { TooljetDbBulkUploadService } from '@modules/tooljet-db/services/tooljet-db-bulk-upload.service';
 import { PageService } from '@modules/apps/services/page.service';
 import { ComponentsService } from '@modules/apps/services/component.service';
 import { EventsService } from '@modules/apps/services/event.service';
@@ -34,7 +35,8 @@ export class AgentsService implements IAgentsService {
     private readonly eventsService: EventsService,
     private readonly dataQueryRepository: DataQueryRepository,
     private readonly dataSourcesRepository: DataSourcesRepository,
-    private readonly versionRepository: VersionRepository
+    private readonly versionRepository: VersionRepository,
+    private readonly tooljetDbBulkUploadService: TooljetDbBulkUploadService
   ) {}
 
   /**
@@ -48,6 +50,32 @@ export class AgentsService implements IAgentsService {
    */
   async CreateTable(organizationId: string, tables): Promise<any> {
     return this.tooljetDbTableOperationsService.perform(organizationId, 'create_table', tables);
+  }
+
+  /**
+   * Inserts seed rows into an already-created ToolJet DB table (ticket #48). Delegates to
+   * the bulk-upsert backend: rows carrying the primary key values upsert (the planner-
+   * provable equivalent of the study apps' `INSERT … ON CONFLICT DO NOTHING`), rows
+   * omitting a serial primary key plain-INSERT with the value auto-generated. A failed
+   * backend status is rethrown as an exception so the Step-execution retry loop sees it
+   * like any other step error, rather than silently reporting a seeded table that isn't.
+   */
+  async SeedTable(
+    organizationId: string,
+    tableId: string,
+    primaryKeyColumns: string[],
+    rows: Record<string, any>[]
+  ): Promise<{ inserted: number; updated: number }> {
+    const result = await this.tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey(
+      rows,
+      tableId,
+      primaryKeyColumns,
+      organizationId
+    );
+    if (result?.status === 'failed') {
+      throw new Error(`Seeding the table failed: ${result.error}`);
+    }
+    return { inserted: result.inserted, updated: result.updated };
   }
 
   /**

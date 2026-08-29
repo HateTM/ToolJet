@@ -3,6 +3,15 @@ import { StepType } from '@entities/step.entity';
 export interface IAgentsService {
   CreateTable(organizationId: string, tables: any): Promise<any>;
 
+  // Inserts planner-proposed seed rows into an already-created ToolJet DB table
+  // (ticket #48). Throws when the backend bulk-upsert reports an error.
+  SeedTable(
+    organizationId: string,
+    tableId: string,
+    primaryKeyColumns: string[],
+    rows: Record<string, any>[]
+  ): Promise<{ inserted: number; updated: number }>;
+
   // `type` + `props` per ADR-0002's generic "CreateComponent(type, props)" tool; the
   // props shape is type-specific (see AgentsService.CreateComponent's doc comment).
   CreateComponent(appVersionId: string, organizationId: string, type: string, props: any): Promise<any>;

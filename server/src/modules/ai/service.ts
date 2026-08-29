@@ -53,10 +53,11 @@ You cannot change this app in this conversation — you have no ability to creat
 // ADR-0006 — even though only CreateTable has a real handler in this ticket.
 const STEP_TYPES = ['CreateTable', 'CreateQuery', 'CreateComponent'] as const;
 
-const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
+export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
 Call proposeStepPlan exactly once with the ordered list of steps needed to build what the PRD describes. Each step is one of:
 - CreateTable: creates a ToolJet DB table. Include the full table definition you propose in the optional table field — the user previews exactly that definition (tables, columns, foreign keys) before approving, and it is what gets created.
+  If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
 
@@ -129,9 +130,49 @@ const tableDefinitionObject = z.object({
 
 type TableDefinition = z.infer<typeof tableDefinitionObject>;
 
+// One seed row the planner proposes for a table it also proposes (ticket #48): a plain
+// record of column name → primitive value. Structured rows, not SQL — the same principle
+// ADR-0020 set for the table definition itself, so the preview renders the data (not a
+// query) and execution inserts exactly what was previewed, with no SQL surface anywhere.
+const seedRowObject = z.record(z.union([z.string(), z.number(), z.boolean(), z.null()]));
+
+const seedRowsObject = z
+  .array(seedRowObject)
+  .min(1)
+  .max(50)
+  .describe(
+    'Seed rows to insert after this table is created. Only when the PRD asks for sample/starting data. ' +
+      'Each row maps column names to values and must be consistent with the columns defined above; ' +
+      'omit auto-generated (serial) primary key columns.'
+  );
+
+// A planned seed-rows array is trusted verbatim only when every row is a plain, non-empty
+// object of primitive-or-null values — anything looser is dropped at plan time rather than
+// half-executed (same policy as isWellFormedTableDefinition).
+const isWellFormedSeedRows = (rows: any): rows is Record<string, any>[] =>
+  Array.isArray(rows) &&
+  rows.length > 0 &&
+  rows.length <= 50 &&
+  rows.every(
+    (row) =>
+      row &&
+      typeof row === 'object' &&
+      !Array.isArray(row) &&
+      Object.keys(row).length > 0 &&
+      Object.values(row).every((value) => value === null || ['string', 'number', 'boolean'].includes(typeof value))
+  );
+
 // A planned table is trusted verbatim only when it could actually create a table: a real
 // (non-blank) name and at least one column with a name and a type. Anything looser falls
 // back to the per-step LLM path rather than failing execution on a malformed contract.
+// Seed rows are only as good as their fit to the table they seed: every key must be a real
+// column of the planned table (ticket #48). Column order and completeness are not required —
+// a serial primary key may be omitted — but an unknown column would fail at insert time.
+const areSeedRowsConsistentWithTable = (rows: Record<string, any>[], table: TableDefinition): boolean => {
+  const columnNames = new Set(table.columns.map((column) => column.column_name));
+  return rows.every((row) => Object.keys(row).every((key) => columnNames.has(key)));
+};
+
 const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
   Boolean(
     table &&
@@ -148,7 +189,7 @@ const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
     )
   );
 
-const proposeStepPlanTool = tool({
+export const proposeStepPlanTool = tool({
   description: 'Propose the ordered list of build steps for this PRD.',
   parameters: z.object({
     steps: z
@@ -160,6 +201,10 @@ const proposeStepPlanTool = tool({
           // proposes, persisted as the Step's plannedTable and shown in the pre-approval
           // schema preview (ticket #20).
           table: tableDefinitionObject.optional(),
+          // Only meaningful on CreateTable steps: the seed rows this step proposes to insert
+          // after the table is created (ticket #48), persisted as the Step's plannedSeedRows
+          // and shown in the pre-approval schema preview alongside the table.
+          seed_rows: seedRowsObject.optional(),
           // The named phase this step belongs to (ticket #21). Optional so an older planner
           // response without one still validates — a missing phase falls back to a single
           // derived group on the client.
@@ -856,7 +901,8 @@ export class AiService implements IAiService {
 
   // One Step as it travels to the client (plan SSE event, preview response). The planned
   // table (ticket #20) rides along on CreateTable steps so the schema preview renders the
-  // definition that execution will create verbatim.
+  // definition that execution will create verbatim; the planned seed rows (ticket #48) ride
+  // along for the same reason — the preview shows the data that will be inserted.
   private mapStepsForWire(steps: Step[]) {
     return steps.map((step) => ({
       id: step.id,
@@ -864,6 +910,7 @@ export class AiService implements IAiService {
       description: step.description,
       ...(step.phase && { phase: step.phase }),
       ...(step.plannedTable && { table: step.plannedTable }),
+      ...(step.plannedSeedRows && { seed_rows: step.plannedSeedRows }),
     }));
   }
 
@@ -917,7 +964,7 @@ export class AiService implements IAiService {
     }
 
     const { steps: proposedSteps } = call.args as {
-      steps: Array<{ type: StepType; description: string; table?: TableDefinition; phase?: string }>;
+      steps: Array<{ type: StepType; description: string; table?: TableDefinition; seed_rows?: any[]; phase?: string }>;
     };
     if (!proposedSteps?.length) {
       throw new Error('The assistant proposed an empty build plan');
@@ -932,6 +979,20 @@ export class AiService implements IAiService {
       // per-step LLM path instead of trusting a half-formed contract.
       const plannedTable =
         proposed.type === 'CreateTable' && isWellFormedTableDefinition(proposed.table) ? proposed.table : undefined;
+      // Ticket #48: seed rows ride on the same CreateTable steps, dropped when malformed —
+      // execution then creates the table without seeding instead of trusting a half-formed
+      // contract (same policy as a malformed planned table). Malformed includes rows that
+      // name columns the planned table doesn't have: the spec's "INSERTs consistent with
+      // the planned schema" is checked here, against the planner's own table proposal, so
+      // a hallucinated column fails at plan time (the preview never shows it) rather than
+      // mid-execution. Rows are only trusted when the table definition they seed is too.
+      const plannedSeedRows =
+        proposed.type === 'CreateTable' &&
+        isWellFormedTableDefinition(proposed.table) &&
+        isWellFormedSeedRows(proposed.seed_rows) &&
+        areSeedRowsConsistentWithTable(proposed.seed_rows, proposed.table)
+          ? proposed.seed_rows
+          : undefined;
       // Ticket #21: the planner-assigned phase name, trimmed; an absent/blank one persists
       // as null so the client's fallback grouping sees a consistent shape.
       const phase = proposed.phase?.trim() || null;
@@ -942,6 +1003,7 @@ export class AiService implements IAiService {
         type: proposed.type,
         description: proposed.description,
         ...(plannedTable && { plannedTable }),
+        ...(plannedSeedRows && { plannedSeedRows }),
         ...(phase && { phase }),
         status: 'pending',
       });
@@ -1102,8 +1164,23 @@ export class AiService implements IAiService {
     if (isWellFormedTableDefinition(step.plannedTable)) {
       const tableParams = this.buildTableParams(step.plannedTable);
       const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
+      // Ticket #48: seed rows the planner proposed (and the preview showed) are inserted
+      // here, right after the table exists — same deterministic, no-LLM contract as the
+      // table itself. A failure throws into the retry loop like any other step error.
+      let seed: { inserted: number; updated: number } | undefined;
+      if (isWellFormedSeedRows(step.plannedSeedRows)) {
+        const primaryKeyColumns = step.plannedTable.columns
+          .filter((column: any) => column.is_primary_key)
+          .map((column: any) => column.column_name);
+        seed = await this.agentsService.SeedTable(
+          context.organizationId,
+          created.id,
+          primaryKeyColumns,
+          step.plannedSeedRows
+        );
+      }
       return {
-        content: { ...created, columns: tableParams.columns },
+        content: { ...created, columns: tableParams.columns, ...(seed && { seed }) },
         identifier: created.table_name,
         props: tableParams,
       };

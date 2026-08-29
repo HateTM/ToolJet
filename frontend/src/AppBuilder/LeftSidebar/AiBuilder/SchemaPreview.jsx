@@ -34,6 +34,46 @@ const ForeignKeyLine = ({ foreignKeys }) => (
   </div>
 );
 
+const SeedRowsPreview = ({ rows }) => {
+  // Column order = first row's key order; a row missing a key shows an empty cell.
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  return (
+    <div className="tw-flex tw-flex-col tw-gap-1" data-cy="ai-builder-schema-preview-seed-rows">
+      <span className="tw-text-xs tw-font-medium tw-text-text-placeholder">Sample data</span>
+      <div className="tw-overflow-x-auto">
+        <table className="tw-w-full tw-border-collapse tw-text-xs">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th
+                  key={column}
+                  className="tw-border tw-border-solid tw-border-border-weak tw-px-1.5 tw-py-0.5 tw-text-left tw-font-medium tw-text-text-placeholder"
+                >
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {columns.map((column) => (
+                  <td
+                    key={column}
+                    className="tw-border tw-border-solid tw-border-border-weak tw-px-1.5 tw-py-0.5 tw-text-text-default"
+                  >
+                    {row[column] === null || row[column] === undefined ? '' : String(row[column])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 const TableCard = ({ step }) => {
   const table = step.table;
   return (
@@ -57,6 +97,7 @@ const TableCard = ({ step }) => {
         ))}
       </div>
       {table.foreign_keys?.length > 0 && <ForeignKeyLine foreignKeys={table.foreign_keys} />}
+      {step.seed_rows?.length > 0 && <SeedRowsPreview rows={step.seed_rows} />}
     </div>
   );
 };
@@ -74,7 +115,8 @@ const StepLine = ({ step }) => (
 /**
  * The pre-approval schema preview (ticket #20): renders the previewed plan's structure —
  * each CreateTable step's concrete planned table (the same definition executeCreateTableStep
- * creates verbatim on approval), and every other step as a plain line item.
+ * creates verbatim on approval), the seed rows the planner proposed for it (ticket #48, the
+ * same rows execution inserts verbatim), and every other step as a plain line item.
  */
 export const SchemaPreview = ({ steps, title = 'Build plan preview' }) => {
   const tableSteps = steps.filter((step) => step.table);
