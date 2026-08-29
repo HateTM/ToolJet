@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, Bug, ListTodo, Truck, Users } from 'lucide-react';
@@ -36,7 +36,6 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
   const [prompt, setPrompt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [exampleIndex, setExampleIndex] = useState(0);
-  const textareaRef = useRef(null);
 
   // Rotating Tab-to-accept placeholder (home variant only): cycles through example
   // prompts while the textarea is empty; the user's typed text freezes the rotation.
@@ -80,7 +79,6 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
         data-cy="create-app-with-prompt"
       >
         <textarea
-          ref={textareaRef}
           className="tw-flex-1 tw-resize-none tw-border-none tw-bg-transparent tw-text-sm tw-text-text-default focus:tw-outline-none"
           rows={1}
           placeholder={
