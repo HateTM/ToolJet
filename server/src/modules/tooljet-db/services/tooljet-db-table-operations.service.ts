@@ -401,10 +401,10 @@ export class TooljetDbTableOperationsService {
       // );
 
       // Indexes are created after the table itself, inside the same transaction, so a failed
-      // index rolls the whole table back. Names are derived from the internal table's uuid to
-      // stay unique per tenant schema, truncated to Postgres's 63-byte identifier limit.
+      // index rolls the whole table back. Names are derived from the internal table's uuid
+      // to stay unique per tenant schema (well under Postgres's 63-byte identifier limit).
       for (const [indexPosition, index] of indexes.entries()) {
-        const indexName = `idx_${internalTable.id}_${indexPosition}`.slice(0, 63);
+        const indexName = `idx_${internalTable.id}_${indexPosition}`;
         await tjdbQueryRunner.createIndex(
           new Table({ schema: tenantSchema, name: internalTable.id }),
           new TableIndex({

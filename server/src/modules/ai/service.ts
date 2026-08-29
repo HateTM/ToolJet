@@ -1181,19 +1181,28 @@ export class AiService implements IAiService {
     const foreignKeys = tableParams?.foreign_keys ?? [];
     if (!foreignKeys.length) return;
 
+    // Malformed entries (legacy plans persisted before #23's schema) can't name a real
+    // table — treat them as unknown so the error names them instead of printing "undefined".
+    const referencedNames = foreignKeys.map((foreignKey) =>
+      typeof foreignKey?.referenced_table_name === 'string' ? foreignKey.referenced_table_name : null
+    );
     const planTableNames = new Set(
       context.priorResults
         .filter((result) => result.type === 'CreateTable')
         .map((result) => result.artifact.content?.table_name)
         .filter(Boolean)
     );
-    if (foreignKeys.every((foreignKey) => planTableNames.has(foreignKey.referenced_table_name))) return;
+    if (referencedNames.every((name) => name !== null && planTableNames.has(name))) return;
 
     const existingTables = await this.agentsService.ViewTables(context.organizationId);
     const existingTableNames = new Set(existingTables.map((table) => table.tableName));
 
     const unknownTables = [
-      ...new Set(foreignKeys.map((foreignKey) => foreignKey.referenced_table_name).filter((name) => !planTableNames.has(name) && !existingTableNames.has(name))),
+      ...new Set(
+        referencedNames.filter(
+          (name) => name === null || (!planTableNames.has(name) && !existingTableNames.has(name))
+        )
+      ),
     ];
     if (unknownTables.length) {
       const available = [...new Set([...planTableNames, ...existingTableNames])].sort();
