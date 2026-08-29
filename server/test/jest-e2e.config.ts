@@ -1,5 +1,6 @@
 import type { Config } from '@jest/types';
-import { coverageConfig } from './jest-coverage.config';
+// @ts-ignore TS5097 — see jest.config.ts for why the extension is required
+import { coverageConfig } from './jest-coverage.config.ts';
 
 const config: Config.InitialOptions = {
   moduleFileExtensions: ['js', 'json', 'ts', 'node'],

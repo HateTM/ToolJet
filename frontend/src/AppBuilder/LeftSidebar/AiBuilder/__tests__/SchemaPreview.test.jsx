@@ -65,3 +65,30 @@ describe('SchemaPreview — seed rows (ticket #48)', () => {
     expect(extraCell.textContent).toBe('');
   });
 });
+
+describe('SchemaPreview — indexes (ticket #23)', () => {
+  it('renders the planned indexes with their uniqueness flag', () => {
+    const steps = [
+      {
+        ...TABLE_STEP,
+        table: {
+          ...TABLE_STEP.table,
+          indexes: [{ column_names: ['title'] }, { column_names: ['id', 'title'], is_unique: true }],
+        },
+      },
+    ];
+
+    render(<SchemaPreview steps={steps} />);
+
+    const indexes = document.querySelector('[data-cy="ai-builder-schema-preview-indexes"]');
+    expect(indexes).toBeInTheDocument();
+    expect(indexes).toHaveTextContent('index(title)');
+    expect(indexes).toHaveTextContent('index(id, title) unique');
+  });
+
+  it('renders no index line when the planned table has no indexes', () => {
+    render(<SchemaPreview steps={[TABLE_STEP]} />);
+
+    expect(document.querySelector('[data-cy="ai-builder-schema-preview-indexes"]')).toBeNull();
+  });
+});
