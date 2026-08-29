@@ -28,6 +28,12 @@ const initialState = {
   // { id, type, description, status: 'pending'|'running'|'succeeded'|'failed', artifact?, errorMessage? }
   steps: [],
   isApproving: false,
+  // The plan previewed but not yet approved (ticket #20): the preview-plan endpoint's steps,
+  // each optionally carrying its CreateTable step's planned table definition. Rendered as a
+  // structured schema preview; cleared when real execution starts (approvePrd's plan event),
+  // when the PRD is refined (sendMessage), or explicitly (discardPendingPlan).
+  pendingPlan: [],
+  isPreviewing: false,
   // id of the step currently being rewound, or null — only one rewind can be in flight at
   // a time (rewindStep is a single synchronous backend call, not a stream).
   rewindingStepId: null,
@@ -106,6 +112,8 @@ const useAiBuilderStore = create(
             state.isSending = false;
             state.steps = [];
             state.isApproving = false;
+            state.pendingPlan = [];
+            state.isPreviewing = false;
             state.rewindingStepId = null;
             state.votes = {};
             state.regeneratingMessageId = null;
@@ -134,6 +142,8 @@ const useAiBuilderStore = create(
             state.isSending = false;
             state.steps = [];
             state.isApproving = false;
+            state.pendingPlan = [];
+            state.isPreviewing = false;
             state.rewindingStepId = null;
             state.votes = {};
             state.regeneratingMessageId = null;
@@ -296,6 +306,8 @@ const useAiBuilderStore = create(
               state.messages = conversation?.aiConversationMessages || conversation?.messages || [];
               state.votes = extractVotes(state.messages);
               state.streamingMessage = null;
+              state.pendingPlan = [];
+              state.isPreviewing = false;
               state.isLoadingConversation = false;
             },
             false,
@@ -387,6 +399,8 @@ const useAiBuilderStore = create(
             state.messages.push(userMessage);
             state.streamingMessage = { messageType: 'ai', content: '' };
             state.isSending = true;
+            // The preview belonged to the pre-refinement PRD; this message makes it stale.
+            state.pendingPlan = [];
             state.error = null;
           },
           false,
@@ -495,6 +509,57 @@ const useAiBuilderStore = create(
         }
       },
 
+      // Ticket #20: fetches (or reuses) the plan for the conversation's latest PRD without
+      // executing anything, so the user can review a structured schema preview first.
+      previewPlan: async () => {
+        const conversationId = get().currentConversationId;
+        if (!conversationId) return;
+
+        set(
+          (state) => {
+            state.isPreviewing = true;
+            state.error = null;
+          },
+          false,
+          'aiBuilder/previewPlan/start'
+        );
+
+        try {
+          const { steps } = await aiService.previewPlan({ conversationId });
+          set(
+            (state) => {
+              state.pendingPlan = steps || [];
+              state.isPreviewing = false;
+            },
+            false,
+            'aiBuilder/previewPlan/success'
+          );
+        } catch (error) {
+          set(
+            (state) => {
+              state.pendingPlan = [];
+              state.isPreviewing = false;
+              state.error = buildErrorMessage(error, 'Failed to build the plan preview');
+            },
+            false,
+            'aiBuilder/previewPlan/catch'
+          );
+        }
+      },
+
+      // The "I want to make changes" path: the preview is dropped but the PRD (and the whole
+      // conversation) is kept — the user tweaks it with a targeted follow-up message rather
+      // than a full regenerate (ticket #20; contrast ADR-0009's regenerate-message).
+      discardPendingPlan: () => {
+        set(
+          (state) => {
+            state.pendingPlan = [];
+          },
+          false,
+          'aiBuilder/discardPendingPlan'
+        );
+      },
+
       // Approves the current PRD and streams execution progress: `plan` seeds the step
       // list, `step-progress`/`step-done`/`step-failed` update one step in place by its
       // 1-based `step` index, and `done` carries a failure AiConversationMessage when
@@ -507,6 +572,7 @@ const useAiBuilderStore = create(
           (state) => {
             state.isApproving = true;
             state.steps = [];
+            state.pendingPlan = [];
             state.error = null;
           },
           false,
@@ -518,6 +584,7 @@ const useAiBuilderStore = create(
             set(
               (state) => {
                 state.steps = (data?.steps || []).map((step) => ({ ...step, status: 'pending' }));
+                // Steps carry their planned table definition (ticket #20) — kept for rendering.
               },
               false,
               'aiBuilder/approvePrd/plan'

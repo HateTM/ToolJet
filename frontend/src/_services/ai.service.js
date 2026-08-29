@@ -18,6 +18,7 @@ export const aiService = {
   getTokenUsage,
   fetchZeroState,
   approvePrd,
+  previewPlan,
   rewindStep,
   regenerateMessage,
   promoteConversation,
@@ -119,6 +120,19 @@ async function promoteConversation(body) {
 // backend): plan, step-progress, step-done, step-failed, done, error.
 async function approvePrd(body, onMessage) {
   return postSSE(`${config.apiUrl}/ai/conversation/approve-prd`, body, onMessage);
+}
+
+// body: { conversationId, dataSourceId }. Not SSE — preview-plan generates (or reuses) the
+// plan for the conversation's latest PRD and returns it as plain JSON (see AiService.previewPlan
+// on the backend); nothing executes (ticket #20).
+async function previewPlan(body) {
+  const requestOptions = {
+    method: 'POST',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  };
+  return fetch(`${config.apiUrl}/ai/conversation/preview-plan`, requestOptions).then(handleResponse);
 }
 
 // body: { conversationId, stepId }. Not SSE — rewind is a synchronous DB/App undo, no

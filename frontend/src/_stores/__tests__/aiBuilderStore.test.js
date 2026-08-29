@@ -12,6 +12,7 @@ jest.mock('@/_services/ai.service', () => ({
     voteMessage: jest.fn(),
     regenerateMessage: jest.fn(),
     promoteConversation: jest.fn(),
+    previewPlan: jest.fn(),
   },
 }));
 
@@ -400,6 +401,95 @@ describe('aiBuilderStore', () => {
 
     expect(getInitialState().zeroState).toEqual(zeroState);
     expect(getInitialState().isZeroStateLoading).toBe(false);
+  });
+
+  describe('previewPlan (schema preview, ticket #20)', () => {
+    beforeEach(() => {
+      useAiBuilderStore.setState({ currentConversationId: 'conv-1' });
+    });
+
+    it('does nothing without a current conversation', async () => {
+      useAiBuilderStore.setState({ currentConversationId: null });
+
+      await getInitialState().previewPlan();
+
+      expect(aiService.previewPlan).not.toHaveBeenCalled();
+    });
+
+    it('stores the returned steps (with planned table definitions) as the pending plan', async () => {
+      const steps = [
+        {
+          id: 'step-1',
+          type: 'CreateTable',
+          description: 'Create a customers table',
+          table: { table_name: 'customers', columns: [] },
+        },
+        { id: 'step-2', type: 'CreateComponent', description: 'Create a page' },
+      ];
+      aiService.previewPlan.mockResolvedValue({ steps });
+
+      await getInitialState().previewPlan();
+
+      expect(aiService.previewPlan).toHaveBeenCalledWith({ conversationId: 'conv-1' });
+      expect(getInitialState().pendingPlan).toEqual(steps);
+      expect(getInitialState().isPreviewing).toBe(false);
+    });
+
+    it('sets an error and clears isPreviewing when the call fails', async () => {
+      aiService.previewPlan.mockRejectedValue(new Error('boom'));
+
+      await getInitialState().previewPlan();
+
+      expect(getInitialState().isPreviewing).toBe(false);
+      expect(getInitialState().error).toBeTruthy();
+      expect(getInitialState().pendingPlan).toEqual([]);
+    });
+
+    it('discardPendingPlan clears the preview (the "I want to make changes" path)', () => {
+      useAiBuilderStore.setState({ pendingPlan: [{ id: 'step-1', type: 'CreateTable', description: 'x' }] });
+
+      getInitialState().discardPendingPlan();
+
+      expect(getInitialState().pendingPlan).toEqual([]);
+    });
+
+    it('approvePrd clears the pending plan once real execution starts (the plan event)', async () => {
+      useAiBuilderStore.setState({ pendingPlan: [{ id: 'step-1', type: 'CreateTable', description: 'x' }] });
+      aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+        onMessage({
+          type: 'plan',
+          data: {
+            steps: [
+              {
+                id: 'step-1',
+                type: 'CreateTable',
+                description: 'Create a customers table',
+                table: { table_name: 'customers' },
+              },
+            ],
+          },
+        });
+        return [];
+      });
+
+      await getInitialState().approvePrd('PRD text');
+
+      expect(getInitialState().pendingPlan).toEqual([]);
+      // The plan event's table definition is preserved on the step for rendering.
+      expect(getInitialState().steps[0]).toMatchObject({ id: 'step-1', table: { table_name: 'customers' } });
+    });
+
+    it('sendMessage discards a stale pending plan (the PRD is being refined)', async () => {
+      useAiBuilderStore.setState({
+        currentConversationId: 'conv-1',
+        pendingPlan: [{ id: 'step-1', type: 'CreateTable', description: 'x' }],
+      });
+      aiService.sendMessage.mockImplementation(async () => []);
+
+      await getInitialState().sendMessage({ appId: 'app-1', content: 'actually add an email column' });
+
+      expect(getInitialState().pendingPlan).toEqual([]);
+    });
   });
 
   describe('approvePrd', () => {

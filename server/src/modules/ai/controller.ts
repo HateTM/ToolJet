@@ -49,6 +49,15 @@ export class AiController implements IAiController {
     return await this.aiService.approvePrd(conversationId, prd, user, userPermissions, response, dataSourceId);
   }
 
+  // Ticket #20: structured schema preview before approval — generates (or reuses) the plan
+  // for the latest PRD and returns it as JSON; nothing executes and no SSE is opened.
+  @InitFeature(FEATURE_KEY.PREVIEW_PLAN)
+  @Post('conversation/preview-plan')
+  async previewPlan(@User() user, @UserPermissionsDecorator() userPermissions: UserPermissions, @Body() body) {
+    const { conversationId, dataSourceId } = body ?? {};
+    return await this.aiService.previewPlan(conversationId, user, userPermissions, dataSourceId);
+  }
+
   @InitFeature(FEATURE_KEY.REWIND_STEP)
   @Post('conversation/rewind-step')
   async rewindStep(@User() user, @Body() body) {

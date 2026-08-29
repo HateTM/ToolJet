@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
+import SchemaPreview from './SchemaPreview';
 import useAiBuilderStore from '@/_stores/aiBuilderStore';
 
 const tAiBuilder = (t, key, fallback) => t(`leftSidebar.AI Builder.${key}`, fallback);
@@ -287,6 +288,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   const [draft, setDraft] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const messagesEndRef = useRef(null);
+  const composerRef = useRef(null);
 
   const [
     messages,
@@ -298,6 +300,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     conversationType,
     steps,
     isApproving,
+    pendingPlan,
+    isPreviewing,
     rewindingStepId,
     votes,
     regeneratingMessageId,
@@ -313,6 +317,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     setConversationType,
     sendMessage,
     approvePrd,
+    previewPlan,
+    discardPendingPlan,
     rewindStep,
     voteMessage,
     regenerateMessage,
@@ -329,6 +335,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.conversationType,
       state.steps,
       state.isApproving,
+      state.pendingPlan,
+      state.isPreviewing,
       state.rewindingStepId,
       state.votes,
       state.regeneratingMessageId,
@@ -344,6 +352,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.setConversationType,
       state.sendMessage,
       state.approvePrd,
+      state.previewPlan,
+      state.discardPendingPlan,
       state.rewindStep,
       state.voteMessage,
       state.regenerateMessage,
@@ -459,6 +469,19 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     approvePrd(latestAiMessage.content);
   };
 
+  // Ticket #20: review the plan as a structured schema preview before anything executes.
+  const handleReviewPlan = () => {
+    if (!latestAiMessage || isPreviewing) return;
+    previewPlan();
+  };
+
+  // The "I want to make changes" path: the preview is discarded (not the PRD — no full
+  // regenerate) and the composer takes over for a targeted follow-up.
+  const handleMakeChanges = () => {
+    discardPendingPlan();
+    composerRef.current?.focus();
+  };
+
   const showZeroState = messages.length === 0 && !streamingMessage;
 
   return (
@@ -543,17 +566,41 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
             />
           ))}
           {streamingMessage && <ChatBubble message={streamingMessage} />}
-          {canApprove && (
+          {canApprove && pendingPlan.length === 0 && (
             <Button
-              onClick={handleApprove}
+              onClick={handleReviewPlan}
               variant="primary"
               size="small"
               className="tw-self-start"
-              disabled={isApproving}
-              data-cy="ai-builder-approve-prd-button"
+              disabled={isPreviewing}
+              data-cy="ai-builder-review-plan-button"
             >
-              {isApproving ? <Spinner size="small" /> : tAiBuilder(t, 'approvePrd', 'Approve and build')}
+              {isPreviewing ? <Spinner size="small" /> : tAiBuilder(t, 'reviewPlan', 'Review build plan')}
             </Button>
+          )}
+          {canApprove && pendingPlan.length > 0 && (
+            <div className="tw-flex tw-flex-col tw-gap-2">
+              <SchemaPreview steps={pendingPlan} />
+              <div className="tw-flex tw-gap-2">
+                <Button
+                  onClick={handleApprove}
+                  variant="primary"
+                  size="small"
+                  disabled={isApproving}
+                  data-cy="ai-builder-approve-prd-button"
+                >
+                  {isApproving ? <Spinner size="small" /> : tAiBuilder(t, 'looksGoodRunIt', 'Looks good, run it')}
+                </Button>
+                <Button
+                  onClick={handleMakeChanges}
+                  variant="secondary"
+                  size="small"
+                  data-cy="ai-builder-make-changes-button"
+                >
+                  {tAiBuilder(t, 'makeChanges', 'I want to make changes')}
+                </Button>
+              </div>
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -579,6 +626,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
 
       <div className="tw-flex tw-items-end tw-gap-2 tw-border-0 tw-border-t tw-border-solid tw-border-border-weak tw-p-3">
         <textarea
+          ref={composerRef}
           className="tw-flex-1 tw-resize-none tw-rounded-md tw-border tw-border-solid tw-border-border-weak tw-bg-background-surface-layer-01 tw-px-2.5 tw-py-2 tw-text-sm tw-text-text-default focus:tw-outline-none"
           rows={2}
           placeholder={

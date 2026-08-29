@@ -23,6 +23,16 @@ export class StepRepository extends Repository<Step> {
   // Every Step created by one approvePrd call (ADR-0004) shares that call's PRD-approval
   // messageId — the natural "this plan's execution" scope (ADR-0008). Sorted ascending;
   // callers that need to undo dependencies-last reverse it themselves.
+  // The pending Steps a previewed-but-not-yet-approved plan left for one PRD message
+  // (ticket #20). previewPlan serves them back if the user previews twice, and approvePrd
+  // reuses them instead of re-running the planner — so what was previewed is what executes.
+  async findPendingForMessage(conversationId: string, messageId: string): Promise<Step[]> {
+    return await this.find({
+      where: { conversationId, messageId, status: 'pending' },
+      order: { order: 'ASC' },
+    });
+  }
+
   async findAfterOrder(conversationId: string, messageId: string, order: number): Promise<Step[]> {
     return await this.find({
       where: { conversationId, messageId, order: MoreThan(order) },
