@@ -60,7 +60,9 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
 
-Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.`;
+Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.
+
+Also group the steps into a small number of named phases (ticket #21) — e.g. "Create data tables", "Create data queries", "Build the interface". Set each step's phase to a short human-readable phase name; consecutive steps that belong to the same phase must repeat the exact same phase string. Use between 1 and 4 phases, in execution order.`;
 
 // ToolJet DB's supported column types (server/src/modules/tooljet-db/types.ts's TJDB map).
 const TJDB_DATA_TYPES = [
@@ -158,6 +160,10 @@ const proposeStepPlanTool = tool({
           // proposes, persisted as the Step's plannedTable and shown in the pre-approval
           // schema preview (ticket #20).
           table: tableDefinitionObject.optional(),
+          // The named phase this step belongs to (ticket #21). Optional so an older planner
+          // response without one still validates — a missing phase falls back to a single
+          // derived group on the client.
+          phase: z.string().optional().describe('Short human-readable phase name this step belongs to'),
         })
       )
       .min(1),
@@ -717,6 +723,13 @@ export class AiService implements IAiService {
 
       for (let index = 0; index < filteredSteps.length; index++) {
         const step = filteredSteps[index];
+        // Ticket #21: skip is checkpoint-based — a step the user skipped (while it was
+        // pending, e.g. during an earlier step's execution) is detected here and never
+        // starts, so no Artifact is made for it.
+        if ((await this.stepRepository.findById(step.id))?.status === 'skipped') {
+          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
+          continue;
+        }
         await this.stepRepository.updateOne(step.id, { status: 'running' });
         this.aiUtilService.sendSSE(response, 'step-progress', {
           step: index + 1,
@@ -725,6 +738,21 @@ export class AiService implements IAiService {
         });
 
         const outcome = await this.executeStepWithRetry(step, context);
+
+        // Ticket #21: the user may have skipped this step while it was executing (the skip
+        // endpoint marks a running step 'skipped' without interrupting the in-flight work —
+        // executeStepWithRetry deliberately leaves that status unclobbered, either terminal
+        // one). Its outcome is discarded: the Artifact it produced is undone through the
+        // same calls rewindStep (ADR-0008) makes, so a skipped step never leaves anything
+        // behind. Skip wins over retry (ticket #4): even a step that succeeded after all
+        // MAX_STEP_ATTEMPTS is discarded here.
+        if (outcome.skipped || (await this.stepRepository.findById(step.id))?.status === 'skipped') {
+          if (outcome.success && outcome.artifact) {
+            await this.discardStepArtifact(step, appVersionId, organizationId, outcome.artifact);
+          }
+          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
+          continue;
+        }
 
         if (outcome.success) {
           context.priorResults.push({ type: step.type, artifact: outcome.artifact });
@@ -834,6 +862,7 @@ export class AiService implements IAiService {
       id: step.id,
       type: step.type,
       description: step.description,
+      ...(step.phase && { phase: step.phase }),
       ...(step.plannedTable && { table: step.plannedTable }),
     }));
   }
@@ -888,7 +917,7 @@ export class AiService implements IAiService {
     }
 
     const { steps: proposedSteps } = call.args as {
-      steps: Array<{ type: StepType; description: string; table?: TableDefinition }>;
+      steps: Array<{ type: StepType; description: string; table?: TableDefinition; phase?: string }>;
     };
     if (!proposedSteps?.length) {
       throw new Error('The assistant proposed an empty build plan');
@@ -903,6 +932,9 @@ export class AiService implements IAiService {
       // per-step LLM path instead of trusting a half-formed contract.
       const plannedTable =
         proposed.type === 'CreateTable' && isWellFormedTableDefinition(proposed.table) ? proposed.table : undefined;
+      // Ticket #21: the planner-assigned phase name, trimmed; an absent/blank one persists
+      // as null so the client's fallback grouping sees a consistent shape.
+      const phase = proposed.phase?.trim() || null;
       const step = await this.stepRepository.createOne({
         conversationId,
         messageId,
@@ -910,6 +942,7 @@ export class AiService implements IAiService {
         type: proposed.type,
         description: proposed.description,
         ...(plannedTable && { plannedTable }),
+        ...(phase && { phase }),
         status: 'pending',
       });
       persisted.push(step);
@@ -931,7 +964,7 @@ export class AiService implements IAiService {
   private async executeStepWithRetry(
     step: Step,
     context: StepExecutionContext
-  ): Promise<{ success: boolean; artifact?: Artifact; errorMessage?: string }> {
+  ): Promise<{ success: boolean; artifact?: Artifact; errorMessage?: string; skipped?: boolean }> {
     if (!this.SUPPORTED_STEP_TYPES.includes(step.type)) {
       const errorMessage = `Unsupported step type "${step.type}" — not yet implemented`;
       await this.stepRepository.updateOne(step.id, { status: 'failed', errorMessage });
@@ -943,6 +976,12 @@ export class AiService implements IAiService {
       try {
         const { content, identifier, props } = await this.executeStep(step, context, lastError);
 
+        // Ticket #21: a step the user skipped mid-run must not be recorded with either
+        // terminal status — the execution loop owns that transition (step-skipped), and
+        // overwriting 'skipped' with 'succeeded'/'failed' here would make the skip silently
+        // vanish. The Artifact row is still created, so the loop can undo the real change
+        // this attempt already made before discarding it.
+        const skipped = (await this.stepRepository.findById(step.id))?.status === 'skipped';
         const artifact = await this.artifactRepository.createOne({
           conversationId: step.conversationId,
           messageId: step.messageId,
@@ -950,12 +989,12 @@ export class AiService implements IAiService {
           identifier,
         });
         await this.stepRepository.updateOne(step.id, {
-          status: 'succeeded',
+          ...(skipped ? {} : { status: 'succeeded' }),
           props,
           attempts: attempt,
           artifactId: artifact.id,
         });
-        return { success: true, artifact };
+        return { success: true, artifact, skipped };
       } catch (error) {
         lastError = error?.message || 'Step execution failed';
         this.logger.warn(`[approvePrd] step=${step.id} type=${step.type} attempt=${attempt} failed: ${lastError}`);
@@ -963,8 +1002,32 @@ export class AiService implements IAiService {
       }
     }
 
-    await this.stepRepository.updateOne(step.id, { status: 'failed', errorMessage: lastError });
-    return { success: false, errorMessage: lastError };
+    // Same guard on the failed terminal write: a step skipped while its retries ran is
+    // reported back as skipped, not failed — the plan continues instead of stopping.
+    const skipped = (await this.stepRepository.findById(step.id))?.status === 'skipped';
+    if (!skipped) {
+      await this.stepRepository.updateOne(step.id, { status: 'failed', errorMessage: lastError });
+    }
+    return { success: false, errorMessage: lastError, skipped };
+  }
+
+  /**
+   * Ticket #21: undoes the Artifact a skipped-while-running step produced, with the same
+   * calls rewindStep (ADR-0008) makes for every discarded step.
+   */
+  private async discardStepArtifact(
+    step: Step,
+    appVersionId: string,
+    organizationId: string,
+    artifact: Artifact
+  ): Promise<void> {
+    await this.agentsService.undoArtifact(step.type, appVersionId, organizationId, artifact.content);
+    await this.artifactRepository.deleteOne(artifact.id);
+    await this.stepRepository.updateOne(step.id, { artifactId: null });
+  }
+
+  private sendStepSkippedSSE(response: Response, index: number, of: number, description: string): void {
+    this.aiUtilService.sendSSE(response, 'step-skipped', { step: index + 1, of, description });
   }
 
   private async executeStep(
@@ -1585,6 +1648,33 @@ export class AiService implements IAiService {
     }
 
     return { rewoundTo: targetStep.id, undone: stepsAfter.map((step) => step.id) };
+  }
+
+  /**
+   * Marks one Step of a running plan as skipped (ticket #21). Not a streaming endpoint and
+   * not an executor: it only records the user's decision; approvePrd's execution loop acts
+   * on it at its next checkpoint. A pending step is skipped before it ever starts; a running
+   * one finishes its in-flight LLM call and then has its outcome discarded (and any Artifact
+   * it already produced undone) by the loop. Failed steps can't be skipped — a failed plan
+   * has already stopped, and retrying it is rewind + re-approve, not skip.
+   */
+  async skipStep(conversationId: string, stepId: string, userId: string): Promise<any> {
+    if (!conversationId || !stepId) {
+      throw new BadRequestException('conversationId and stepId are required');
+    }
+
+    await this.loadConversationOfType(conversationId, 'generate', userId);
+
+    const step = await this.stepRepository.findById(stepId);
+    if (!step || step.conversationId !== conversationId) {
+      throw new NotFoundException('Step not found in this conversation');
+    }
+    if (step.status !== 'pending' && step.status !== 'running') {
+      throw new BadRequestException('Only a pending or running step can be skipped');
+    }
+
+    await this.stepRepository.updateOne(step.id, { status: 'skipped' });
+    return { skipped: step.id };
   }
 
   /**

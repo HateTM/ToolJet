@@ -1001,7 +1001,9 @@
       "rewindToStep": "Вернуться к этому шагу",
       "regenerate": "Повторить ответ",
       "voteUp": "Хороший ответ",
-      "voteDown": "Плохой ответ"
+      "voteDown": "Плохой ответ",
+      "skipStep": "Пропустить этот шаг",
+      "defaultPhaseName": "Этапы реализации"
     },
     "Sources": {
       "text": "Источники",

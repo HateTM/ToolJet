@@ -26,6 +26,9 @@ export const FEATURES: FeaturesConfig = {
     [FEATURE_KEY.REWIND_STEP]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },
+    [FEATURE_KEY.SKIP_STEP]: {
+      license: LICENSE_FIELD.AI_FEATURE,
+    },
     [FEATURE_KEY.REGENERATE_MESSAGE]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },

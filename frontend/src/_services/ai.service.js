@@ -20,6 +20,7 @@ export const aiService = {
   approvePrd,
   previewPlan,
   rewindStep,
+  skipStep,
   regenerateMessage,
   promoteConversation,
 };
@@ -140,6 +141,13 @@ async function previewPlan(body) {
 async function rewindStep(body) {
   const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
   return fetch(`${config.apiUrl}/ai/conversation/rewind-step`, requestOptions).then(handleResponse);
+}
+
+// body: { conversationId, stepId }. Not SSE — records the user's decision to skip a step of a
+// running plan; the backend's execution loop picks it up at its next checkpoint (ticket #21).
+async function skipStep(body) {
+  const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
+  return fetch(`${config.apiUrl}/ai/conversation/skip-step`, requestOptions).then(handleResponse);
 }
 
 // body: { parentMessageId }. Not SSE — the backend generates the full reply before

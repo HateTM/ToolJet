@@ -1054,6 +1054,8 @@
             "looksGoodRunIt": "Looks good, run it",
             "makeChanges": "I want to make changes",
             "rewindToStep": "Rewind to this step",
+            "skipStep": "Skip this step",
+            "defaultPhaseName": "Implementation steps",
             "regenerate": "Regenerate response",
             "voteUp": "Good response",
             "voteDown": "Bad response"

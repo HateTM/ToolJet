@@ -36,6 +36,14 @@ _Avoid_: Output, result, generation
 **Rewind**:
 Undo execution back to an earlier `Step`, discarding the `Artifact`s made after it. Applies within a single approved PRD's execution, not across PRDs.
 
+**Phase**:
+The named group (e.g. "Create data queries") the planner assigns each `Step` of a plan to. Rendered by the chat panel as a header over the consecutive run of steps sharing the label, with a per-phase resolved count; steps without a label fall into a single unnamed group. See [ADR-0021](docs/adr/0021-planner-assigned-phases-and-checkpoint-based-skip.md).
+_Avoid_: Stage, milestone
+
+**Skip** (a step):
+The user's decision, during execution, that a `pending` or `running` `Step` should produce nothing: the plan continues to the next step and no `Artifact` is made. Recorded by the skip-step endpoint and acted on at the execution loop's next checkpoint — a step skipped mid-run has any outcome it just produced undone the same way `Rewind` undoes one. See [ADR-0021](docs/adr/0021-planner-assigned-phases-and-checkpoint-based-skip.md).
+_Avoid_: Cancel, pause, abort
+
 **Regenerate** (a message):
 Re-run a specific AI response in place, branching off its parent message (`parentId`) rather than replaying the whole `Conversation`. Produces a sibling message; the old one is superseded (`isLatest: false`) but not deleted.
 _Avoid_: Retry, redo

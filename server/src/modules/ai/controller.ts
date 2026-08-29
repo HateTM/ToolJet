@@ -65,6 +65,15 @@ export class AiController implements IAiController {
     return await this.aiService.rewindStep(conversationId, stepId, user.id, user.organizationId);
   }
 
+  // Ticket #21: records the user's decision to skip a step of a running plan. Not SSE — the
+  // execution loop picks the new status up at its next checkpoint.
+  @InitFeature(FEATURE_KEY.SKIP_STEP)
+  @Post('conversation/skip-step')
+  async skipStep(@User() user, @Body() body) {
+    const { conversationId, stepId } = body ?? {};
+    return await this.aiService.skipStep(conversationId, stepId, user.id);
+  }
+
   @InitFeature(FEATURE_KEY.REGENERATE_MESSAGE)
   @Post('conversation/regenerate-message')
   async regenerateAiMessage(@User() user, @Body() body) {

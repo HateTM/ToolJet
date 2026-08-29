@@ -3919,3 +3919,436 @@ describe('AiService.copilot', () => {
     expect(aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content).toContain('javascript');
   });
 });
+
+// Ticket #21: phases on the plan and skip during execution.
+  const conversationRepoDefaults = (conversationRepo, messageRepo) => {
+  conversationRepo.findById.mockResolvedValue({
+    id: 'conv-1',
+    appId: 'app-1',
+    userId: 'user-1',
+    conversationType: 'generate',
+  });
+  messageRepo.findLatestByConversationId.mockResolvedValue([
+    { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+  ]);
+};
+
+describe('AiService.approvePrd - phases (ticket #21)', () => {
+
+  it("persists the planner's phase label on each Step and carries it on the plan SSE event", async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce({
+      toolCalls: [
+        {
+          toolName: 'proposeStepPlan',
+          args: {
+            steps: [
+              { type: 'CreateTable', description: 'Create a customers table', phase: 'Create data tables' },
+              { type: 'CreateComponent', description: 'Create a Home page', phase: 'Build the interface' },
+            ],
+          },
+        },
+      ],
+    });
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        ...pendingStepLike('step-1', 0, 'CreateTable', 'Create a customers table'),
+        phase: 'Create data tables',
+      })
+      .mockResolvedValueOnce({
+        ...pendingStepLike('step-2', 1, 'CreateComponent', 'Create a Home page'),
+        phase: 'Build the interface',
+      });
+
+    const response = buildMockResponse();
+    // Execution stops at the first step (no per-step handler mocked for CreateComponent's
+    // page creation) — this test only cares about the plan generation and its wire shape.
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any).catch(() => {});
+
+    expect(stepRepository.createOne).toHaveBeenCalledTimes(2);
+    expect(stepRepository.createOne).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'CreateTable', phase: 'Create data tables', status: 'pending' })
+    );
+    expect(stepRepository.createOne).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'CreateComponent', phase: 'Build the interface', status: 'pending' })
+    );
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'plan', {
+      steps: [
+        expect.objectContaining({ id: 'step-1', phase: 'Create data tables' }),
+        expect.objectContaining({ id: 'step-2', phase: 'Build the interface' }),
+      ],
+    });
+  });
+
+  it('persists a blank planner phase as no phase at all (null on the Step, absent on the wire)', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce({
+      toolCalls: [
+        {
+          toolName: 'proposeStepPlan',
+          args: { steps: [{ type: 'CreateTable', description: 'Create a customers table', phase: '   ' }] },
+        },
+      ],
+    });
+    stepRepository.createOne.mockResolvedValue(pendingStepLike('step-1', 0, 'CreateTable', 'Create a customers table'));
+
+    const response = buildMockResponse();
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any).catch(() => {});
+
+    expect(stepRepository.createOne).toHaveBeenCalledWith(expect.not.objectContaining({ phase: expect.anything() }));
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(
+      response,
+      'plan',
+      expect.objectContaining({
+        steps: [expect.not.objectContaining({ phase: expect.anything() })],
+      })
+    );
+  });
+
+  const pendingStepLike = (id: string, order: number, type: string, description: string) => ({
+    id,
+    conversationId: 'conv-1',
+    messageId: 'ai-msg-1',
+    order,
+    type,
+    description,
+    status: 'pending',
+  });
+});
+
+// Ticket #21: rewind composes with skip — a skipped step has no Artifact to undo, and a
+// rewind past it resets it to pending so a re-approved plan can include it again.
+describe('AiService.rewindStep - skipped steps (ticket #21)', () => {
+  it('passes over a skipped step without undoing anything, but resets it to pending', async () => {
+    const { service, conversationRepo, agentsService, artifactRepository, stepRepository } = buildService();
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      appId: 'app-1',
+      userId: 'user-1',
+      conversationType: 'generate',
+    });
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'CreateTable',
+      status: 'succeeded',
+    });
+    stepRepository.findAfterOrder.mockResolvedValue([
+      { id: 'step-2', conversationId: 'conv-1', type: 'CreateTable', status: 'skipped', artifactId: null },
+      { id: 'step-3', conversationId: 'conv-1', type: 'CreateTable', status: 'succeeded', artifactId: 'artifact-3' },
+    ]);
+    artifactRepository.findById.mockResolvedValue({ id: 'artifact-3', content: { id: 'tjdb-1' } });
+
+    await service.rewindStep('conv-1', 'step-1', 'user-1', 'org-1');
+
+    // Only the succeeded step's artifact is undone.
+    expect(agentsService.undoArtifact).toHaveBeenCalledTimes(1);
+    expect(agentsService.undoArtifact).toHaveBeenCalledWith('CreateTable', 'version-1', 'org-1', { id: 'tjdb-1' });
+    expect(artifactRepository.deleteOne).toHaveBeenCalledTimes(1);
+    // The skipped step is reset to pending (a later approval may include it), with no
+    // artifact fields to clear beyond the standard reset.
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-2', {
+      status: 'pending',
+      artifactId: null,
+      errorMessage: null,
+      attempts: 0,
+    });
+  });
+});
+
+describe('AiService.skipStep (ticket #21)', () => {
+  const buildSkipWorld = () => {
+    const world = buildService();
+    world.conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    return world;
+  };
+
+  it('marks a pending step as skipped', async () => {
+    const { service, stepRepository } = buildSkipWorld();
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      status: 'pending',
+    });
+
+    const result = await service.skipStep('conv-1', 'step-1', 'user-1');
+
+    expect(result).toEqual({ skipped: 'step-1' });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', { status: 'skipped' });
+  });
+
+  it('marks a running step as skipped (the execution loop discards its outcome at the next checkpoint)', async () => {
+    const { service, stepRepository } = buildSkipWorld();
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      status: 'running',
+    });
+
+    const result = await service.skipStep('conv-1', 'step-1', 'user-1');
+
+    expect(result).toEqual({ skipped: 'step-1' });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', { status: 'skipped' });
+  });
+
+  it('refuses to skip a step that already succeeded', async () => {
+    const { service, stepRepository } = buildSkipWorld();
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      status: 'succeeded',
+    });
+
+    await expect(service.skipStep('conv-1', 'step-1', 'user-1')).rejects.toThrow(BadRequestException);
+    expect(stepRepository.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('refuses to skip a step that failed (the plan already stopped; redo is rewind + re-approve)', async () => {
+    const { service, stepRepository } = buildSkipWorld();
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      status: 'failed',
+    });
+
+    await expect(service.skipStep('conv-1', 'step-1', 'user-1')).rejects.toThrow(BadRequestException);
+    expect(stepRepository.updateOne).not.toHaveBeenCalled();
+  });
+
+  it("refuses to skip a step that belongs to another user's conversation", async () => {
+    const { service, conversationRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'someone-else', conversationType: 'generate' });
+
+    await expect(service.skipStep('conv-1', 'step-1', 'user-1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('refuses to skip a step from a different conversation', async () => {
+    const { service, stepRepository } = buildSkipWorld();
+    stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-other',
+      status: 'pending',
+    });
+
+    await expect(service.skipStep('conv-1', 'step-1', 'user-1')).rejects.toThrow(NotFoundException);
+    expect(stepRepository.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('throws BadRequestException when conversationId or stepId is missing', async () => {
+    const { service } = buildService();
+    await expect(service.skipStep(undefined, 'step-1', 'user-1')).rejects.toThrow(BadRequestException);
+    await expect(service.skipStep('conv-1', undefined, 'user-1')).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
+
+  const twoStepPlanToolCall = () => ({
+    toolCalls: [
+      {
+        toolName: 'proposeStepPlan',
+        args: {
+          steps: [
+            { type: 'CreateTable', description: 'Create a customers table' },
+            { type: 'CreateTable', description: 'Create an orders table' },
+          ],
+        },
+      },
+    ],
+  });
+
+  const oneColumnTable = (table_name: string) => ({
+    table_name,
+    columns: [{ column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true }],
+  });
+
+  const createTableToolCall = (args: any) => ({
+    toolCalls: [{ toolName: 'createTable', args }],
+  });
+
+  it('never starts a step the user skipped while it was pending, and reports it as step-skipped', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(twoStepPlanToolCall()).mockResolvedValueOnce(
+      createTableToolCall(oneColumnTable('customers'))
+    );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateTable',
+        description: 'Create an orders table',
+        status: 'pending',
+      });
+
+    // The skip endpoint flipped step-2 to 'skipped' while step-1 was still executing.
+    stepRepository.findById.mockImplementation((id: string) =>
+      Promise.resolve({ id, status: id === 'step-2' ? 'skipped' : 'pending' })
+    );
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
+    artifactRepository.createOne.mockResolvedValue({
+      id: 'artifact-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      content: { id: 'tjdb-uuid', table_name: 'customers' },
+      identifier: 'customers',
+    });
+
+    const response = buildMockResponse();
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
+
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(
+      response,
+      'step-skipped',
+      expect.objectContaining({ step: 2, of: 2 })
+    );
+    // The skipped step never ran and never produced an Artifact.
+    expect(stepRepository.updateOne).not.toHaveBeenCalledWith('step-2', expect.objectContaining({ status: 'running' }));
+    expect(stepRepository.updateOne).not.toHaveBeenCalledWith(
+      'step-2',
+      expect.objectContaining({ status: 'succeeded' })
+    );
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', { succeeded: 1, total: 2 });
+  });
+
+  it('discards a skipped-while-running step: its Artifact is undone and does not count as succeeded', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(twoStepPlanToolCall()).mockResolvedValueOnce(
+      createTableToolCall(oneColumnTable('customers'))
+    );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateTable',
+        description: 'Create an orders table',
+        status: 'pending',
+      });
+
+    // Before execution: 'pending' (so the step starts). After the outcome lands: the skip
+    // endpoint has marked it 'skipped' — the loop must undo whatever was just created.
+    let step1Reads = 0;
+    stepRepository.findById.mockImplementation((id: string) => {
+      if (id !== 'step-1') return Promise.resolve(undefined);
+      step1Reads += 1;
+      return Promise.resolve({ id, status: step1Reads === 1 ? 'pending' : 'skipped' });
+    });
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
+    artifactRepository.createOne.mockResolvedValue({
+      id: 'artifact-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      content: { id: 'tjdb-uuid', table_name: 'customers' },
+      identifier: 'customers',
+    });
+
+    const response = buildMockResponse();
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
+
+    expect(agentsService.undoArtifact).toHaveBeenCalledWith('CreateTable', 'version-1', 'org-1', {
+      id: 'tjdb-uuid',
+      table_name: 'customers',
+    });
+    expect(artifactRepository.deleteOne).toHaveBeenCalledWith('artifact-1');
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', { artifactId: null });
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(
+      response,
+      'step-skipped',
+      expect.objectContaining({ step: 1, of: 2 })
+    );
+    // The discarded outcome never reaches priorResults, so the final tally is 0 of 2.
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', { succeeded: 0, total: 2 });
+  });
+
+  it('skip wins over retry (ticket #4): a step skipped while its retries ran is reported skipped, not failed, and the plan continues', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+
+    aiUtilService.AIGatewayGenerate
+      // plan
+      .mockResolvedValueOnce(twoStepPlanToolCall())
+      // attempt 1 of step-1 fails
+      .mockRejectedValueOnce(new Error('boom'))
+      // attempt 2 succeeds — but the user skipped the step while attempt 1 was running
+      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')));
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({ id: 'step-1', conversationId: 'conv-1', messageId: 'ai-msg-1', order: 0, type: 'CreateTable', description: 'Create a customers table', status: 'pending' })
+      .mockResolvedValueOnce({ id: 'step-2', conversationId: 'conv-1', messageId: 'ai-msg-1', order: 1, type: 'CreateTable', description: 'Create an orders table', status: 'pending' });
+
+    let step1Reads = 0;
+    stepRepository.findById.mockImplementation((id: string) => {
+      if (id !== 'step-1') return Promise.resolve({ id, status: 'skipped' });
+      step1Reads += 1;
+      // read 1: the pre-start checkpoint (still pending); read 2: the success path's
+      // terminal-write guard, after the skip landed.
+      return Promise.resolve({ id, status: step1Reads === 1 ? 'pending' : 'skipped' });
+    });
+
+    agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'customers' });
+    artifactRepository.createOne.mockResolvedValue({
+      id: 'artifact-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      content: { id: 'tjdb-uuid', table_name: 'customers' },
+      identifier: 'customers',
+    });
+
+    const response = buildMockResponse();
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
+
+    // Neither terminal status was written over 'skipped'...
+    expect(stepRepository.updateOne).not.toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'succeeded' }));
+    expect(stepRepository.updateOne).not.toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'failed' }));
+    // ...the change attempt 2 made is undone...
+    expect(agentsService.undoArtifact).toHaveBeenCalled();
+    expect(artifactRepository.deleteOne).toHaveBeenCalledWith('artifact-1');
+    // ...the plan continues to step-2 (itself pre-skipped, so it never starts), and the
+    // tally counts neither step as succeeded.
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(
+      response,
+      'step-skipped',
+      expect.objectContaining({ step: 1, of: 2 })
+    );
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', { succeeded: 0, total: 2 });
+  });
+});
