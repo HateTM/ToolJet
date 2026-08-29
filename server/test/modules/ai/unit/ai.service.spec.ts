@@ -21,7 +21,7 @@ const buildMockRepositories = () => ({
   aiConversationRepository: { findConversation: jest.fn() },
   aiConversationMessageRepository: { findMessages: jest.fn() },
   artifactRepository: { find: jest.fn(), create: jest.fn() },
-  stepRepository: { updateOne: jest.fn() },
+  stepRepository: { updateOne: jest.fn(), createOne: jest.fn(), findById: jest.fn() },
   versionRepository: { findVersion: jest.fn() },
   aiResponseVoteRepository: { find: jest.fn(), upsert: jest.fn() },
   appInventoryService: { findAppById: jest.fn() },
@@ -46,7 +46,7 @@ const buildAiService = (overrides: any = {}) => {
     repositories.dataSourceInventoryService
   );
 
-  return { service, aiUtilService, agentsService };
+  return { service, aiUtilService, agentsService, repositories };
 };
 
 const makeToolCall = (args: any) => ({
@@ -298,5 +298,73 @@ describe('step planner advertises seed_rows (ticket #48)', () => {
       steps: [{ type: 'CreateTable', description: 'tasks table', table: PLANNED_TABLE }],
     });
     expect(parsed.steps[0].seed_rows).toBeUndefined();
+  });
+});
+
+/** @group ai-builder */
+describe('planned seed rows are consistent with the planned schema (ticket #48 spec: "INSERTs consistent with the planned schema")', () => {
+  // generateStepPlan's plan-time gate, exercised through its persist behavior via the
+  // step repository mock: a row naming a column the table doesn't have must be dropped
+  // (no plannedSeedRows persisted), not left to fail at insert time.
+  const buildPersistingHarness = () => {
+    const built = buildAiService();
+    built.aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [
+        {
+          toolName: 'proposeStepPlan',
+          args: {
+            steps: [
+              {
+                type: 'CreateTable',
+                description: 'tasks',
+                table: PLANNED_TABLE,
+                seed_rows: [{ title: 'Buy milk', done: false }],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    built.repositories.stepRepository.createOne.mockImplementation(async (step: any) => step);
+    return built;
+  };
+
+  it('persists seed rows whose keys are all real columns of the planned table', async () => {
+    const { service, repositories } = buildPersistingHarness();
+    await (service as any).generateStepPlan('prd', 'conv-1', 'msg-1', 'org-1', []);
+
+    expect(repositories.stepRepository.createOne).toHaveBeenCalledWith(
+      expect.objectContaining({ plannedSeedRows: [{ title: 'Buy milk', done: false }] })
+    );
+  });
+
+  it('drops seed rows that name a column the planned table does not have', async () => {
+    // Overwrite the gateway call with a hallucinated column.
+    const withBadColumn = buildAiService();
+    withBadColumn.aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [
+        {
+          toolName: 'proposeStepPlan',
+          args: {
+            steps: [
+              {
+                type: 'CreateTable',
+                description: 'tasks',
+                table: PLANNED_TABLE,
+                seed_rows: [{ title: 'Buy milk', nonexistent_column: 'x' }],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    withBadColumn.repositories.stepRepository.createOne.mockImplementation(async (step: any) => step);
+
+    await (withBadColumn.service as any).generateStepPlan('prd', 'conv-1', 'msg-1', 'org-1', []);
+
+    // A dropped seed is persisted as an absent key (spread-conditional), not an undefined value.
+    const persisted = withBadColumn.repositories.stepRepository.createOne.mock.calls[0][0];
+    expect(persisted.plannedTable).toEqual(PLANNED_TABLE);
+    expect('plannedSeedRows' in persisted).toBe(false);
   });
 });

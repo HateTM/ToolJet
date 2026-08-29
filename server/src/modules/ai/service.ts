@@ -165,6 +165,14 @@ const isWellFormedSeedRows = (rows: any): rows is Record<string, any>[] =>
 // A planned table is trusted verbatim only when it could actually create a table: a real
 // (non-blank) name and at least one column with a name and a type. Anything looser falls
 // back to the per-step LLM path rather than failing execution on a malformed contract.
+// Seed rows are only as good as their fit to the table they seed: every key must be a real
+// column of the planned table (ticket #48). Column order and completeness are not required —
+// a serial primary key may be omitted — but an unknown column would fail at insert time.
+const areSeedRowsConsistentWithTable = (rows: Record<string, any>[], table: TableDefinition): boolean => {
+  const columnNames = new Set(table.columns.map((column) => column.column_name));
+  return rows.every((row) => Object.keys(row).every((key) => columnNames.has(key)));
+};
+
 const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
   Boolean(
     table &&
@@ -973,9 +981,18 @@ export class AiService implements IAiService {
         proposed.type === 'CreateTable' && isWellFormedTableDefinition(proposed.table) ? proposed.table : undefined;
       // Ticket #48: seed rows ride on the same CreateTable steps, dropped when malformed —
       // execution then creates the table without seeding instead of trusting a half-formed
-      // contract (same policy as a malformed planned table).
+      // contract (same policy as a malformed planned table). Malformed includes rows that
+      // name columns the planned table doesn't have: the spec's "INSERTs consistent with
+      // the planned schema" is checked here, against the planner's own table proposal, so
+      // a hallucinated column fails at plan time (the preview never shows it) rather than
+      // mid-execution. Rows are only trusted when the table definition they seed is too.
       const plannedSeedRows =
-        proposed.type === 'CreateTable' && isWellFormedSeedRows(proposed.seed_rows) ? proposed.seed_rows : undefined;
+        proposed.type === 'CreateTable' &&
+        isWellFormedTableDefinition(proposed.table) &&
+        isWellFormedSeedRows(proposed.seed_rows) &&
+        areSeedRowsConsistentWithTable(proposed.seed_rows, proposed.table)
+          ? proposed.seed_rows
+          : undefined;
       // Ticket #21: the planner-assigned phase name, trimmed; an absent/blank one persists
       // as null so the client's fallback grouping sees a consistent shape.
       const phase = proposed.phase?.trim() || null;
