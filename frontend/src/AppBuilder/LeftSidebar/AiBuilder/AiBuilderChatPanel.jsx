@@ -14,6 +14,7 @@ import {
   ThumbsDown,
   RefreshCw,
   Hammer,
+  SkipForward,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
@@ -241,37 +242,102 @@ const StepStatusIcon = ({ status }) => {
   if (status === 'running') return <Spinner size="small" />;
   if (status === 'succeeded') return <Check width="14" height="14" className="tw-text-icon-success" />;
   if (status === 'failed') return <X width="14" height="14" className="tw-text-icon-danger" />;
+  // Ticket #21: a skipped step produced no Artifact — distinct from both succeeded and failed.
+  if (status === 'skipped') return <SkipForward width="14" height="14" className="tw-text-icon-weak" />;
   return <Circle width="10" height="10" className="tw-text-icon-weak" />;
 };
 
-const StepProgressList = ({ steps, onRewind, rewindingStepId }) => {
+// Groups the flat ordered step list (ticket #21) into consecutive runs sharing the same
+// planner-assigned phase. Steps without a phase (plans generated before #21, or a planner
+// that left it blank) fall into one trailing unnamed group rather than each getting their own.
+const groupStepsByPhase = (steps) => {
+  const groups = [];
+  for (const step of steps) {
+    const phase = step.phase || null;
+    const last = groups[groups.length - 1];
+    if (last && last.phase === phase) {
+      last.steps.push(step);
+    } else {
+      groups.push({ phase, steps: [step] });
+    }
+  }
+  return groups;
+};
+
+// A phase group's resolved-step count for the "N/M" header: skipped steps count as resolved
+// (the user decided their outcome), only pending/running/failed ones don't.
+const countResolvedSteps = (steps) =>
+  steps.filter((step) => step.status === 'succeeded' || step.status === 'skipped').length;
+
+const StepProgressList = ({ steps, onRewind, rewindingStepId, onSkip, skippable, skippingStepId }) => {
   const { t } = useTranslation();
+  const groups = groupStepsByPhase(steps);
   return (
     <div className="tw-flex tw-flex-col tw-gap-2 tw-border-0 tw-border-b tw-border-solid tw-border-border-weak tw-px-3 tw-py-3">
-      {steps.map((step, index) => (
-        <div key={step.id ?? index} className="tw-flex tw-items-start tw-gap-2 tw-text-sm">
-          <div className="tw-mt-0.5 tw-flex tw-w-4 tw-flex-shrink-0 tw-items-center tw-justify-center">
-            <StepStatusIcon status={step.status} />
-          </div>
-          <div className="tw-flex tw-flex-1 tw-flex-col">
-            <span className="tw-text-text-default">{step.description}</span>
-            {step.status === 'failed' && step.errorMessage && (
-              <span className="tw-text-xs tw-text-text-danger">{step.errorMessage}</span>
-            )}
-          </div>
-          {step.status === 'succeeded' && step.id && (
-            <button
-              type="button"
-              className="tw-flex tw-flex-shrink-0 tw-items-center tw-border-none tw-bg-transparent tw-p-0.5 tw-text-icon-weak hover:tw-text-icon-default disabled:tw-opacity-50"
-              onClick={() => onRewind(step.id)}
-              disabled={Boolean(rewindingStepId)}
-              aria-label={t('leftSidebar.AI Builder.rewindToStep', 'Rewind to this step')}
-              title={t('leftSidebar.AI Builder.rewindToStep', 'Rewind to this step')}
-              data-cy={`ai-builder-rewind-step-${index}`}
-            >
-              {rewindingStepId === step.id ? <Spinner size="small" /> : <RotateCcw width="14" height="14" />}
-            </button>
+      {groups.map((group, groupIndex) => (
+        <div key={group.phase ?? `phase-${groupIndex}`} className="tw-flex tw-flex-col tw-gap-1.5">
+          {/* A named group gets its header even when it's the only one — a one-phase plan is
+              still a plan the planner labeled, and its N/M progress is still useful. */}
+          {(groups.length > 1 || group.phase) && (
+            <div className="tw-flex tw-items-center tw-justify-between">
+              <span className="tw-text-xs tw-font-medium tw-text-text-default">
+                {group.phase || tAiBuilder(t, 'defaultPhaseName', 'Implementation steps')}
+              </span>
+              <span className="tw-text-xs tw-text-text-placeholder">
+                {countResolvedSteps(group.steps)}/{group.steps.length}
+              </span>
+            </div>
           )}
+          {group.steps.map((step) => {
+            const stepIndex = steps.indexOf(step);
+            return (
+              <div key={step.id ?? stepIndex} className="tw-flex tw-items-start tw-gap-2 tw-text-sm">
+                <div className="tw-mt-0.5 tw-flex tw-w-4 tw-flex-shrink-0 tw-items-center tw-justify-center">
+                  <StepStatusIcon status={step.status} />
+                </div>
+                <div className="tw-flex tw-flex-1 tw-flex-col">
+                  <span
+                    className={cx('tw-text-text-default', {
+                      'tw-text-text-placeholder tw-line-through': step.status === 'skipped',
+                    })}
+                  >
+                    {step.description}
+                  </span>
+                  {step.status === 'failed' && step.errorMessage && (
+                    <span className="tw-text-xs tw-text-text-danger">{step.errorMessage}</span>
+                  )}
+                </div>
+                {step.status === 'succeeded' && step.id && (
+                  <button
+                    type="button"
+                    className="tw-flex tw-flex-shrink-0 tw-items-center tw-border-none tw-bg-transparent tw-p-0.5 tw-text-icon-weak hover:tw-text-icon-default disabled:tw-opacity-50"
+                    onClick={() => onRewind(step.id)}
+                    disabled={Boolean(rewindingStepId)}
+                    aria-label={t('leftSidebar.AI Builder.rewindToStep', 'Rewind to this step')}
+                    title={t('leftSidebar.AI Builder.rewindToStep', 'Rewind to this step')}
+                    data-cy={`ai-builder-rewind-step-${stepIndex}`}
+                  >
+                    {rewindingStepId === step.id ? <Spinner size="small" /> : <RotateCcw width="14" height="14" />}
+                  </button>
+                )}
+                {/* Ticket #21: skip the step that's executing now or still pending — the plan
+                    continues to the next step without a post-hoc rewind. */}
+                {skippable && (step.status === 'running' || step.status === 'pending') && step.id && (
+                  <button
+                    type="button"
+                    className="tw-flex tw-flex-shrink-0 tw-items-center tw-border-none tw-bg-transparent tw-p-0.5 tw-text-icon-weak hover:tw-text-icon-default disabled:tw-opacity-50"
+                    onClick={() => onSkip(step.id)}
+                    disabled={Boolean(skippingStepId)}
+                    aria-label={t('leftSidebar.AI Builder.skipStep', 'Skip this step')}
+                    title={t('leftSidebar.AI Builder.skipStep', 'Skip this step')}
+                    data-cy={`ai-builder-skip-step-${stepIndex}`}
+                  >
+                    {skippingStepId === step.id ? <Spinner size="small" /> : <SkipForward width="14" height="14" />}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       ))}
     </div>
@@ -303,6 +369,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     pendingPlan,
     isPreviewing,
     rewindingStepId,
+    skippingStepId,
     votes,
     regeneratingMessageId,
     promotingMessageId,
@@ -320,6 +387,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     previewPlan,
     discardPendingPlan,
     rewindStep,
+    skipStep,
     voteMessage,
     regenerateMessage,
     promoteConversation,
@@ -338,6 +406,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.pendingPlan,
       state.isPreviewing,
       state.rewindingStepId,
+      state.skippingStepId,
       state.votes,
       state.regeneratingMessageId,
       state.promotingMessageId,
@@ -355,6 +424,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.previewPlan,
       state.discardPendingPlan,
       state.rewindStep,
+      state.skipStep,
       state.voteMessage,
       state.regenerateMessage,
       state.promoteConversation,
@@ -607,9 +677,17 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       )}
 
       {/* Steps (and the rewind control on each) belong to an approved PRD's execution — a
-          Learn conversation never produces one, so the whole strip stays out of that mode. */}
+          Learn conversation never produces one, so the whole strip stays out of that mode.
+          Skip (ticket #21) is only offered while the plan is actually executing. */}
       {!isLearnMode && steps.length > 0 && (
-        <StepProgressList steps={steps} onRewind={rewindStep} rewindingStepId={rewindingStepId} />
+        <StepProgressList
+          steps={steps}
+          onRewind={rewindStep}
+          rewindingStepId={rewindingStepId}
+          onSkip={skipStep}
+          skippable={isApproving}
+          skippingStepId={skippingStepId}
+        />
       )}
 
       {error && (

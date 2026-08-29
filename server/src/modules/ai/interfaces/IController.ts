@@ -17,6 +17,8 @@ export interface IAiController {
 
   rewindStep(user: User, body: any): Promise<any>;
 
+  skipStep(user: User, body: any): Promise<any>;
+
   regenerateAiMessage(user: User, body: any): Promise<any>;
 
   voteAiMessage(user: User, body: any): Promise<any>;

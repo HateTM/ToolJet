@@ -37,6 +37,9 @@ const initialState = {
   // id of the step currently being rewound, or null — only one rewind can be in flight at
   // a time (rewindStep is a single synchronous backend call, not a stream).
   rewindingStepId: null,
+  // id of the step whose skip (ticket #21) is currently being recorded, or null — only one
+  // skip request in flight at a time, so double-clicks can't fire duplicate skip-step calls.
+  skippingStepId: null,
   // { [messageId]: 'up' | 'down' } — which vote (if any) is currently recorded for a
   // message, so the chat panel can highlight the active vote button.
   votes: {},
@@ -610,6 +613,17 @@ const useAiBuilderStore = create(
               false,
               'aiBuilder/approvePrd/step-done'
             );
+          } else if (type === 'step-skipped') {
+            // Ticket #21: the backend skipped this step (the user's skipStep call landed
+            // before it started, or its in-flight outcome was discarded after it ran).
+            set(
+              (state) => {
+                const step = state.steps[data.step - 1];
+                if (step) step.status = 'skipped';
+              },
+              false,
+              'aiBuilder/approvePrd/step-skipped'
+            );
           } else if (type === 'step-failed') {
             set(
               (state) => {
@@ -695,6 +709,45 @@ const useAiBuilderStore = create(
             'aiBuilder/rewindStep/error'
           );
           return null;
+        }
+      },
+
+      // Skips one step of the running plan (ticket #21): asks the backend to mark it
+      // 'skipped'. The execution loop acts on it at its next checkpoint and reports the
+      // result back as a `step-skipped` SSE event, which the approvePrd handler above turns
+      // into a status update — so this action only records the intent, it doesn't mutate the
+      // step itself (the authoritative transition always arrives over the stream).
+      skipStep: async (stepId) => {
+        const conversationId = get().currentConversationId;
+        if (!conversationId || !stepId || get().skippingStepId) return null;
+
+        set(
+          (state) => {
+            state.skippingStepId = stepId;
+          },
+          false,
+          'aiBuilder/skipStep/start'
+        );
+
+        try {
+          return await aiService.skipStep({ conversationId, stepId });
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to skip the step');
+            },
+            false,
+            'aiBuilder/skipStep/error'
+          );
+          return null;
+        } finally {
+          set(
+            (state) => {
+              state.skippingStepId = null;
+            },
+            false,
+            'aiBuilder/skipStep/settled'
+          );
         }
       },
 

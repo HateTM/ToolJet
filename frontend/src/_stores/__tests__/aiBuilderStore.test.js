@@ -13,6 +13,7 @@ jest.mock('@/_services/ai.service', () => ({
     regenerateMessage: jest.fn(),
     promoteConversation: jest.fn(),
     previewPlan: jest.fn(),
+    skipStep: jest.fn(),
   },
 }));
 
@@ -901,5 +902,106 @@ describe('aiBuilderStore', () => {
         expect(aiService.promoteConversation).not.toHaveBeenCalled();
       });
     });
+  });
+});
+
+// Ticket #21: phases on the plan and skip during execution.
+describe('skip and phases (ticket #21)', () => {
+  beforeEach(() => {
+    useAiBuilderStore.setState({ currentConversationId: 'conv-1' });
+    jest.clearAllMocks();
+  });
+
+  it('marks a step skipped on the step-skipped event and keeps it visually distinct from failed', async () => {
+    aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+      onMessage({
+        type: 'plan',
+        data: {
+          steps: [
+            { id: 'step-1', type: 'CreateTable', description: 'Create a table', phase: 'Create data tables' },
+            { id: 'step-2', type: 'CreateQuery', description: 'Query orders', phase: 'Create data tables' },
+          ],
+        },
+      });
+      onMessage({ type: 'step-progress', data: { step: 1, of: 2 } });
+      onMessage({ type: 'step-done', data: { step: 1, of: 2 } });
+      onMessage({ type: 'step-skipped', data: { step: 2, of: 2 } });
+      onMessage({ type: 'done', data: { succeeded: 1, total: 2 } });
+      return [];
+    });
+
+    await getInitialState().approvePrd('PRD text');
+
+    const state = getInitialState();
+    expect(state.steps[0]).toMatchObject({ status: 'succeeded' });
+    expect(state.steps[1]).toMatchObject({ status: 'skipped' });
+    expect(state.isApproving).toBe(false);
+  });
+
+  it('keeps the planner-assigned phase label on the stored steps', async () => {
+    aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+      onMessage({
+        type: 'plan',
+        data: {
+          steps: [{ id: 'step-1', type: 'CreateTable', description: 'Create a table', phase: 'Create data tables' }],
+        },
+      });
+      onMessage({ type: 'done', data: { succeeded: 0, total: 1 } });
+      return [];
+    });
+
+    await getInitialState().approvePrd('PRD text');
+
+    expect(getInitialState().steps[0]).toMatchObject({ phase: 'Create data tables' });
+  });
+
+  it('skipStep records the decision with the backend without mutating the step locally', async () => {
+    useAiBuilderStore.setState({
+      steps: [{ id: 'step-1', type: 'CreateTable', description: 'Create a table', status: 'running' }],
+    });
+    aiService.skipStep.mockResolvedValue({ skipped: 'step-1' });
+
+    const result = await getInitialState().skipStep('step-1');
+
+    expect(result).toEqual({ skipped: 'step-1' });
+    expect(aiService.skipStep).toHaveBeenCalledWith({ conversationId: 'conv-1', stepId: 'step-1' });
+    expect(getInitialState().steps[0]).toMatchObject({ status: 'running' });
+    expect(getInitialState().error).toBeNull();
+  });
+
+  it('skipStep surfaces an error when the backend call fails', async () => {
+    aiService.skipStep.mockRejectedValue({ error: 'Only a pending or running step can be skipped' });
+
+    const result = await getInitialState().skipStep('step-1');
+
+    expect(result).toBeNull();
+    expect(getInitialState().error).toBe('Only a pending or running step can be skipped');
+  });
+
+  it('skipStep guards against double-clicks: a second call while one is in flight is a no-op', async () => {
+    let release;
+    aiService.skipStep.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      })
+    );
+
+    const first = getInitialState().skipStep('step-1');
+    expect(getInitialState().skippingStepId).toBe('step-1');
+    const second = getInitialState().skipStep('step-2');
+    expect(aiService.skipStep).toHaveBeenCalledTimes(1);
+
+    release({ skipped: 'step-1' });
+    expect(await first).toEqual({ skipped: 'step-1' });
+    expect(await second).toBeNull();
+    expect(getInitialState().skippingStepId).toBeNull();
+  });
+
+  it('skipStep does nothing without a current conversation', async () => {
+    useAiBuilderStore.setState({ currentConversationId: null });
+
+    await getInitialState().skipStep('step-1');
+
+    expect(aiService.skipStep).not.toHaveBeenCalled();
   });
 });

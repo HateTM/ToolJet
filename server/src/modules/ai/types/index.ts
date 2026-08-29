@@ -10,6 +10,7 @@ interface Features {
   [FEATURE_KEY.PROMOTE_CONVERSATION]: FeatureConfig;
   [FEATURE_KEY.APPROVE_PRD]: FeatureConfig;
   [FEATURE_KEY.REWIND_STEP]: FeatureConfig;
+  [FEATURE_KEY.SKIP_STEP]: FeatureConfig;
   [FEATURE_KEY.REGENERATE_MESSAGE]: FeatureConfig;
   [FEATURE_KEY.VOTE_MESSAGE]: FeatureConfig;
   [FEATURE_KEY.FIX_WITH_AI]: FeatureConfig;

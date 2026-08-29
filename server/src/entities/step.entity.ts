@@ -12,7 +12,7 @@ import { AiConversationMessage } from './ai_conversation_message.entity';
 import { Artifact } from './artifact.entity';
 
 export type StepType = 'CreateTable' | 'CreateQuery' | 'CreateComponent';
-export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
 
 @Entity('steps')
 export class Step {
@@ -39,6 +39,12 @@ export class Step {
 
   @Column({ type: 'varchar', nullable: false })
   type: StepType;
+
+  // The named phase (ticket #21) the planner grouped this Step under, e.g. "Create data
+  // queries". Nullable: pre-phase plans have none, and the client falls back to one derived
+  // group for them.
+  @Column({ type: 'varchar', nullable: true })
+  phase: string;
 
   // Human-readable description from the step-plan LLM call, shown as "step N of M: <description>".
   @Column({ type: 'text', nullable: true })

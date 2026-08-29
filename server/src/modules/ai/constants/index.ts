@@ -7,6 +7,7 @@ export enum FEATURE_KEY {
   APPROVE_PRD = 'approvePrd',
   PREVIEW_PLAN = 'previewPlan',
   REWIND_STEP = 'rewindStep',
+  SKIP_STEP = 'skipStep',
   REGENERATE_MESSAGE = 'regenerateMessage',
   VOTE_MESSAGE = 'voteMessage',
   FIX_WITH_AI = 'fixWithAi',
