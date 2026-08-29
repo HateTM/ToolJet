@@ -512,7 +512,8 @@ export class AiService implements IAiService {
     prd: any,
     user: User,
     userPermissions: UserPermissions,
-    response: Response
+    response: Response,
+    dataSourceId?: string
   ): Promise<any> {
     if (!conversationId || !prd) {
       throw new BadRequestException('conversationId and prd are required');
@@ -538,19 +539,27 @@ export class AiService implements IAiService {
       const appVersionId = await this.resolveAppVersionId(conversation.appId);
       const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
       const steps = await this.generateStepPlan(prd, conversationId, prdMessage.id, organizationId, dataSources);
+      // ADR-0018: when the user explicitly selects an external source, CreateTable steps
+      // (which only make sense against ToolJet DB) are stripped from the plan before it is
+      // persisted or executed. The planner is also told this constraint via the connected-
+      // sources block, but the filter is the safety net — the planner can still propose one
+      // in edge cases (e.g. when the prompt is long and the constraint is buried).
+      const filteredSteps = dataSourceId
+        ? steps.filter((step) => step.type !== 'CreateTable')
+        : steps;
 
       this.aiUtilService.sendSSE(response, 'plan', {
-        steps: steps.map((step) => ({ id: step.id, type: step.type, description: step.description })),
+        steps: filteredSteps.map((step) => ({ id: step.id, type: step.type, description: step.description })),
       });
 
       const context: StepExecutionContext = { prd, organizationId, appVersionId, priorResults: [], dataSources };
 
-      for (let index = 0; index < steps.length; index++) {
-        const step = steps[index];
+      for (let index = 0; index < filteredSteps.length; index++) {
+        const step = filteredSteps[index];
         await this.stepRepository.updateOne(step.id, { status: 'running' });
         this.aiUtilService.sendSSE(response, 'step-progress', {
           step: index + 1,
-          of: steps.length,
+          of: filteredSteps.length,
           description: step.description,
         });
 
@@ -560,7 +569,7 @@ export class AiService implements IAiService {
           context.priorResults.push({ type: step.type, artifact: outcome.artifact });
           this.aiUtilService.sendSSE(response, 'step-done', {
             step: index + 1,
-            of: steps.length,
+            of: filteredSteps.length,
             artifact: outcome.artifact,
           });
           continue;
@@ -569,25 +578,25 @@ export class AiService implements IAiService {
         const failureMessage = await this.aiConversationMessageRepository.createOne({
           aiConversationId: conversationId,
           messageType: 'ai',
-          content: `The build stopped at step ${index + 1} of ${steps.length} ("${step.description}"): ${outcome.errorMessage}`,
+          content: `The build stopped at step ${index + 1} of ${filteredSteps.length} ("${step.description}"): ${outcome.errorMessage}`,
           parentId: prdMessage.id,
           isLatest: true,
         });
         this.aiUtilService.sendSSE(response, 'step-failed', {
           step: index + 1,
-          of: steps.length,
+          of: filteredSteps.length,
           message: outcome.errorMessage,
         });
         this.aiUtilService.sendSSE(response, 'done', {
           message: failureMessage,
           succeeded: context.priorResults.length,
-          total: steps.length,
+          total: filteredSteps.length,
         });
         response.end();
         return;
       }
 
-      this.aiUtilService.sendSSE(response, 'done', { succeeded: context.priorResults.length, total: steps.length });
+      this.aiUtilService.sendSSE(response, 'done', { succeeded: context.priorResults.length, total: filteredSteps.length });
       response.end();
     } catch (error) {
       this.logger.error(`[approvePrd] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
