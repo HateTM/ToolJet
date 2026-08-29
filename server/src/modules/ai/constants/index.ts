@@ -5,6 +5,7 @@ export enum FEATURE_KEY {
   SEND_DOCS_MESSAGE = 'sendDocsMessage',
   PROMOTE_CONVERSATION = 'promoteConversation',
   APPROVE_PRD = 'approvePrd',
+  PREVIEW_PLAN = 'previewPlan',
   REWIND_STEP = 'rewindStep',
   REGENERATE_MESSAGE = 'regenerateMessage',
   VOTE_MESSAGE = 'voteMessage',

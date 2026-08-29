@@ -56,25 +56,11 @@ const STEP_TYPES = ['CreateTable', 'CreateQuery', 'CreateComponent'] as const;
 const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
 Call proposeStepPlan exactly once with the ordered list of steps needed to build what the PRD describes. Each step is one of:
-- CreateTable: creates a ToolJet DB table.
+- CreateTable: creates a ToolJet DB table. Include the full table definition you propose in the optional table field — the user previews exactly that definition (tables, columns, foreign keys) before approving, and it is what gets created.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
 
 Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.`;
-
-const proposeStepPlanTool = tool({
-  description: 'Propose the ordered list of build steps for this PRD.',
-  parameters: z.object({
-    steps: z
-      .array(
-        z.object({
-          type: z.enum(STEP_TYPES),
-          description: z.string().describe('Short, specific description of what this step builds'),
-        })
-      )
-      .min(1),
-  }),
-});
 
 // ToolJet DB's supported column types (server/src/modules/tooljet-db/types.ts's TJDB map).
 const TJDB_DATA_TYPES = [
@@ -88,63 +74,105 @@ const TJDB_DATA_TYPES = [
   'jsonb',
 ] as const;
 
+export const TJDB_FOREIGN_KEY_ACTIONS = ['RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'] as const;
+
+// The full definition of one ToolJet DB table, shared by the planner (which proposes it at
+// plan time so it can be previewed before approval, ticket #20) and the per-step createTable
+// tool (which historically was the only place a table's schema existed, at execution time).
+const tableDefinitionObject = z.object({
+  table_name: z.string().describe('snake_case table name, unique within this app'),
+  columns: z
+    .array(
+      z.object({
+        column_name: z.string(),
+        data_type: z.enum(TJDB_DATA_TYPES),
+        is_primary_key: z.boolean(),
+        is_not_null: z.boolean(),
+        is_unique: z.boolean(),
+      })
+    )
+    .min(1)
+    .describe('Exactly one column must have is_primary_key: true'),
+  foreign_keys: z
+    .array(
+      z.object({
+        // One or more columns in this table that must reference a column (or columns)
+        // in another table in this app.
+        column_names: z.array(z.string()).min(1).describe('Column(s) in this table that are referenced'),
+        referenced_table_name: z.string().describe('Name of another table in this app that these columns reference'),
+        referenced_column_names: z
+          .array(z.string())
+          .min(1)
+          .describe('Column(s) in referenced_table_name that these columns reference'),
+        on_delete: z
+          .enum(TJDB_FOREIGN_KEY_ACTIONS)
+          .describe(
+            "Action when a referenced row is deleted; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'"
+          )
+          .optional(),
+        on_update: z
+          .enum(TJDB_FOREIGN_KEY_ACTIONS)
+          .describe(
+            "Action when a referenced row is updated; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'"
+          )
+          .optional(),
+      })
+    )
+    .optional()
+    .describe(
+      'Relationships to other tables in this app. Omit this field to create a table with no foreign keys. ' +
+        'Referenced tables must already exist in this app.'
+    ),
+});
+
+type TableDefinition = z.infer<typeof tableDefinitionObject>;
+
+// A planned table is trusted verbatim only when it could actually create a table: a real
+// (non-blank) name and at least one column with a name and a type. Anything looser falls
+// back to the per-step LLM path rather than failing execution on a malformed contract.
+const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
+  Boolean(
+    table &&
+    typeof table.table_name === 'string' &&
+    table.table_name.trim() &&
+    Array.isArray(table.columns) &&
+    table.columns.length > 0 &&
+    table.columns.every(
+      (column: any) =>
+        column &&
+        typeof column.column_name === 'string' &&
+        column.column_name.trim() &&
+        typeof column.data_type === 'string'
+    )
+  );
+
+const proposeStepPlanTool = tool({
+  description: 'Propose the ordered list of build steps for this PRD.',
+  parameters: z.object({
+    steps: z
+      .array(
+        z.object({
+          type: z.enum(STEP_TYPES),
+          description: z.string().describe('Short, specific description of what this step builds'),
+          // Only meaningful on CreateTable steps: the concrete table definition this step
+          // proposes, persisted as the Step's plannedTable and shown in the pre-approval
+          // schema preview (ticket #20).
+          table: tableDefinitionObject.optional(),
+        })
+      )
+      .min(1),
+  }),
+});
+
 export const CREATE_TABLE_SYSTEM_PROMPT = `You design the exact schema for one ToolJet DB table, based on the PRD and the specific step you've been asked to build.
 
 Call createTable exactly once with the table's real name (snake_case) and its columns. Every table needs exactly one primary key column (usually an auto-generated "id" of type serial). Pick sensible, minimal columns that satisfy what this step describes — don't invent columns the PRD doesn't call for.
 
 If this table's rows must always reference rows in another table in this app (for example a "customer_id" that must exist in the "customers" table), declare that relationship with the optional foreign_keys field: list the column(s) in this table, the referenced table, and the referenced column(s); optionally set on_delete/on_update to one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'. Only reference tables that already exist in this app — the referenced table's columns must match the column names you list. Omit foreign_keys when no such relationship is needed.`;
 
-export const TJDB_FOREIGN_KEY_ACTIONS = ['RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'] as const;
-
 export const createTableTool = tool({
   description: 'Create a ToolJet DB table with the given name and columns.',
-  parameters: z.object({
-    table_name: z.string().describe('snake_case table name, unique within this app'),
-    columns: z
-      .array(
-        z.object({
-          column_name: z.string(),
-          data_type: z.enum(TJDB_DATA_TYPES),
-          is_primary_key: z.boolean(),
-          is_not_null: z.boolean(),
-          is_unique: z.boolean(),
-        })
-      )
-      .min(1)
-      .describe('Exactly one column must have is_primary_key: true'),
-    foreign_keys: z
-      .array(
-        z.object({
-          // One or more columns in this table that must reference a column (or columns)
-          // in another table in this app.
-          column_names: z.array(z.string()).min(1).describe('Column(s) in this table that are referenced'),
-          referenced_table_name: z
-            .string()
-            .describe('Name of another table in this app that these columns reference'),
-          referenced_column_names: z
-            .array(z.string())
-            .min(1)
-            .describe('Column(s) in referenced_table_name that these columns reference'),
-          on_delete: z
-            .enum(TJDB_FOREIGN_KEY_ACTIONS)
-            .describe(
-              "Action when a referenced row is deleted; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
-            )
-            .optional(),
-          on_update: z
-            .enum(TJDB_FOREIGN_KEY_ACTIONS)
-            .describe(
-              "Action when a referenced row is updated; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
-            )
-            .optional(),
-        })
-      )
-      .optional()
-      .describe(
-        'Relationships to other tables in this app. Omit this field to create a table with no foreign keys. ' +
-          'Referenced tables must already exist in this app.',
-      ),
-  }),
+  parameters: tableDefinitionObject,
 });
 
 // Full v1 allow-list as of this ticket (ADR-0002: Page, Table, Form, Button, Text,
@@ -570,7 +598,8 @@ export class AiService implements IAiService {
    * unrecoverable failure.
    *
    * SSE event contract (in addition to sendUserMessage's chunk/done/error):
-   *  - `plan`         (once):     { steps: [{ id, type, description }] }
+   *  - `plan`         (once):     { steps: [{ id, type, description, table? }] } — table is the
+   *                                 planned table definition on CreateTable steps (ticket #20)
    *  - `step-progress` (per step): { step, of, description } — sent before executing a step
    *  - `step-done`     (per step): { step, of, artifact } — the step's persisted Artifact
    *  - `step-failed`   (at most once): { step, of, message } — the step that stopped execution
@@ -612,7 +641,11 @@ export class AiService implements IAiService {
     try {
       const appVersionId = await this.resolveAppVersionId(conversation.appId);
       const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
-      const steps = await this.generateStepPlan(prd, conversationId, prdMessage.id, organizationId, dataSources);
+      // Ticket #20: Steps persisted by an earlier previewPlan call for this same PRD message
+      // are reused as-is — what the user previewed (including each CreateTable step's planned
+      // table definition) is exactly what executes. A PRD refined after the preview produces a
+      // new AI message, whose (empty) pending set falls through to a fresh plan.
+      const steps = await this.resolvePlanForPrdMessage(conversationId, prdMessage, organizationId, dataSources, prd);
       // ADR-0018: when the user explicitly selects an external source, CreateTable steps
       // (which only make sense against ToolJet DB) are stripped from the plan before it is
       // persisted or executed. The planner is also told this constraint via the connected-
@@ -620,9 +653,7 @@ export class AiService implements IAiService {
       // in edge cases (e.g. when the prompt is long and the constraint is buried).
       const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
 
-      this.aiUtilService.sendSSE(response, 'plan', {
-        steps: filteredSteps.map((step) => ({ id: step.id, type: step.type, description: step.description })),
-      });
+      this.aiUtilService.sendSSE(response, 'plan', { steps: this.mapStepsForWire(filteredSteps) });
 
       const context: StepExecutionContext = { prd, organizationId, appVersionId, priorResults: [], dataSources };
 
@@ -681,6 +712,75 @@ export class AiService implements IAiService {
   }
 
   /**
+   * Ticket #20: generates (or reuses) the build plan for the conversation's latest PRD and
+   * returns it as plain JSON — no SSE, nothing executes. Each CreateTable step carries its
+   * concrete proposed table definition so the client can render a structured schema preview
+   * before approval. Steps persisted here stay pending; approvePrd reuses them instead of
+   * re-running the planner, so the previewed plan is the executed plan. Previewing twice is
+   * idempotent: the second call is served from the first call's pending Steps.
+   */
+  async previewPlan(conversationId: string, user: User, userPermissions: UserPermissions, dataSourceId?: string) {
+    if (!conversationId) {
+      throw new BadRequestException('conversationId is required');
+    }
+    // Same rules as approvePrd: generate conversations only, caller-owned, PRD message required.
+    await this.loadConversationOfType(conversationId, 'generate', user.id);
+
+    const organizationId = user.organizationId;
+    const conversationMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const prdMessage = [...conversationMessages].reverse().find((message) => message.messageType === 'ai');
+    if (!prdMessage) {
+      throw new BadRequestException('No PRD message found to plan from');
+    }
+
+    const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
+    const steps = await this.resolvePlanForPrdMessage(conversationId, prdMessage, organizationId, dataSources);
+
+    // Same ADR-0018 safety net as approvePrd: with an external source selected, CreateTable
+    // steps (and their planned tables) are stripped from what the preview shows.
+    const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
+    return { steps: this.mapStepsForWire(filteredSteps) };
+  }
+
+  /**
+   * The plan for one PRD message: pending Steps persisted by an earlier previewPlan call
+   * (ticket #20) when they exist, otherwise a freshly generated plan. Shared by previewPlan
+   * and approvePrd on purpose — the previewed plan has to be the executed plan, so both
+   * callers must resolve it the same way.
+   */
+  private async resolvePlanForPrdMessage(
+    conversationId: string,
+    prdMessage: AiConversationMessage,
+    organizationId: string,
+    dataSources: QueryableDataSource[],
+    prd?: string
+  ): Promise<Step[]> {
+    let steps = await this.stepRepository.findPendingForMessage(conversationId, prdMessage.id);
+    if (!steps.length) {
+      steps = await this.generateStepPlan(
+        prd ?? prdMessage.content,
+        conversationId,
+        prdMessage.id,
+        organizationId,
+        dataSources
+      );
+    }
+    return steps;
+  }
+
+  // One Step as it travels to the client (plan SSE event, preview response). The planned
+  // table (ticket #20) rides along on CreateTable steps so the schema preview renders the
+  // definition that execution will create verbatim.
+  private mapStepsForWire(steps: Step[]) {
+    return steps.map((step) => ({
+      id: step.id,
+      type: step.type,
+      description: step.description,
+      ...(step.plannedTable && { table: step.plannedTable }),
+    }));
+  }
+
+  /**
    * Resolves "the" AppVersion an AI Builder conversation is scoped to — the app's
    * earliest-created version, matching the intent of the human-triggered pages endpoint's
    * convention (`pages.controller.ts`: `app.appVersions[0].id`). VersionRepository.getAllVersions
@@ -729,19 +829,29 @@ export class AiService implements IAiService {
       throw new Error('The assistant did not propose a build plan');
     }
 
-    const { steps: proposedSteps } = call.args as { steps: Array<{ type: StepType; description: string }> };
+    const { steps: proposedSteps } = call.args as {
+      steps: Array<{ type: StepType; description: string; table?: TableDefinition }>;
+    };
     if (!proposedSteps?.length) {
       throw new Error('The assistant proposed an empty build plan');
     }
 
     const persisted: Step[] = [];
     for (let index = 0; index < proposedSteps.length; index++) {
+      const proposed = proposedSteps[index];
+      // Ticket #20: a CreateTable step carries its concrete proposed definition, which the
+      // schema preview renders and executeCreateTableStep later creates verbatim. A
+      // malformed one is dropped rather than persisted — execution then falls back to the
+      // per-step LLM path instead of trusting a half-formed contract.
+      const plannedTable =
+        proposed.type === 'CreateTable' && isWellFormedTableDefinition(proposed.table) ? proposed.table : undefined;
       const step = await this.stepRepository.createOne({
         conversationId,
         messageId,
         order: index,
-        type: proposedSteps[index].type,
-        description: proposedSteps[index].description,
+        type: proposed.type,
+        description: proposed.description,
+        ...(plannedTable && { plannedTable }),
         status: 'pending',
       });
       persisted.push(step);
@@ -839,11 +949,45 @@ export class AiService implements IAiService {
     return lines.join('\n\n');
   }
 
+  // Maps a (planner-proposed or LLM-proposed) table definition into the params
+  // AgentsService.CreateTable forwards to the ToolJet DB backend. The foreign_keys entry is
+  // forwarded verbatim: the backend CreatePostgrestTableDto's PostgrestForeignKeyDto uses the
+  // same field names.
+  private buildTableParams(table: TableDefinition) {
+    return {
+      table_name: table.table_name,
+      columns: table.columns.map((column) => ({
+        column_name: column.column_name,
+        data_type: column.data_type,
+        constraints_type: {
+          is_primary_key: column.is_primary_key,
+          is_not_null: column.is_not_null,
+          is_unique: column.is_unique,
+        },
+      })),
+      ...(table.foreign_keys && { foreign_keys: table.foreign_keys }),
+    };
+  }
+
   async executeCreateTableStep(
     step: Step,
     context: StepExecutionContext,
     previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
+    // Ticket #20: a planned table persisted by the planner is the contract — it is created
+    // verbatim with no LLM call, so what the pre-approval schema preview showed is exactly
+    // what gets created. Steps without a well-formed planned table (plans persisted before
+    // #20, or a malformed definition dropped at plan time) fall through to the LLM path.
+    if (isWellFormedTableDefinition(step.plannedTable)) {
+      const tableParams = this.buildTableParams(step.plannedTable);
+      const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
+      return {
+        content: { ...created, columns: tableParams.columns },
+        identifier: created.table_name,
+        props: tableParams,
+      };
+    }
+
     const result = await this.aiUtilService.AIGatewayGenerate(
       'openai',
       'approve-prd-create-table',
@@ -861,39 +1005,8 @@ export class AiService implements IAiService {
       throw new Error('The assistant did not produce a table definition');
     }
 
-    const args = call.args as {
-      table_name: string;
-      columns: Array<{
-        column_name: string;
-        data_type: string;
-        is_primary_key: boolean;
-        is_not_null: boolean;
-        is_unique: boolean;
-      }>;
-      // Optional relationships declared by the model (ticket #23). Forwarded verbatim to the
-      // backend CreatePostgrestTableDto, whose PostgrestForeignKeyDto uses the same field names.
-      foreign_keys?: Array<{
-        column_names: string[];
-        referenced_table_name: string;
-        referenced_column_names: string[];
-        on_delete?: string;
-        on_update?: string;
-      }>;
-    };
-
-    const tableParams = {
-      table_name: args.table_name,
-      columns: args.columns.map((column) => ({
-        column_name: column.column_name,
-        data_type: column.data_type,
-        constraints_type: {
-          is_primary_key: column.is_primary_key,
-          is_not_null: column.is_not_null,
-          is_unique: column.is_unique,
-        },
-      })),
-      ...(args.foreign_keys && { foreign_keys: args.foreign_keys }),
-    };
+    const args = call.args as TableDefinition;
+    const tableParams = this.buildTableParams(args);
 
     const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
 

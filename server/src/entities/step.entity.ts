@@ -51,6 +51,12 @@ export class Step {
   @Column({ type: 'jsonb', nullable: true })
   props: any;
 
+  // The concrete table definition the planner proposed for this Step (ticket #20) — present
+  // only on CreateTable Steps. What the schema preview renders, and what
+  // executeCreateTableStep creates verbatim, so the preview is always truthful.
+  @Column({ name: 'planned_table', type: 'jsonb', nullable: true })
+  plannedTable: any;
+
   @Column({ type: 'int', nullable: false, default: 0 })
   attempts: number;
 

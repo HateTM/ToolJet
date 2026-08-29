@@ -13,6 +13,8 @@ export interface IAiController {
 
   approvePrd(user: User, userPermissions: UserPermissions, body: any, response: Response): Promise<any>;
 
+  previewPlan(user: User, userPermissions: UserPermissions, body: any): Promise<any>;
+
   rewindStep(user: User, body: any): Promise<any>;
 
   regenerateAiMessage(user: User, body: any): Promise<any>;
