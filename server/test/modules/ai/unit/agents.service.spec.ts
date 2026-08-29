@@ -155,7 +155,9 @@ describe('AgentsService.CreateComponent', () => {
   it('throws for an unrecognized component type without calling PageService/ComponentsService', async () => {
     const { service, pageService, componentsService } = buildAgentsService();
 
-    await expect(service.CreateComponent('version-1', 'org-1', 'Chart', {})).rejects.toThrow(
+    // 'Calendar' is outside the allow-list (and not one a widget builder handles) — same
+    // role 'Chart' played before it joined the allow-list (ticket #13).
+    await expect(service.CreateComponent('version-1', 'org-1', 'Calendar', {})).rejects.toThrow(
       /unsupported component type/i
     );
     expect(pageService.createPage).not.toHaveBeenCalled();
@@ -163,11 +165,16 @@ describe('AgentsService.CreateComponent', () => {
   });
 
   it.each([
-    ['Button', { pageId: 'page-1', text: 'Save' }, { width: 4, height: 40 }],
-    ['Text', { pageId: 'page-1', text: 'Welcome' }, { width: 6, height: 40 }],
-    ['TextInput', { pageId: 'page-1', label: 'Email' }, { width: 10, height: 40 }],
-    ['Container', { pageId: 'page-1', title: 'Sidebar' }, { width: 15, height: 450 }],
-  ])('creates a %s component on the given page with its real defaultSize', async (type, props, size) => {
+    ['Button', { pageId: 'page-1', text: 'Save' }, { width: 4, height: 40 }, 'Button'],
+    ['Text', { pageId: 'page-1', text: 'Welcome' }, { width: 6, height: 40 }, 'Text'],
+    ['TextInput', { pageId: 'page-1', label: 'Email' }, { width: 10, height: 40 }, 'TextInput'],
+    ['Container', { pageId: 'page-1', title: 'Sidebar' }, { width: 15, height: 450 }, 'Container'],
+    ['Chart', { pageId: 'page-1', title: 'Revenue' }, { width: 20, height: 400 }, 'Chart'],
+    ['Image', { pageId: 'page-1', source: 'https://example.com/logo.png' }, { width: 10, height: 240 }, 'Image'],
+    ['Checkbox', { pageId: 'page-1', label: 'Subscribe' }, { width: 6, height: 30 }, 'Checkbox'],
+    ['Dropdown', { pageId: 'page-1', label: 'Status', options: ['Open', 'Closed'] }, { width: 10, height: 40 }, 'DropdownV2'],
+    ['Modal', { pageId: 'page-1', title: 'Confirm' }, { width: 10, height: 34 }, 'Modal'],
+  ])('creates a %s component on the given page with its real defaultSize', async (type, props, size, persistedType) => {
     const { service, componentsService } = buildAgentsService();
     componentsService.create.mockResolvedValue({});
 
@@ -177,9 +184,12 @@ describe('AgentsService.CreateComponent', () => {
     expect(pageId).toBe('page-1');
     expect(appVersionId).toBe('version-1');
     const [definition] = Object.values(componentDiff) as any[];
-    expect(definition.type).toBe(type);
+    // The persisted type is the widget config's `component` field (what the canvas
+    // resolves componentTypeDefinitionMap by) — same as the requested type for most
+    // widgets, 'DropdownV2' for Dropdown.
+    expect(definition.type).toBe(persistedType ?? type);
     expect(definition.layouts.desktop).toEqual({ top: 0, left: 0, ...size });
-    expect(result).toMatchObject({ pageId: 'page-1', type });
+    expect(result).toMatchObject({ pageId: 'page-1', type: persistedType ?? type });
   });
 
   it('Text component stores the given text as its properties.text.value', async () => {
@@ -207,6 +217,112 @@ describe('AgentsService.CreateComponent', () => {
     const [definition] = Object.values(componentDiff) as any[];
     expect(definition.properties.label.value).toBe('Email');
     expect(definition.properties.placeholder.value).toBe('you@example.com');
+  });
+
+  it('Chart component binds data to the referenced query and stores the chart type', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    const result = await service.CreateComponent('version-1', 'org-1', 'Chart', {
+      pageId: 'page-1',
+      title: 'Revenue',
+      queryName: 'list_orders',
+      chartType: 'bar',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.type).toBe('Chart');
+    expect(definition.properties.title.value).toBe('Revenue');
+    expect(definition.properties.data.value).toBe('{{queries.list_orders.data}}');
+    expect(definition.properties.type.value).toBe('bar');
+    expect(result).toMatchObject({ type: 'Chart', queryName: 'list_orders' });
+  });
+
+  it('Chart component without a queryName leaves the widget default data in place (no binding)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Chart', { pageId: 'page-1', title: 'Empty chart' });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.properties.data).toBeUndefined();
+    expect(definition.properties.type.value).toBe('line');
+  });
+
+  it('Image component stores the source URL and alt text', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Image', {
+      pageId: 'page-1',
+      source: 'https://example.com/logo.png',
+      alternativeText: 'Company logo',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.properties.source.value).toBe('https://example.com/logo.png');
+    expect(definition.properties.alternativeText.value).toBe('Company logo');
+    expect(definition.properties.imageFormat.value).toBe('imageUrl');
+  });
+
+  it('Checkbox component stores the label and initial checked state', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Checkbox', {
+      pageId: 'page-1',
+      label: 'Subscribe',
+      defaultChecked: true,
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.properties.label.value).toBe('Subscribe');
+    expect(definition.properties.defaultValue.value).toBe('{{true}}');
+  });
+
+  it('Dropdown component maps plain-string options onto the DropdownV2 option-list shape', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Dropdown', {
+      pageId: 'page-1',
+      label: 'Status',
+      options: ['Open', 'Closed'],
+      placeholder: 'Pick one',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.type).toBe('DropdownV2');
+    expect(definition.properties.label.value).toBe('Status');
+    expect(definition.properties.placeholder.value).toBe('Pick one');
+    expect(definition.properties.advanced.value).toBe('{{false}}');
+    expect(definition.properties.options.value).toEqual([
+      expect.objectContaining({ label: 'Open', value: 'Open' }),
+      expect.objectContaining({ label: 'Closed', value: 'Closed' }),
+    ]);
+  });
+
+  it('Modal component persists as type Modal with a default trigger button', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Modal', {
+      pageId: 'page-1',
+      title: 'Confirm delete',
+      triggerButtonLabel: 'Delete',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.type).toBe('Modal');
+    expect(definition.properties.title.value).toBe('Confirm delete');
+    expect(definition.properties.useDefaultButton.value).toBe('{{true}}');
+    expect(definition.properties.triggerButtonLabel.value).toBe('Delete');
   });
 });
 
