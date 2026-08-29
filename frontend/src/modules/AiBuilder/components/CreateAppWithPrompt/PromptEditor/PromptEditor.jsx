@@ -3,6 +3,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { defaultKeymap } from '@codemirror/commands';
+import { completionStatus } from '@codemirror/autocomplete';
 
 // Prompt input as a CodeMirror 6 editor (ticket #46), matching the production
 // PromptInput. The overlay placeholder (home variant's stacked rotating lines)
@@ -16,7 +17,29 @@ import { defaultKeymap } from '@codemirror/commands';
 // via the default keymap. Tab is always consumed by the owner's onTabAccept —
 // it accepts the rotating example while the doc is empty, and is a no-op once
 // content exists (a plain Tab never inserts anything into the prompt).
-const PromptEditor = ({ value, onChange, onSubmit, onTabAccept, disabled, placeholder, overlay }) => {
+//
+// `extensions` (ticket #27) lets a host add editor-level extensions — the AI
+// builder panel adds the @-mention autocomplete — and must be memoized by the
+// caller like the built-ins here. `onReady` hands back the EditorView so a host
+// can focus the editor programmatically. Enter yields to an open completion
+// popup (its own keymap accepts the highlighted mention) and only submits when
+// none is active.
+// A stable default so a host that passes no `extensions` doesn't invalidate the
+// allExtensions memo (a fresh [] literal each render would reconfigure CodeMirror
+// on every keystroke — the identity invariant this component exists to protect).
+const EMPTY_EXTENSIONS = [];
+
+const PromptEditor = ({
+  value,
+  onChange,
+  onSubmit,
+  onTabAccept,
+  disabled,
+  placeholder,
+  overlay,
+  extensions = EMPTY_EXTENSIONS,
+  onReady,
+}) => {
   // CodeMirror `extensions` must keep a stable identity across renders (a fresh
   // array forces a full reconfigure on every keystroke), while the handlers it
   // closes over change — so the keymap is built once against refs that always
@@ -24,7 +47,7 @@ const PromptEditor = ({ value, onChange, onSubmit, onTabAccept, disabled, placeh
   const handlers = useRef({});
   handlers.current = { onSubmit, onTabAccept };
 
-  const extensions = useMemo(
+  const builtInExtensions = useMemo(
     () => [
       // Prec.highest: the prompt bindings must win over the default keymap's
       // Enter (insert newline) and Tab (indentMore) — plain array order proved
@@ -33,7 +56,9 @@ const PromptEditor = ({ value, onChange, onSubmit, onTabAccept, disabled, placeh
         keymap.of([
           {
             key: 'Enter',
-            run: () => {
+            run: (view) => {
+              // An open @-mention popup owns Enter (accept the highlighted option).
+              if (completionStatus(view.state) === 'active') return false;
               handlers.current.onSubmit();
               return true;
             },
@@ -53,6 +78,8 @@ const PromptEditor = ({ value, onChange, onSubmit, onTabAccept, disabled, placeh
     []
   );
 
+  const allExtensions = useMemo(() => [...builtInExtensions, ...extensions], [builtInExtensions, extensions]);
+
   return (
     <div className="tw:relative tw:min-w-0 tw:flex-1" data-cy="prompt-textarea">
       {overlay}
@@ -61,9 +88,10 @@ const PromptEditor = ({ value, onChange, onSubmit, onTabAccept, disabled, placeh
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          extensions={extensions}
+          extensions={allExtensions}
           basicSetup={false}
           readOnly={disabled}
+          onCreateEditor={(view) => onReady?.(view)}
           className="tw-bg-transparent [&_.cm-editor]:tw-bg-transparent [&_.cm-gutters]:tw-hidden [&_.cm-content]:tw-px-0 [&_.cm-content]:tw-py-0 [&_.cm-content]:tw-text-sm [&_.cm-content]:tw-text-text-default [&_.cm-placeholder]:tw-text-text-placeholder"
           style={{ backgroundColor: 'transparent' }}
         />

@@ -1106,3 +1106,42 @@ describe('skip and phases (ticket #21)', () => {
     expect(aiService.skipStep).not.toHaveBeenCalled();
   });
 });
+
+// Captured at collection time (before any test runs), so no earlier describe's mutations
+// can leak into the @-mention tests below.
+const mentionTestsSnapshot = useAiBuilderStore.getState();
+
+describe('aiBuilderStore sendMessage — @-mention references (ticket #27)', () => {
+  beforeEach(() => {
+    useAiBuilderStore.setState(mentionTestsSnapshot, true);
+    jest.clearAllMocks();
+    aiService.createConversation.mockResolvedValue({ id: 'conv-auto' });
+    aiService.sendMessage.mockResolvedValue([]);
+  });
+
+  it('passes resolved mention references through in the message body', async () => {
+    const references = [
+      { type: 'component', id: 'comp-1', name: 'OrdersTable', widgetType: 'Table', pageName: 'Orders' },
+      { type: 'query', id: 'query-1', name: 'create_order', kind: 'tooljetdb' },
+    ];
+
+    await getInitialState().sendMessage({
+      appId: 'app-1',
+      content: 'Wire @OrdersTable to run @create_order',
+      references,
+    });
+
+    expect(aiService.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Wire @OrdersTable to run @create_order', references }),
+      expect.any(Function),
+      false
+    );
+  });
+
+  it('omits the references field when no mentions were made', async () => {
+    await getInitialState().sendMessage({ appId: 'app-1', content: 'No mentions here' });
+
+    const [body] = aiService.sendMessage.mock.calls[0];
+    expect('references' in body).toBe(false);
+  });
+});

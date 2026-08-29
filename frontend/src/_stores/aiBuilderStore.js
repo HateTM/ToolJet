@@ -399,7 +399,7 @@ const useAiBuilderStore = create(
       // the chat panel calls it as a fire-and-forget click handler — so callers that need to
       // know, like the homepage-prompt handoff deciding whether the prompt is safe to drop,
       // read this boolean instead of attaching a .catch().
-      sendMessage: async ({ appId, content, conversationType = get().conversationType }) => {
+      sendMessage: async ({ appId, content, conversationType = get().conversationType, references }) => {
         const trimmedContent = (content ?? '').trim();
         if (!trimmedContent) return false;
 
@@ -459,6 +459,9 @@ const useAiBuilderStore = create(
           conversationType,
           conversationId,
           content: trimmedContent,
+          // @-mentions resolved to real ids (ticket #27). The backend persists this on the
+          // user message and renders it into the LLM's system context; absent = no mentions.
+          ...(references?.length && { references }),
         };
 
         const onMessage = ({ data, type }) => {

@@ -29,6 +29,10 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('@/_ui/Spinner', () => () => <span data-cy="spinner" />);
+// Ticket #27 gave the panel a mention catalog backed by the builder store, whose import
+// chain (query-string, node 'config') can't load in this jsdom jest setup; StepProgressList
+// never touches that store, so it collapses.
+jest.mock('@/AppBuilder/_stores/store', () => ({ __esModule: true, default: jest.fn(() => ({})) }));
 // The design-system Button reaches lucide-react's ESM-only dynamic.mjs (same reason the
 // Copilot tests mock it); StepProgressList renders plain <button>s, so it collapses.
 jest.mock('@/components/ui/Button/Button', () => {
