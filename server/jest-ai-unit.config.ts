@@ -11,7 +11,11 @@ const config: Config.InitialOptions = {
   globalSetup: undefined,
   setupFiles: [],
   setupFilesAfterEnv: [],
-  testRegex: 'test/modules/ai/unit/.*spec\\.ts$',
+  // Offline specs only: the AI Builder unit suite, plus ticket #23's DB-layer
+  // create-table/index spec (mocked query runners). The rest of test/modules/tooljet-db
+  // (import-export etc.) is DB-backed via test-helper and stays on the main jest config.
+  testRegex:
+    'test/modules/ai/unit/.*spec\\.ts$|test/modules/tooljet-db/unit/tooljet-db-create-table.*spec\\.ts$',
   transform: {
     '^.+\\.(t|j)s$': [
       'ts-jest',
