@@ -81,7 +81,7 @@ const PromptEditor = ({
   const allExtensions = useMemo(() => [...builtInExtensions, ...extensions], [builtInExtensions, extensions]);
 
   return (
-    <div className="tw:relative tw:min-w-0 tw:flex-1" data-cy="prompt-textarea">
+    <div className="tw-relative tw-min-w-0 tw-flex-1" data-cy="prompt-textarea">
       {overlay}
       <div data-cy="prompt-input">
         <CodeMirror
