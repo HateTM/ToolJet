@@ -35,6 +35,12 @@ const config: Config.InitialOptions = {
     '@entities/(.*)': '<rootDir>/src/entities/$1',
     '@controllers/(.*)': '<rootDir>/src/controllers/$1',
     '@modules/(.*)': '<rootDir>/src/modules/$1',
+    // CE-fork stubs for the two @ee imports in the global test harness chain
+    // (test/helpers/setup.ts). Everything else under @ee stays on the (unpopulated,
+    // private) submodule mapping below — suites that test EE features directly cannot run
+    // in this CE-only fork and fail honestly.
+    '^@ee/audit-logs/module$': '<rootDir>/test/__mocks__/ee/audit-logs/module.ts',
+    '^@ee/licensing/constants/PlanTerms$': '<rootDir>/test/__mocks__/ee/licensing/constants/PlanTerms.ts',
     '@ee/(.*)': '<rootDir>/ee/$1',
     '@apps/(.*)': '<rootDir>/ee/apps/$1',
     '@helpers/(.*)': '<rootDir>/src/helpers/$1',
