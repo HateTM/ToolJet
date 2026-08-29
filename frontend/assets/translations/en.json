@@ -442,7 +442,10 @@
         "createAppWithPrompt": {
             "placeholder": "Describe the app you want to build...",
             "submit": "Create app",
-            "tryTheseExamples": "Try these examples to get started"
+            "tryTheseExamples": "Try these examples to get started",
+            "referenceDatasource": "Reference a datasource",
+            "noDataSources": "No data sources found",
+            "removeReference": "Remove reference"
         },
         "blankPage": {
             "welcomeToToolJet": "Welcome to your new ToolJet workspace",

@@ -476,7 +476,10 @@ const useAppData = (
           // writes to the same singleton store: a homepage prompt always builds, so it must land
           // on a Generate thread even if the user last left the panel in Learn mode.
           useAiBuilderStore.setState({ conversationType: 'generate' });
-          useAiBuilderStore.getState().beginHandoff(state.prompt, effectiveAppId);
+          // taggedResources (ticket #47): the datasources tagged in the /home prompt bar ride
+          // the handoff into the builder store; consuming them in the Generate flow is scoped
+          // to a separate ticket.
+          useAiBuilderStore.getState().beginHandoff(state.prompt, effectiveAppId, state.taggedResources ?? null);
           // Cleared as soon as the store is holding it, success or failure alike. ADR-0010
           // strips it so a refresh can't re-send the prompt; ADR-0017 keeps that guard rather
           // than making it conditional, because the failure path now recovers the prompt from

@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from 'react-i18next';
-import { ArrowUp, Bug, ListTodo, Truck, Users } from 'lucide-react';
+import { ArrowUp, Bug, Database, ListTodo, Truck, Users, X } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
+import { globalDatasourceService } from '@/_services';
+import { getWorkspaceId } from '@/_helpers/utils';
 import { withEditionSpecificComponent } from '@/modules/common/helpers/withEditionSpecificComponent';
 
 // `createApp` is HomePage.jsx's own method (already threading a `prompt` param through to
@@ -101,11 +103,88 @@ const ExamplePromptsDropdown = ({ onSelect, disabled }) => {
   );
 };
 
+// Datasource tagging (ticket #47): lets the user reference a workspace datasource while
+// composing the prompt. The workspace list is fetched lazily on first open via the
+// global-datasource listing (no app version exists yet on /home, so the app-scoped
+// datasourceService.getAll is not usable here). Selection is tracked outside the prompt
+// text and handed to createApp as `{ datasources, tables }` — matching the production
+// PromptInput's taggedResources shape.
+// data-cy slugs are load-bearing — the cypress/unit tests select options and tags by them.
+const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+const DatasourceReferencePicker = ({ selected, onToggle, disabled }) => {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [datasources, setDatasources] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const openMenu = async () => {
+    setOpen(true);
+    if (loaded) return;
+    try {
+      const list = await globalDatasourceService.getAll(getWorkspaceId());
+      setDatasources(list ?? []);
+    } catch {
+      setDatasources([]);
+    } finally {
+      setLoaded(true);
+    }
+  };
+
+  return (
+    <div className="tw-relative tw-shrink-0">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={openMenu}
+        className="tw-flex tw-h-7 tw-w-7 tw-items-center tw-justify-center tw-rounded-md tw-text-icon-default hover:tw-bg-background-surface-layer-02 focus:tw-outline-none disabled:tw-cursor-not-allowed disabled:tw-opacity-50"
+        aria-label={t('homePage.createAppWithPrompt.referenceDatasource', 'Reference a datasource')}
+        data-cy="datasource-reference-button"
+      >
+        <Database width="16" height="16" />
+      </button>
+      {open && (
+        <>
+          {/* Invisible full-screen layer to catch outside clicks and close the menu */}
+          <div className="tw-fixed tw-inset-0 tw-z-40" onClick={() => setOpen(false)} />
+          <div
+            className="tw-absolute tw-bottom-9 tw-left-0 tw-z-50 tw-max-h-[240px] tw-min-w-[200px] tw-overflow-y-auto tw-rounded-lg tw-border tw-border-solid tw-border-border-weak tw-bg-background-surface-layer-01 tw-p-1 tw-shadow-elevation-200-box-shadow"
+            data-cy="datasource-reference-menu"
+          >
+            {datasources.length === 0 ? (
+              <div className="tw-px-3 tw-py-2 tw-text-12 tw-text-text-placeholder" data-cy="datasource-reference-empty">
+                {t('homePage.createAppWithPrompt.noDataSources', 'No data sources found')}
+              </div>
+            ) : (
+              datasources.map(({ id, name, kind }) => {
+                const isSelected = selected.some((ds) => ds.id === id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className="tw-flex tw-w-full tw-cursor-pointer tw-items-center tw-justify-between tw-gap-2 tw-rounded-md tw-px-3 tw-py-2 tw-text-left tw-text-12 tw-text-text-default tw-outline-none hover:tw-bg-background-surface-layer-02"
+                    onClick={() => onToggle({ id, name, kind })}
+                    data-cy={`datasource-reference-option-${slugify(name)}`}
+                  >
+                    {name}
+                    {isSelected && <span className="tw-text-11 tw-text-text-placeholder">✓</span>}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
   const { t } = useTranslation();
   const isHomeVariant = variant === 'home';
   const [prompt, setPrompt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [taggedDatasources, setTaggedDatasources] = useState([]);
   const [exampleIndex, setExampleIndex] = useState(0);
   const hasPrompt = !!prompt.trim();
 
@@ -124,11 +203,18 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
     if (!trimmed || isCreating) return;
     setIsCreating(true);
     try {
-      await createApp(`Untitled App: ${uuidv4()}`, undefined, trimmed);
+      const taggedResources = { datasources: taggedDatasources, tables: [] };
+      await createApp(`Untitled App: ${uuidv4()}`, undefined, trimmed, taggedResources);
     } finally {
       // Only reached on failure — a successful createApp navigates away, unmounting this.
       setIsCreating(false);
     }
+  };
+
+  const toggleDatasource = (ds) => {
+    setTaggedDatasources((current) =>
+      current.some(({ id }) => id === ds.id) ? current.filter(({ id }) => id !== ds.id) : [...current, ds]
+    );
   };
 
   const handleKeyDown = (e) => {
@@ -164,6 +250,29 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
           onKeyDown={handleKeyDown}
           data-cy="create-app-with-prompt-input"
         />
+        {taggedDatasources.length > 0 && (
+          <div className="tw-flex tw-shrink-0 tw-flex-wrap tw-items-center tw-gap-1" data-cy="datasource-tags">
+            {taggedDatasources.map((ds) => (
+              <span
+                key={ds.id}
+                className="tw-flex tw-items-center tw-gap-1 tw-rounded-full tw-border tw-border-solid tw-border-border-weak tw-bg-background-surface-layer-02 tw-px-2 tw-py-0.5 tw-text-12 tw-text-text-default"
+                data-cy={`datasource-tag-${slugify(ds.name)}`}
+              >
+                {ds.name}
+                <button
+                  type="button"
+                  className="tw-flex tw-items-center tw-text-text-placeholder hover:tw-text-text-default"
+                  aria-label={t('homePage.createAppWithPrompt.removeReference', 'Remove reference')}
+                  onClick={() => toggleDatasource(ds)}
+                  data-cy={`remove-datasource-tag-${slugify(ds.name)}`}
+                >
+                  <X width="12" height="12" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <DatasourceReferencePicker selected={taggedDatasources} onToggle={toggleDatasource} disabled={isCreating} />
         {isHomeVariant ? (
           // Home variant (ticket #45): empty input shows the "Example prompts" dropdown;
           // typed text swaps it (300ms ease) for the submit button — mutually exclusive,

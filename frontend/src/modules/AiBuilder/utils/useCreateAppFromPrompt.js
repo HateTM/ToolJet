@@ -10,13 +10,14 @@ import configs from '@/HomePage/Configs/AppIcon.json';
 const { iconList } = configs;
 
 // Shared ADR-0010 handoff for entry points outside HomePage.jsx (e.g. /home): create the
-// app with the typed prompt, then navigate into it with `state: { prompt }` for the
-// builder-side useAppData hook to pick up. Mirrors HomePage.jsx's createApp behavior —
+// app with the typed prompt, then navigate into it with `state: { prompt, taggedResources }`
+// for the builder-side useAppData hook to pick up. Mirrors HomePage.jsx's createApp behavior —
 // random icon, app_created analytics, toast on failure — so entry points don't diverge.
+// `taggedResources` (ticket #47) carries the datasources/tables referenced in the prompt bar.
 export function useCreateAppFromPrompt() {
   const navigate = useNavigate();
 
-  return async (name, type, prompt) => {
+  return async (name, type, prompt, taggedResources) => {
     try {
       const data = await appsService.createApp({
         icon: sample(iconList),
@@ -25,7 +26,7 @@ export function useCreateAppFromPrompt() {
         prompt,
       });
       posthogHelper.captureEvent('app_created', { entry_source: prompt ? 'prompt' : 'create_button', prompt });
-      navigate(`/${getWorkspaceId()}/apps/${data.id}`, { state: { prompt } });
+      navigate(`/${getWorkspaceId()}/apps/${data.id}`, { state: { prompt, taggedResources } });
     } catch (errorResponse) {
       toast.error(errorResponse?.error || 'Failed to create app', { style: { maxWidth: '500px' } });
     }
