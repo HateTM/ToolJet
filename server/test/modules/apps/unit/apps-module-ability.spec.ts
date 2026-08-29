@@ -348,9 +348,15 @@ function makeApp(type: APP_TYPES, id = MODULE_APP_ID, orgId = 'org-1') {
 // Minimal mock service (bypass constructor DI)
 function makeService() {
   const svc = Object.create(AppsService.prototype) as AppsService;
-  // Stub versionRepository and appsUtilService to avoid real DB calls
+  // Stub versionRepository and appsUtilService to avoid real DB calls. overlayAppMetadata
+  // is invoked unconditionally at the top of validatePrivateAppAccess (the slug/metadata
+  // hydration added with branch support) — a no-op keeps these unit tests on the
+  // permission logic under test.
   (svc as any).versionRepository = {};
-  (svc as any).appsUtilService = {};
+  (svc as any).appsUtilService = { overlayAppMetadata: jest.fn().mockResolvedValue(undefined) };
+  // Folder-level edit permission hits the ability service and the DB — out of scope for
+  // these permission-matrix tests, where the app-level ability already decides the outcome.
+  (svc as any).checkFolderEditPermission = jest.fn().mockResolvedValue(false);
   return svc;
 }
 
@@ -415,6 +421,7 @@ describe('AppsService.validatePrivateAppAccess — module canEdit behavior', () 
       };
       (service as any).appsUtilService = {
         validateVersionEnvironment: jest.fn().mockResolvedValue(fakeEnv),
+        overlayAppMetadata: jest.fn().mockResolvedValue(undefined),
       };
 
       const dto = { accessType: 'view', versionName: 'v1', environmentName: 'development' };
