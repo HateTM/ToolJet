@@ -89,3 +89,7 @@ _Avoid_: Suggestion, recommendation, snippet, draft
 **Copilot context**:
 Everything the assistant is given to produce a `Completion`: the user's prompt, the editor's current code, its language, the kind of data source the query runs against, and the `App inventory` of the App being edited. The inventory is what keeps a `Completion` from inventing query and component names — the deliberate difference from an `Error context`, which carries none (see [ADR-0016](docs/adr/0016-copilot-completion-replaces-the-editor-body-and-reuses-app-inventory.md)).
 _Avoid_: Prompt context, copilot payload
+
+**Tagged resource**:
+A datasource (later, a table) the user explicitly attaches to the homepage prompt bar while composing their prompt, passed as `taggedResources: { datasources, tables }` through the create-app handoff (`state: { prompt, taggedResources }`) into the builder store's handoff alongside the `handoffPrompt` (ticket #47). Deliberately separate from the prompt text — selection happens outside it via a picker, not inline mentions — and from a `Queryable data source`: a tagged resource is a user-stated intent carried into the builder, not a planner-verified query target. What the Generate flow does with it (system-prompt context vs tool args) is scoped to its own ticket.
+_Avoid_: Mention, reference, attachment

@@ -65,6 +65,11 @@ const initialState = {
   // The prompt the handoff is delivering, held only until it lands. Kept on failure so the
   // panel can put it back in the composer instead of the user having to retype it (ADR-0017).
   handoffPrompt: null,
+  // The `{ datasources, tables }` references tagged in the /home prompt bar (ticket #47),
+  // delivered alongside handoffPrompt. Same lifecycle as the prompt: held while pending or
+  // failed, dropped by finishHandoff once the handoff succeeds. What the Generate flow does
+  // with them (system-prompt context vs tool args) is scoped to a separate ticket.
+  handoffTaggedResources: null,
   // The app the handoff belongs to. ADR-0010's boolean was consumed by the first mount that
   // saw it, which is what kept it from leaking; a status has no such moment, and this store
   // is a module singleton that outlives any one app. Without this, a 'succeeded' handoff for
@@ -173,12 +178,13 @@ const useAiBuilderStore = create(
       // ADR-0017. These three are the handoff's whole lifecycle, and they're deliberately
       // plain synchronous setters: useAppData.js has to move the status before the sidebar
       // mounts the panel, which rules out doing it from inside an async action.
-      beginHandoff: (prompt, appId) => {
+      beginHandoff: (prompt, appId, taggedResources = null) => {
         set(
           (state) => {
             state.handoffStatus = 'pending';
             state.handoffPrompt = prompt;
             state.handoffAppId = appId ?? null;
+            state.handoffTaggedResources = taggedResources ?? null;
           },
           false,
           'aiBuilder/beginHandoff'
@@ -187,11 +193,13 @@ const useAiBuilderStore = create(
 
       // The prompt is dropped here, not kept: it was delivered, and it's now the first message
       // in the thread. Leaving it would re-prefill the composer with what the user already sent.
+      // The tagged resources are dropped with it, for the same reason.
       finishHandoff: () => {
         set(
           (state) => {
             state.handoffStatus = 'succeeded';
             state.handoffPrompt = null;
+            state.handoffTaggedResources = null;
           },
           false,
           'aiBuilder/finishHandoff'

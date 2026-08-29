@@ -311,6 +311,22 @@ describe('aiBuilderStore', () => {
       expect(getInitialState().handoffPrompt).toBeNull();
     });
 
+    // Ticket #47: the tagged datasources/tables from the /home prompt bar ride the handoff
+    // into the builder store. They follow the prompt's lifecycle — held while pending or
+    // failed, dropped once the handoff succeeds.
+    it('beginHandoff holds taggedResources alongside the prompt and finishHandoff drops them', () => {
+      const taggedResources = { datasources: [{ id: 'ds-1', name: 'Postgres', kind: 'postgresql' }], tables: [] };
+
+      getInitialState().beginHandoff('Build a CRM', 'app-1', taggedResources);
+      expect(getInitialState().handoffTaggedResources).toEqual(taggedResources);
+
+      getInitialState().finishHandoff();
+      expect(getInitialState().handoffTaggedResources).toBeNull();
+
+      getInitialState().beginHandoff('Build a CRM', 'app-1');
+      expect(getInitialState().handoffTaggedResources).toBeNull();
+    });
+
     it('failHandoff marks it failed and KEEPS the prompt, so it can be put back in the composer', () => {
       getInitialState().beginHandoff('Build a CRM', 'app-1');
 
