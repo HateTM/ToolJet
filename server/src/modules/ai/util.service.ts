@@ -1,4 +1,4 @@
-import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, generateText } from 'ai';
 import { IAiUtilService } from './interfaces/IUtilService';
@@ -13,6 +13,9 @@ const SUPPORTED_AI_PROVIDERS = ['openai'];
 // plain string, so it's cast at the boundary here rather than repeated per call site.
 type ConversationType = 'generate' | 'learn';
 
+// Without @Injectable() tsc emits no design:paramtypes for this class, so Nest
+// instantiates it with undefined repositories (findAllByAppAndUser TypeError).
+@Injectable()
 export class AiUtilService implements IAiUtilService {
   private readonly logger = new Logger(AiUtilService.name);
 
