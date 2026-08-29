@@ -34,7 +34,7 @@ type ConversationType = (typeof CONVERSATION_TYPES)[number];
 // until the user approves it (a later ticket). v1 target types per ADR-0002.
 const PRD_SYSTEM_PROMPT = `You are the AI Builder assistant for ToolJet, a low-code app platform.
 
-Your job in this conversation is to help the user turn their app idea into a clear Product Requirements Document (PRD): a structured description of the app to build — its pages, and for each page the components (Page, Table, Form, Button, Text, TextInput, Container) and any data queries it needs.
+Your job in this conversation is to help the user turn their app idea into a clear Product Requirements Document (PRD): a structured description of the app to build — its pages, and for each page the components (Page, Table, Form, Button, Text, TextInput, Container, Chart, Image, Checkbox, Dropdown, Modal) and any data queries it needs.
 
 Ask clarifying questions if the request is ambiguous or underspecified. Once you have enough detail, respond with a structured PRD covering the app's purpose, its pages, and the components/queries each page needs. The user can keep refining the PRD by chatting further — nothing is built until they explicitly approve it.`;
 
@@ -175,19 +175,33 @@ export const createTableTool = tool({
   parameters: tableDefinitionObject,
 });
 
-// Full v1 allow-list as of this ticket (ADR-0002: Page, Table, Form, Button, Text,
-// TextInput, Container). Unlike an unsupported *Step* type (ADR-0006, which can never
+// The full allow-list (ADR-0002's v1 set — Page, Table, Form, Button, Text, TextInput,
+// Container — extended per ticket #13 with Chart, Image, Checkbox, Dropdown, Modal).
+// Unlike an unsupported *Step* type (ADR-0006, which can never
 // succeed since no handler exists), an unsupported *component* type is retried: the model
 // picks it per attempt, so a later retry can self-correct to a supported one.
-const SUPPORTED_COMPONENT_TYPES = ['Page', 'Table', 'Button', 'Text', 'TextInput', 'Container', 'Form'] as const;
+const SUPPORTED_COMPONENT_TYPES = [
+  'Page',
+  'Table',
+  'Button',
+  'Text',
+  'TextInput',
+  'Container',
+  'Form',
+  'Chart',
+  'Image',
+  'Checkbox',
+  'Dropdown',
+  'Modal',
+] as const;
 
 // Component types that place a widget on an existing Page — everything except 'Page'
 // itself (which creates one). Used to validate `pageId` uniformly across all of them.
-const PAGE_WIDGET_TYPES = ['Table', 'Button', 'Text', 'TextInput', 'Container', 'Form'] as const;
+const PAGE_WIDGET_TYPES = SUPPORTED_COMPONENT_TYPES.filter((type) => type !== 'Page');
 
 const CREATE_COMPONENT_SYSTEM_PROMPT = `You create one UI element for this step, based on the PRD and whatever earlier steps in this plan already created (listed below, if any).
 
-Call createComponent exactly once. Supported component types: Page, Table, Button, Text, TextInput, Container, Form.
+Call createComponent exactly once. Supported component types: Page, Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal.
 - Page: give it a short, specific name.
 - Table: reference the id of a Page already created in this plan to place it on, give it a title, and reference the name of a query already created in this plan whose data it should display.
 - Button: reference a Page id, give it a short label.
@@ -195,10 +209,16 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - TextInput: reference a Page id, give it a label (and an optional placeholder).
 - Container: reference a Page id, give it a short title.
 - Form: reference a Page id, the id of a ToolJet DB table already created in this plan, and a form title. By default (mode "create") this produces a working create-record form — you don't need a separate query or event step for it. When the PRD wants to edit existing records, set mode "edit" and also reference the name of a Table widget already created in this plan that is bound to the same underlying table — the form's fields then pre-fill from that Table's selected row and submitting runs an update keyed on that row.
+- Chart: reference a Page id, give it a title, and optionally reference the name of a query already created in this plan whose data it should plot (omit queryName to get an empty chart). Pick a chartType from "line", "bar", "pie" (default "line").
+- Image: reference a Page id and give the image's source URL (and an optional alt text).
+- Checkbox: reference a Page id, give it a label, and optionally set defaultChecked.
+- Dropdown: reference a Page id, give it a label, and provide its options as a list of short strings (optionally a placeholder).
+- Modal: reference a Page id, give it a title; it renders with a default trigger button (optionally set the trigger button label). Place Modal's content as separate sibling widgets on the page — widgets cannot be nested inside it.
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
-  description: 'Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form) on an existing Page.',
+  description:
+    'Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal) on an existing Page.',
   parameters: z.discriminatedUnion('type', [
     z.object({
       type: z.literal('Page'),
@@ -252,6 +272,44 @@ const createComponentTool = tool({
         .describe(
           "name of an already-created Table widget (from context) whose selectedRow this form binds to — required when mode='edit'"
         ),
+    }),
+    z.object({
+      type: z.literal('Chart'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this chart on'),
+      title: z.string().describe('Chart title shown in the UI'),
+      queryName: z
+        .string()
+        .optional()
+        .describe('name of an already-created query (from context) whose data this chart should plot'),
+      chartType: z
+        .enum(['line', 'bar', 'pie'])
+        .default('line')
+        .describe("Chart rendering style; default 'line'"),
+    }),
+    z.object({
+      type: z.literal('Image'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this image on'),
+      source: z.string().describe('Image source URL'),
+      alternativeText: z.string().optional().describe('Alt text for the image'),
+    }),
+    z.object({
+      type: z.literal('Checkbox'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this checkbox on'),
+      label: z.string().describe('Checkbox label'),
+      defaultChecked: z.boolean().optional().describe('Whether the checkbox starts checked (default false)'),
+    }),
+    z.object({
+      type: z.literal('Dropdown'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this dropdown on'),
+      label: z.string().describe('Dropdown label'),
+      options: z.array(z.string()).min(1).describe('The choices to offer, as short strings, in display order'),
+      placeholder: z.string().optional().describe('Placeholder shown before a choice is made'),
+    }),
+    z.object({
+      type: z.literal('Modal'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this modal on'),
+      title: z.string().describe('Modal title shown in its title bar'),
+      triggerButtonLabel: z.string().optional().describe('Label of the default trigger button that opens the modal'),
     }),
   ]),
 });

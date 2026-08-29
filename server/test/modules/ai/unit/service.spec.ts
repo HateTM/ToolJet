@@ -844,11 +844,12 @@ describe('AiService.approvePrd', () => {
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
       planToolCall([{ type: 'CreateComponent', description: 'Create a page' }])
     )
-      // 'Chart' is deliberately outside SUPPORTED_COMPONENT_TYPES — a plausible thing for the
-      // model to reach for, and not something v1 can build. If it ever joins the allow-list,
-      // the errorMessage assertion below fails loudly rather than this attempt quietly
-      // falling through to some later validation (which is how 'Form' rotted this test).
-      .mockResolvedValueOnce(componentToolCall({ type: 'Chart', name: 'x' }))
+      // 'Calendar' is deliberately outside SUPPORTED_COMPONENT_TYPES — a plausible thing for
+      // the model to reach for, and not something this build can create. If it ever joins the
+      // allow-list, the errorMessage assertion below fails loudly rather than this attempt
+      // quietly falling through to some later validation (which is how 'Form' rotted this
+      // test — and how 'Chart' did, until ticket #13 added it).
+      .mockResolvedValueOnce(componentToolCall({ type: 'Calendar', name: 'x' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
 
     stepRepository.createOne.mockResolvedValue({
@@ -869,7 +870,7 @@ describe('AiService.approvePrd', () => {
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
-    // Only called once — the first (Chart) attempt never reached AgentsService at all.
+    // Only called once — the first (Calendar) attempt never reached AgentsService at all.
     expect(agentsService.CreateComponent).toHaveBeenCalledTimes(1);
     expect(agentsService.CreateComponent).toHaveBeenCalledWith('version-1', 'org-1', 'Page', { name: 'Orders' });
     // Attempt 1 was rejected for the type itself, not for anything downstream of it.
@@ -877,7 +878,7 @@ describe('AiService.approvePrd', () => {
       'step-1',
       expect.objectContaining({
         attempts: 1,
-        errorMessage: expect.stringContaining('Unsupported component type "Chart"'),
+        errorMessage: expect.stringContaining('Unsupported component type "Calendar"'),
       })
     );
     expect(stepRepository.updateOne).toHaveBeenCalledWith(

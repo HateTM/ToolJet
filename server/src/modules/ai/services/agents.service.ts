@@ -62,6 +62,15 @@ export class AgentsService implements IAgentsService {
    *  - 'Form':       { pageId, title, tableId, columns } — see createFormComponent's doc
    *    comment and ADR-0007. `pageId` is an earlier CreateComponent(Page) step's Artifact id,
    *    `queryName`/`tableId` reference earlier CreateQuery/CreateTable steps' real ids/names.
+   *  - 'Chart':      { pageId, title, queryName?, chartType? } — data bound to
+   *    {{queries.<queryName>.data}} when a queryName is given, else the widget's default
+   *    empty data; chartType is 'line' | 'bar' | 'pie' (default 'line')
+   *  - 'Image':      { pageId, source, alternativeText? }
+   *  - 'Checkbox':   { pageId, label, defaultChecked? }
+   *  - 'Dropdown':   { pageId, label, options: string[], placeholder? } — options become the
+   *    widget's static option list in display order
+   *  - 'Modal':      { pageId, title, triggerButtonLabel? } — an empty modal with its default
+   *    trigger button; nesting children inside it is not supported (same as Container)
    * Callers should treat an unrecognized `type` as retryable (unlike an unsupported Step
    * type, which can never succeed): the model chooses `type` per attempt, so a later retry
    * may pick a supported one.
@@ -87,6 +96,21 @@ export class AgentsService implements IAgentsService {
     }
     if (type === 'Form') {
       return this.createFormComponent(appVersionId, organizationId, props);
+    }
+    if (type === 'Chart') {
+      return this.createChartComponent(appVersionId, props);
+    }
+    if (type === 'Image') {
+      return this.createImageComponent(appVersionId, props);
+    }
+    if (type === 'Checkbox') {
+      return this.createCheckboxComponent(appVersionId, props);
+    }
+    if (type === 'Dropdown') {
+      return this.createDropdownComponent(appVersionId, props);
+    }
+    if (type === 'Modal') {
+      return this.createModalComponent(appVersionId, props);
     }
     throw new Error(`Unsupported component type "${type}"`);
   }
@@ -253,6 +277,124 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 15, height: 450 }
+    );
+  }
+
+  // defaultSize per chart.js: { width: 20, height: 400 }. `data` binds to the referenced
+  // query's output when one is given (same binding the Table widget uses); without it the
+  // widget renders with its own default empty data set. `type` is chart.js's own property
+  // name for the rendering style ('line' | 'bar' | 'pie').
+  private async createChartComponent(appVersionId: string, props: any) {
+    const { pageId, title, queryName, chartType = 'line' } = props ?? {};
+    const name = title || 'Chart';
+    const created = await this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Chart',
+      name,
+      {
+        title: { value: title || 'Chart' },
+        ...(queryName ? { data: { value: `{{queries.${queryName}.data}}` } } : {}),
+        type: { value: chartType },
+        loadingState: { value: '{{false}}' },
+      },
+      {},
+      { width: 20, height: 400 }
+    );
+    // Same surface as the Table builder: the plan context shows the query name, so a later
+    // step (or edit-mode Form) can reference this chart's data source.
+    return { ...created, name, queryName };
+  }
+
+  // defaultSize per image.js: { width: 10, height: 240 }.
+  private async createImageComponent(appVersionId: string, props: any) {
+    const { pageId, source, alternativeText } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Image',
+      'Image',
+      {
+        imageFormat: { value: 'imageUrl' },
+        source: { value: source || '' },
+        alternativeText: { value: alternativeText || '' },
+        loadingState: { value: '{{false}}' },
+      },
+      {},
+      { width: 10, height: 240 }
+    );
+  }
+
+  // defaultSize per checkbox.js: { width: 6, height: 30 }. `defaultValue` is the widget's
+  // own property name for the initial checked state (its switch options are {{true}}/{{false}}).
+  private async createCheckboxComponent(appVersionId: string, props: any) {
+    const { pageId, label, defaultChecked = false } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Checkbox',
+      label || 'Checkbox',
+      {
+        label: { value: label || 'Checkbox' },
+        defaultValue: { value: defaultChecked ? '{{true}}' : '{{false}}' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 6, height: 30 }
+    );
+  }
+
+  // defaultSize per dropdownV2.js: { width: 10, height: 40 }. `options` is the widget's
+  // static (non-advanced) option list; each entry needs the per-field wrapper shape
+  // ({ value: ... }) dropdownV2.js's own definition.defaults uses for disable/visible/default.
+  private async createDropdownComponent(appVersionId: string, props: any) {
+    const { pageId, label, options, placeholder } = props ?? {};
+    const list = (options || []).map((option: string, index: number) => ({
+      label: String(option),
+      value: String(option),
+      caption: null,
+      disable: { value: false },
+      visible: { value: true },
+      default: { value: false },
+    }));
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'DropdownV2',
+      label || 'Dropdown',
+      {
+        label: { value: label || 'Select' },
+        placeholder: { value: placeholder || 'Select an option' },
+        advanced: { value: '{{false}}' },
+        options: { value: list },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per modal.js: { width: 10, height: 34 }. Persisted as type 'Modal' (the
+  // config's `component` field — componentTypeDefinitionMap is keyed by it, not by the
+  // config's display name 'ModalLegacy'). Standalone/empty — like Container, placing
+  // children inside isn't wired up; the default trigger button keeps it openable.
+  private async createModalComponent(appVersionId: string, props: any) {
+    const { pageId, title, triggerButtonLabel } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Modal',
+      title || 'Modal',
+      {
+        title: { value: title || 'Modal' },
+        useDefaultButton: { value: '{{true}}' },
+        triggerButtonLabel: { value: triggerButtonLabel || 'Launch Modal' },
+        closeOnClickingOutside: { value: '{{true}}' },
+        hideOnEsc: { value: '{{true}}' },
+        loadingState: { value: '{{false}}' },
+      },
+      {},
+      { width: 10, height: 34 }
     );
   }
 
