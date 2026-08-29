@@ -430,7 +430,10 @@
     "createAppWithPrompt": {
       "placeholder": "Опишите приложение, которое хотите создать...",
       "submit": "Создать приложение",
-      "tryTheseExamples": "Попробуйте эти примеры для начала"
+      "tryTheseExamples": "Попробуйте эти примеры для начала",
+      "referenceDatasource": "Сослаться на источник данных",
+      "noDataSources": "Источники данных не найдены",
+      "removeReference": "Убрать ссылку"
     },
     "blankPage": {
       "welcomeToToolJet": "Добро пожаловать в ToolJet!",
