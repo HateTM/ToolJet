@@ -7,9 +7,10 @@ import { WORKSPACE_STATUS } from '@modules/users/constants/lifecycle';
 /** @group platform */
 describe('AppAuthGuard', () => {
   let guard: AppAuthGuard;
-  let mockAppRepository: { findOne: jest.Mock };
+  let mockAppRepository: { findAppBySlug: jest.Mock };
   let mockOrgRepository: { findOne: jest.Mock; touchLastAccessedAt: jest.Mock };
   let mockAppUtilService: { getAppOrganizationDetails: jest.Mock };
+  let mockDataSource: { getRepository: jest.Mock };
 
   const makeContext = (slug: string): ExecutionContext => {
     const request: Record<string, any> = { params: { slug }, headers: {} };
@@ -33,13 +34,15 @@ describe('AppAuthGuard', () => {
   });
 
   beforeEach(() => {
-    mockAppRepository = { findOne: jest.fn() };
+    mockAppRepository = { findAppBySlug: jest.fn() };
     mockOrgRepository = { findOne: jest.fn(), touchLastAccessedAt: jest.fn() };
     mockAppUtilService = { getAppOrganizationDetails: jest.fn() };
+    mockDataSource = { getRepository: jest.fn().mockReturnValue({ findOne: jest.fn().mockResolvedValue(null) }) };
     guard = new AppAuthGuard(
       mockAppUtilService as any,
       mockOrgRepository as any,
-      mockAppRepository as any
+      mockAppRepository as any,
+      mockDataSource as any
     );
   });
 
@@ -55,7 +58,7 @@ describe('AppAuthGuard', () => {
 
   describe('when app is not found', () => {
     it('throws NotFoundException', async () => {
-      mockAppRepository.findOne.mockResolvedValue(null);
+      mockAppRepository.findAppBySlug.mockResolvedValue(null);
 
       await expect(guard.canActivate(makeContext('unknown-slug'))).rejects.toThrow(NotFoundException);
     });
@@ -63,7 +66,7 @@ describe('AppAuthGuard', () => {
 
   describe('when workspace is archived', () => {
     it('throws BadRequestException', async () => {
-      mockAppRepository.findOne.mockResolvedValue(makeApp());
+      mockAppRepository.findAppBySlug.mockResolvedValue(makeApp());
       mockOrgRepository.findOne.mockResolvedValue(makeOrg({ status: WORKSPACE_STATUS.ARCHIVED }));
 
       await expect(guard.canActivate(makeContext('my-app'))).rejects.toThrow(BadRequestException);
@@ -73,7 +76,7 @@ describe('AppAuthGuard', () => {
   describe('when app.isPublic is true', () => {
     it('returns true without invoking JWT auth', async () => {
       const app = makeApp({ isPublic: true });
-      mockAppRepository.findOne.mockResolvedValue(app);
+      mockAppRepository.findAppBySlug.mockResolvedValue(app);
       mockOrgRepository.findOne.mockResolvedValue(makeOrg());
       const parentSpy = jest
         .spyOn(Object.getPrototypeOf(Object.getPrototypeOf(guard)), 'canActivate')
@@ -87,7 +90,7 @@ describe('AppAuthGuard', () => {
 
     it('calls touchLastAccessedAt on the org', async () => {
       const app = makeApp({ isPublic: true });
-      mockAppRepository.findOne.mockResolvedValue(app);
+      mockAppRepository.findAppBySlug.mockResolvedValue(app);
       mockOrgRepository.findOne.mockResolvedValue(makeOrg());
 
       await guard.canActivate(makeContext('my-app'));
@@ -99,7 +102,7 @@ describe('AppAuthGuard', () => {
 
   describe('when app.isPublic is false', () => {
     it('does NOT call touchLastAccessedAt', async () => {
-      mockAppRepository.findOne.mockResolvedValue(makeApp({ isPublic: false }));
+      mockAppRepository.findAppBySlug.mockResolvedValue(makeApp({ isPublic: false }));
       mockOrgRepository.findOne.mockResolvedValue(makeOrg());
       jest
         .spyOn(Object.getPrototypeOf(Object.getPrototypeOf(guard)), 'canActivate')
@@ -113,7 +116,7 @@ describe('AppAuthGuard', () => {
 
   describe('when app.isPublic is false and JWT auth fails', () => {
     it('throws UnauthorizedException with organizationId in message', async () => {
-      mockAppRepository.findOne.mockResolvedValue(makeApp({ isPublic: false }));
+      mockAppRepository.findAppBySlug.mockResolvedValue(makeApp({ isPublic: false }));
       mockOrgRepository.findOne.mockResolvedValue(makeOrg());
       mockAppUtilService.getAppOrganizationDetails.mockResolvedValue({ slug: 'my-workspace' });
       jest
