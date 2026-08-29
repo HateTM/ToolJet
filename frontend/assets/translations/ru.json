@@ -429,7 +429,8 @@
     },
     "createAppWithPrompt": {
       "placeholder": "Опишите приложение, которое хотите создать...",
-      "submit": "Создать приложение"
+      "submit": "Создать приложение",
+      "tryTheseExamples": "Попробуйте эти примеры для начала"
     },
     "blankPage": {
       "welcomeToToolJet": "Добро пожаловать в ToolJet!",
