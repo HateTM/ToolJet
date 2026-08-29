@@ -4,6 +4,8 @@ status: accepted
 
 # The schema preview shows the planner's own table definitions, and a previewed plan is the executed plan
 
+> **Amended by [ADR-0024](0024-seed-data-is-planner-proposed-structured-rows-on-the-create-table-step.md) (ticket #48):** the "Rejected: seed data in v1" clause below rested on a false premise — ToolJet DB *does* have a bulk-insert capability in this fork — and is superseded there. Everything else in this ADR stands.
+
 Ticket #20 asks for a structured schema/seed-data preview before a plan executes, with two paths — "Looks good, run it" and "I want to make changes" — and, optionally, inline editing of the generated SQL. The ticket was written against a reference UX where the schema exists as SQL text; our pipeline has no SQL anywhere, so the ticket's central question ("chat-described tweaks vs. direct SQL edit?") had to be answered first, and the answer reshapes the mechanics of the preview itself.
 
 The proposed schema comes into existence at execution time. `executeCreateTableStep` makes a per-step LLM call (`createTable` tool) that invents the table's name, columns, and foreign keys when the step runs — after approval. A preview rendered before approval therefore cannot show "the SQL" or even "the table": nothing to preview exists yet. Something must propose the table earlier, and whatever does becomes the single source of truth the preview and the executor must share.
