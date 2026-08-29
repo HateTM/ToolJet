@@ -563,8 +563,12 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     const trimmed = text.trim();
     if (!trimmed || isSending) return;
     // Only mentions still present in the message text ride the payload — a mention the
-    // user typed and then deleted is no longer something they referenced.
-    const references = pendingMentionsRef.current.filter((mention) => text.includes(`@${mention.name}`));
+    // user typed and then deleted is no longer something they referenced. The name must
+    // end at a word boundary, so a shorter earlier mention isn't matched by a longer
+    // token the user typed afterwards (@Users vs @UsersTable).
+    const mentionsMentioned = (name) =>
+      new RegExp(`@${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`).test(text);
+    const references = pendingMentionsRef.current.filter((mention) => mentionsMentioned(mention.name));
     setDraft('');
     pendingMentionsRef.current = [];
     sendMessage({ appId, content: trimmed, conversationType, ...(references.length && { references }) });

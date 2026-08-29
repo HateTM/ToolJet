@@ -37,7 +37,7 @@ describe("AI Builder - homepage create app with prompt", () => {
 
     // The typed prompt is the first message, already sent (not sitting in the input box).
     cy.get('[data-cy="ai-builder-chat-panel"]').contains(prompt).should("be.visible");
-    cy.get('[data-cy="ai-builder-message-input"]').should("have.value", "");
+    cy.get('[data-cy="ai-builder-message-input"] .cm-content').should("not.contain.text", prompt);
 
     // A reply eventually lands — the same panel that streams replies for any other message,
     // so once it's showing content beyond the prompt itself, the rest of the flow (PRD,
@@ -75,7 +75,7 @@ describe("AI Builder - homepage create app with prompt", () => {
     cy.wait("@createConversation");
 
     // AC: the typed prompt is recoverable, not lost with only an error banner to show for it.
-    cy.get('[data-cy="ai-builder-message-input"]', { timeout: 20000 }).should("have.value", prompt);
+    cy.get('[data-cy="ai-builder-message-input"] .cm-content', { timeout: 20000 }).should("contain.text", prompt);
     // AC: the bootstrap the handoff skipped actually runs once the handoff fails.
     cy.wait("@listConversations", { timeout: 20000 });
     // ...and survives it. The fallback bootstrap is built out of the very read actions that
@@ -99,7 +99,7 @@ describe("AI Builder - homepage create app with prompt", () => {
     cy.get('[data-cy="ai-builder-chat-panel"]', { timeout: 20000 }).should("be.visible");
     cy.wait("@sendMessage", { timeout: 30000 });
 
-    cy.get('[data-cy="ai-builder-message-input"]', { timeout: 20000 }).should("have.value", prompt);
+    cy.get('[data-cy="ai-builder-message-input"] .cm-content', { timeout: 20000 }).should("contain.text", prompt);
     cy.wait("@listConversations", { timeout: 20000 });
     cy.get('[data-cy="ai-builder-error-banner"]').should("be.visible");
   });
@@ -118,7 +118,7 @@ describe("AI Builder - homepage create app with prompt", () => {
 
     cy.get('[data-cy="ai-builder-chat-panel"]', { timeout: 20000 }).should("be.visible");
     cy.wait("@createConversation");
-    cy.get('[data-cy="ai-builder-message-input"]', { timeout: 20000 }).should("have.value", prompt);
+    cy.get('[data-cy="ai-builder-message-input"] .cm-content', { timeout: 20000 }).should("contain.text", prompt);
 
     let conversationAttempts = 0;
     cy.intercept("POST", "**/api/ai/conversation", (req) => {

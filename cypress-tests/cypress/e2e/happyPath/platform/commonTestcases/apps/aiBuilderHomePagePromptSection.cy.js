@@ -114,7 +114,7 @@ describe('AI Builder - /home prompt section (empty workspace entry point)', () =
 
       // The typed prompt is the first message, already sent (not sitting in the input box).
       cy.get('[data-cy="ai-builder-chat-panel"]').contains(prompt).should('be.visible');
-      cy.get('[data-cy="ai-builder-message-input"]').should('have.value', '');
+      cy.get('[data-cy="ai-builder-message-input"] .cm-content').should('not.contain.text', prompt);
     });
   });
 });

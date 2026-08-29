@@ -1427,27 +1427,37 @@ export class AiService implements IAiService {
    */
   buildMentionedResourcesContext(references: any): string | null {
     if (!Array.isArray(references) || references.length === 0) return null;
+    // Client-controlled strings go into a system-role message, so they get flattened (no
+    // newlines — a forged "- @x" line would read as a resource), truncated, and capped in
+    // count. Ids are advisory context: the model treats them as pointers, and every real
+    // execution still re-resolves names/ids against the database.
+    const flatten = (value: any, maxLength: number) =>
+      typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, maxLength) : '';
     const lines = references
+      .slice(0, 20)
       .filter(
         (reference) =>
           reference &&
           typeof reference === 'object' &&
           ['page', 'component', 'query'].includes(reference.type) &&
-          typeof reference.id === 'string' &&
-          reference.id.trim() &&
-          typeof reference.name === 'string' &&
-          reference.name.trim()
+          flatten(reference.id, 64) &&
+          flatten(reference.name, 100)
       )
       .map((reference) => {
+        const id = flatten(reference.id, 64);
+        const name = flatten(reference.name, 100);
         const details: string[] = [];
         if (reference.type === 'component') {
-          if (reference.widgetType) details.push(`${reference.widgetType} widget`);
-          if (reference.pageName) details.push(`on page "${reference.pageName}"`);
-        } else if (reference.type === 'query' && reference.kind) {
-          details.push(`kind: ${reference.kind}`);
+          const widgetType = flatten(reference.widgetType, 60);
+          const pageName = flatten(reference.pageName, 100);
+          if (widgetType) details.push(`${widgetType} widget`);
+          if (pageName) details.push(`on page "${pageName}"`);
+        } else if (reference.type === 'query') {
+          const kind = flatten(reference.kind, 60);
+          if (kind) details.push(`kind: ${kind}`);
         }
         const suffix = details.length ? ` (${details.join(', ')})` : '';
-        return `- @${reference.name} — ${reference.type}${suffix}, id: ${reference.id}`;
+        return `- @${name} — ${reference.type}${suffix}, id: ${id}`;
       });
     if (!lines.length) return null;
     return [

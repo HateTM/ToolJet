@@ -24,6 +24,11 @@ import { completionStatus } from '@codemirror/autocomplete';
 // can focus the editor programmatically. Enter yields to an open completion
 // popup (its own keymap accepts the highlighted mention) and only submits when
 // none is active.
+// A stable default so a host that passes no `extensions` doesn't invalidate the
+// allExtensions memo (a fresh [] literal each render would reconfigure CodeMirror
+// on every keystroke — the identity invariant this component exists to protect).
+const EMPTY_EXTENSIONS = [];
+
 const PromptEditor = ({
   value,
   onChange,
@@ -32,7 +37,7 @@ const PromptEditor = ({
   disabled,
   placeholder,
   overlay,
-  extensions = [],
+  extensions = EMPTY_EXTENSIONS,
   onReady,
 }) => {
   // CodeMirror `extensions` must keep a stable identity across renders (a fresh
