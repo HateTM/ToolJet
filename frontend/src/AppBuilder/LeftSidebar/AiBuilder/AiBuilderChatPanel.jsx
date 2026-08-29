@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import cx from 'classnames';
 import { shallow } from 'zustand/shallow';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +20,9 @@ import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
 import SchemaPreview from './SchemaPreview';
 import useAiBuilderStore from '@/_stores/aiBuilderStore';
+import PromptEditor from '@/modules/AiBuilder/components/CreateAppWithPrompt/PromptEditor/PromptEditor';
+import { useMentionCatalog } from './mentionCatalog';
+import { mentionCompletion } from './mentionCompletion';
 
 const tAiBuilder = (t, key, fallback) => t(`leftSidebar.AI Builder.${key}`, fallback);
 
@@ -387,7 +390,25 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   const [draft, setDraft] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const messagesEndRef = useRef(null);
-  const composerRef = useRef(null);
+  const editorViewRef = useRef(null);
+  // @-mentions picked from the autocomplete since the last send (ticket #27). A ref, not
+  // state: the mentions never render directly — they ride the next sendMessage call.
+  const pendingMentionsRef = useRef([]);
+  // Stable identities for the completion extension's callbacks (it reads these per keystroke).
+  const catalog = useMentionCatalog();
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
+
+  const handleMentionSelect = (reference) => {
+    const mentions = pendingMentionsRef.current;
+    if (!mentions.some((mention) => mention.type === reference.type && mention.id === reference.id)) {
+      mentions.push(reference);
+    }
+  };
+  const mentionExtensions = useMemo(
+    () => [mentionCompletion({ getCatalog: () => catalogRef.current, onMentionSelect: handleMentionSelect })],
+    []
+  );
 
   const [
     messages,
@@ -538,28 +559,28 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   }, [messages, streamingMessage]);
 
   const handleSend = (content) => {
-    const trimmed = (content ?? draft).trim();
+    const text = content ?? draft;
+    const trimmed = text.trim();
     if (!trimmed || isSending) return;
+    // Only mentions still present in the message text ride the payload — a mention the
+    // user typed and then deleted is no longer something they referenced.
+    const references = pendingMentionsRef.current.filter((mention) => text.includes(`@${mention.name}`));
     setDraft('');
-    sendMessage({ appId, content: trimmed, conversationType });
+    pendingMentionsRef.current = [];
+    sendMessage({ appId, content: trimmed, conversationType, ...(references.length && { references }) });
   };
 
   const handleModeChange = (nextType) => {
     if (isSending || isApproving) return;
     setHistoryOpen(false);
     setDraft('');
+    pendingMentionsRef.current = [];
     setConversationType(nextType);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
   };
 
   const handleNewChat = () => {
     resetConversation();
+    pendingMentionsRef.current = [];
     // Learn's empty state is static — nothing to fetch (see ZeroState).
     if (!isLearnMode) fetchZeroState();
   };
@@ -586,7 +607,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   // regenerate) and the composer takes over for a targeted follow-up.
   const handleMakeChanges = () => {
     discardPendingPlan();
-    composerRef.current?.focus();
+    editorViewRef.current?.focus();
   };
 
   const showZeroState = messages.length === 0 && !streamingMessage;
@@ -743,21 +764,27 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       )}
 
       <div className="tw-flex tw-items-end tw-gap-2 tw-border-0 tw-border-t tw-border-solid tw-border-border-weak tw-p-3">
-        <textarea
-          ref={composerRef}
-          className="tw-flex-1 tw-resize-none tw-rounded-md tw-border tw-border-solid tw-border-border-weak tw-bg-background-surface-layer-01 tw-px-2.5 tw-py-2 tw-text-sm tw-text-text-default focus:tw-outline-none"
-          rows={2}
-          placeholder={
-            isLearnMode
-              ? tAiBuilder(t, 'learnInputPlaceholder', 'Ask a question about this app...')
-              : tAiBuilder(t, 'inputPlaceholder', 'Describe the app you want to build...')
-          }
-          value={draft}
-          disabled={isSending}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
-          data-cy="ai-builder-message-input"
-        />
+        {/* Ticket #27: the composer is the CodeMirror PromptEditor (same editor as the
+            homepage prompt) extended with @-mention autocomplete over the app's
+            pages/components/queries. The wrapper keeps the textarea-era data-cy so
+            existing e2e selectors keep working. */}
+        <div className="tw-min-w-0 tw-flex-1" data-cy="ai-builder-message-input">
+          <PromptEditor
+            value={draft}
+            onChange={setDraft}
+            onSubmit={() => handleSend()}
+            disabled={isSending}
+            placeholder={
+              isLearnMode
+                ? tAiBuilder(t, 'learnInputPlaceholder', 'Ask a question about this app...')
+                : tAiBuilder(t, 'inputPlaceholder', 'Describe the app you want to build...')
+            }
+            extensions={mentionExtensions}
+            onReady={(view) => {
+              editorViewRef.current = view;
+            }}
+          />
+        </div>
         <Button
           iconOnly
           onClick={() => handleSend()}

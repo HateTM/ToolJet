@@ -1417,14 +1417,55 @@ export class AiService implements IAiService {
   }
 
   /**
+   * The @-mention contract (ticket #27): a chat message may name specific pages/components/
+   * queries via the composer's @-autocomplete, and the frontend sends those mentions as a
+   * structured `references` array ({type, id, name, ...} snapshots of live builder state).
+   * This renders them into a system-context block so the model acts on "this specific
+   * component" (a real id) rather than guessing from a name in prose — the same principle as
+   * StepExecutionContext's prior-artifact serialization. Unknown/blank references are
+   * dropped; null when nothing usable remains.
+   */
+  buildMentionedResourcesContext(references: any): string | null {
+    if (!Array.isArray(references) || references.length === 0) return null;
+    const lines = references
+      .filter(
+        (reference) =>
+          reference &&
+          typeof reference === 'object' &&
+          ['page', 'component', 'query'].includes(reference.type) &&
+          typeof reference.id === 'string' &&
+          reference.id.trim() &&
+          typeof reference.name === 'string' &&
+          reference.name.trim()
+      )
+      .map((reference) => {
+        const details: string[] = [];
+        if (reference.type === 'component') {
+          if (reference.widgetType) details.push(`${reference.widgetType} widget`);
+          if (reference.pageName) details.push(`on page "${reference.pageName}"`);
+        } else if (reference.type === 'query' && reference.kind) {
+          details.push(`kind: ${reference.kind}`);
+        }
+        const suffix = details.length ? ` (${details.join(', ')})` : '';
+        return `- @${reference.name} — ${reference.type}${suffix}, id: ${reference.id}`;
+      });
+    if (!lines.length) return null;
+    return [
+      'The user @-mentioned resources in this message. Each @name below refers to exactly this object:',
+      ...lines,
+    ].join('\n');
+  }
+
+  /**
    * Shared PRD-conversation message shape both `sendUserMessage` and `regenerateAiMessage`
    * feed to the LLM: the system prompt, `priorMessages` mapped to role/content, and an
    * optional trailing user turn (sendUserMessage's new message — regenerateAiMessage has
    * none, since the user turn it's replying to is already the last entry in priorMessages).
    */
-  private buildPrdMessages(priorMessages: AiConversationMessage[], trailingUserContent?: string) {
+  private buildPrdMessages(priorMessages: AiConversationMessage[], trailingUserContent?: string, referencesContext?: string | null) {
     return [
       { role: 'system', content: PRD_SYSTEM_PROMPT },
+      ...(referencesContext ? [{ role: 'system', content: referencesContext }] : []),
       ...priorMessages.map((message) => ({
         role: message.messageType === 'user' ? 'user' : 'assistant',
         content: message.content,
@@ -1477,7 +1518,7 @@ export class AiService implements IAiService {
       isLatest: true,
     });
 
-    const messages = this.buildPrdMessages(priorMessages, content);
+    const messages = this.buildPrdMessages(priorMessages, content, this.buildMentionedResourcesContext(references));
 
     response.setHeader('Content-Type', 'text/event-stream');
     response.setHeader('Cache-Control', 'no-cache');
@@ -1516,10 +1557,16 @@ export class AiService implements IAiService {
    * LEARN_SYSTEM_PROMPT so the two stay separable: the prompt is a constant, the inventory is
    * re-assembled per message (ADR-0011) and is the only part that changes as the App does.
    */
-  private buildLearnMessages(inventory: string, priorMessages: AiConversationMessage[], trailingUserContent?: string) {
+  private buildLearnMessages(
+    inventory: string,
+    priorMessages: AiConversationMessage[],
+    trailingUserContent?: string,
+    referencesContext?: string | null
+  ) {
     return [
       { role: 'system', content: LEARN_SYSTEM_PROMPT },
       { role: 'system', content: `App inventory (current, assembled just now):\n\n${inventory}` },
+      ...(referencesContext ? [{ role: 'system', content: referencesContext }] : []),
       ...priorMessages.map((message) => ({
         role: message.messageType === 'user' ? 'user' : 'assistant',
         content: message.content,
@@ -1572,7 +1619,12 @@ export class AiService implements IAiService {
 
     try {
       const inventory = await this.assembleAppInventory(conversation.appId);
-      const messages = this.buildLearnMessages(inventory, priorMessages, content);
+      const messages = this.buildLearnMessages(
+        inventory,
+        priorMessages,
+        content,
+        this.buildMentionedResourcesContext(references)
+      );
 
       const result = await this.aiUtilService.AIGateway('openai', 'send-docs-message', { messages }, organizationId);
 
