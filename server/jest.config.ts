@@ -1,5 +1,10 @@
 import type { Config } from '@jest/types';
-import { coverageConfig } from './test/jest-coverage.config';
+// The explicit .ts extension is required: Jest 30 on Node >=22.18 loads TS config files via
+// native ESM type-stripping, which cannot resolve extensionless relative imports. The
+// ts-ignore keeps ts-node's type-checked CJS load (project Node 22) happy about the same
+// extension (it requires it via its own .ts hook at runtime).
+// @ts-ignore TS5097
+import { coverageConfig } from './test/jest-coverage.config.ts';
 
 const config: Config.InitialOptions = {
   verbose: true,
