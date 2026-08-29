@@ -1611,9 +1611,21 @@ export class AiService implements IAiService {
    * reference an earlier one's output, never the reverse), then its Step row is reset to
    * 'pending' with a cleared artifactId/errorMessage/attempts. The target step itself is
    * left as-is — rewind returns the plan to the state right after it finished, not before.
+   *
+   * `inclusive` (ADR-0022, ticket #15) extends the same discard to the target step itself: rewinding
+   * inclusively to the plan's first step is how the offered "undo this build" action after a
+   * failure undoes everything the plan built. No separate discard path — the undo ordering,
+   * the Artifact revert and the Step reset are exactly rewind's.
+   *
    * Not a streaming endpoint: there's no LLM call on this path, just DB/App-state undos.
    */
-  async rewindStep(conversationId: string, stepId: string, userId: string, organizationId: string): Promise<any> {
+  async rewindStep(
+    conversationId: string,
+    stepId: string,
+    userId: string,
+    organizationId: string,
+    inclusive = false
+  ): Promise<any> {
     if (!conversationId || !stepId) {
       throw new BadRequestException('conversationId and stepId are required');
     }
@@ -1630,8 +1642,9 @@ export class AiService implements IAiService {
 
     const appVersionId = await this.resolveAppVersionId(conversation.appId);
     const stepsAfter = await this.stepRepository.findAfterOrder(conversationId, targetStep.messageId, targetStep.order);
+    const stepsToUndo = inclusive ? [targetStep, ...stepsAfter] : stepsAfter;
 
-    for (const step of [...stepsAfter].reverse()) {
+    for (const step of [...stepsToUndo].reverse()) {
       if (step.status === 'succeeded' && step.artifactId) {
         const artifact = await this.artifactRepository.findById(step.artifactId);
         if (artifact) {
@@ -1647,7 +1660,7 @@ export class AiService implements IAiService {
       });
     }
 
-    return { rewoundTo: targetStep.id, undone: stepsAfter.map((step) => step.id) };
+    return { rewoundTo: targetStep.id, undone: stepsToUndo.map((step) => step.id) };
   }
 
   /**

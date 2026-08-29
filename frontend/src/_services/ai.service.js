@@ -136,8 +136,10 @@ async function previewPlan(body) {
   return fetch(`${config.apiUrl}/ai/conversation/preview-plan`, requestOptions).then(handleResponse);
 }
 
-// body: { conversationId, stepId }. Not SSE — rewind is a synchronous DB/App undo, no
-// LLM call is on this path (see AiService.rewindStep on the backend).
+// body: { conversationId, stepId, inclusive? }. Not SSE — rewind is a synchronous DB/App
+// undo, no LLM call is on this path (see AiService.rewindStep on the backend). `inclusive`
+// (ticket #15) also discards the target step itself: undoing a whole failed build is an
+// inclusive rewind to its first step.
 async function rewindStep(body) {
   const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
   return fetch(`${config.apiUrl}/ai/conversation/rewind-step`, requestOptions).then(handleResponse);

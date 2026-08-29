@@ -667,6 +667,91 @@ describe('aiBuilderStore', () => {
     });
   });
 
+  // Ticket #15: the "undo this build" offer after a failed plan — an inclusive rewind to
+  // the plan's first step that resets every step to pending instead of dropping them.
+  describe('undoBuild', () => {
+    beforeEach(() => {
+      useAiBuilderStore.setState({
+        currentConversationId: 'conv-1',
+        steps: [
+          { id: 'step-1', type: 'CreateTable', description: 'Create a table', status: 'succeeded' },
+          {
+            id: 'step-2',
+            type: 'CreateQuery',
+            description: 'Query the table',
+            status: 'failed',
+            errorMessage: 'syntax error',
+          },
+          { id: 'step-3', type: 'CreateComponent', description: 'Add a chart', status: 'pending' },
+        ],
+      });
+    });
+
+    it("rewinds inclusively to the plan's first step", async () => {
+      aiService.rewindStep.mockResolvedValue({ rewoundTo: 'step-1', undone: ['step-1', 'step-2', 'step-3'] });
+
+      await getInitialState().undoBuild();
+
+      expect(aiService.rewindStep).toHaveBeenCalledWith({
+        conversationId: 'conv-1',
+        stepId: 'step-1',
+        inclusive: true,
+      });
+    });
+
+    it('resets every undone step to pending, clearing its failure details, instead of dropping it', async () => {
+      aiService.rewindStep.mockResolvedValue({ rewoundTo: 'step-1', undone: ['step-1', 'step-2', 'step-3'] });
+
+      await getInitialState().undoBuild();
+
+      const state = getInitialState();
+      expect(state.steps.map((step) => step.id)).toEqual(['step-1', 'step-2', 'step-3']);
+      expect(state.steps.map((step) => step.status)).toEqual(['pending', 'pending', 'pending']);
+      expect(state.steps[1].errorMessage).toBeUndefined();
+      expect(state.undoingBuild).toBe(false);
+    });
+
+    it('does nothing without a current conversation or a first step', async () => {
+      useAiBuilderStore.setState({ currentConversationId: null });
+
+      await getInitialState().undoBuild();
+
+      useAiBuilderStore.setState({ currentConversationId: 'conv-1', steps: [] });
+      await getInitialState().undoBuild();
+
+      expect(aiService.rewindStep).not.toHaveBeenCalled();
+    });
+
+    it('ignores a second click while an undo is already in flight', async () => {
+      let resolveUndo;
+      aiService.rewindStep.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveUndo = resolve;
+          })
+      );
+
+      const pending = getInitialState().undoBuild();
+      await getInitialState().undoBuild();
+      resolveUndo({ rewoundTo: 'step-1', undone: ['step-1', 'step-2', 'step-3'] });
+      await pending;
+
+      expect(aiService.rewindStep).toHaveBeenCalledTimes(1);
+    });
+
+    it('sets an error state and keeps the failed plan visible when the request rejects', async () => {
+      aiService.rewindStep.mockRejectedValue(new Error("Table can't be deleted"));
+
+      await getInitialState().undoBuild();
+
+      const state = getInitialState();
+      expect(state.error).toBe("Table can't be deleted");
+      expect(state.undoingBuild).toBe(false);
+      expect(state.steps).toHaveLength(3);
+      expect(state.steps[1].status).toBe('failed');
+    });
+  });
+
   describe('voteMessage', () => {
     it('does nothing without a messageId or voteType', async () => {
       await getInitialState().voteMessage(null, 'up');

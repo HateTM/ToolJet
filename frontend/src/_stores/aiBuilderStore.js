@@ -40,6 +40,9 @@ const initialState = {
   // id of the step whose skip (ticket #21) is currently being recorded, or null — only one
   // skip request in flight at a time, so double-clicks can't fire duplicate skip-step calls.
   skippingStepId: null,
+  // Whether the "undo this build" action (ticket #15) is in flight — only one rewind-style
+  // undo can run at a time, so a double click can't fire two discards.
+  undoingBuild: false,
   // { [messageId]: 'up' | 'down' } — which vote (if any) is currently recorded for a
   // message, so the chat panel can highlight the active vote button.
   votes: {},
@@ -118,6 +121,7 @@ const useAiBuilderStore = create(
             state.pendingPlan = [];
             state.isPreviewing = false;
             state.rewindingStepId = null;
+            state.undoingBuild = false;
             state.votes = {};
             state.regeneratingMessageId = null;
             state.promotingMessageId = null;
@@ -148,6 +152,7 @@ const useAiBuilderStore = create(
             state.pendingPlan = [];
             state.isPreviewing = false;
             state.rewindingStepId = null;
+            state.undoingBuild = false;
             state.votes = {};
             state.regeneratingMessageId = null;
             state.promotingMessageId = null;
@@ -707,6 +712,59 @@ const useAiBuilderStore = create(
             },
             false,
             'aiBuilder/rewindStep/error'
+          );
+          return null;
+        }
+      },
+
+      // Undo this build (ticket #15): the explicit action offered after a plan fails. Not a
+      // separate discard mechanism — it's rewindStep called inclusively on the plan's first
+      // step, so the backend's artifact-discard loop (ADR-0008) undoes everything the plan
+      // built, first step included. `steps` holds at most one plan at a time (approvePrd
+      // clears it before each run and nothing else repopulates it), so its first entry is
+      // the failed plan's first step, never an older plan's. The step list stays with every
+      // step reset to 'pending': the plan is kept visible (its resting state) while the app
+      // it changed is put back.
+      undoBuild: async () => {
+        const conversationId = get().currentConversationId;
+        const firstStep = get().steps[0];
+        if (!conversationId || !firstStep?.id || get().undoingBuild) return null;
+
+        set(
+          (state) => {
+            state.undoingBuild = true;
+            state.error = null;
+          },
+          false,
+          'aiBuilder/undoBuild/start'
+        );
+
+        try {
+          const result = await aiService.rewindStep({ conversationId, stepId: firstStep.id, inclusive: true });
+          set(
+            (state) => {
+              const undoneIds = new Set(result?.undone || []);
+              state.steps.forEach((step) => {
+                if (undoneIds.has(step.id)) {
+                  step.status = 'pending';
+                  delete step.errorMessage;
+                  delete step.artifact;
+                }
+              });
+              state.undoingBuild = false;
+            },
+            false,
+            'aiBuilder/undoBuild/success'
+          );
+          return result;
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to undo this build');
+              state.undoingBuild = false;
+            },
+            false,
+            'aiBuilder/undoBuild/error'
           );
           return null;
         }

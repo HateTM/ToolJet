@@ -3009,6 +3009,113 @@ describe('AiService.rewindStep', () => {
   });
 });
 
+// Ticket #15: the "undo this build" offer after a failed plan reuses rewind's discard by
+// rewinding *inclusively* to the plan's first step — the target step's own Artifact is
+// undone too, so nothing the plan built survives.
+describe('AiService.rewindStep - inclusive (ticket #15)', () => {
+  const arrangeFailedBuild = (buildService) => {
+    const mocks = buildService();
+    mocks.conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    mocks.versionRepository.getAllVersions.mockResolvedValue([
+      { id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' },
+    ]);
+    // A build that failed at its second step: the first step succeeded and produced
+    // an Artifact; the failed one produced nothing.
+    mocks.stepRepository.findById.mockResolvedValue({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      order: 0,
+      type: 'CreateComponent',
+      status: 'succeeded',
+      artifactId: 'artifact-1',
+    });
+    mocks.stepRepository.findAfterOrder.mockResolvedValue([
+      {
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        order: 1,
+        type: 'CreateQuery',
+        status: 'failed',
+        artifactId: null,
+      },
+    ]);
+    mocks.artifactRepository.findById.mockResolvedValue({
+      id: 'artifact-1',
+      content: { id: 'component-1', pageId: 'page-1' },
+    });
+    return mocks;
+  };
+
+  it('undoes the target step itself, in the same back-to-front pass as the steps after it', async () => {
+    const { service, stepRepository, artifactRepository, agentsService } = arrangeFailedBuild(buildService);
+    stepRepository.findAfterOrder.mockResolvedValue([
+      {
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        status: 'succeeded',
+        artifactId: 'artifact-2',
+      },
+    ]);
+    artifactRepository.findById.mockImplementation(async (id) =>
+      id === 'artifact-1'
+        ? { id: 'artifact-1', content: { id: 'tjdb-1', table_name: 'orders' } }
+        : { id: 'artifact-2', content: { id: 'component-1', pageId: 'page-1' } }
+    );
+
+    const result = await service.rewindStep('conv-1', 'step-1', 'user-1', 'org-1', true);
+
+    // The target's artifact is undone LAST (back-to-front holds with the target included).
+    expect(agentsService.undoArtifact).toHaveBeenCalledTimes(2);
+    expect(agentsService.undoArtifact).toHaveBeenLastCalledWith('CreateComponent', 'version-1', 'org-1', {
+      id: 'tjdb-1',
+      table_name: 'orders',
+    });
+    expect(artifactRepository.deleteOne).toHaveBeenCalledWith('artifact-1');
+    // The target step is reset to pending like the rest — nothing of the plan survives.
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', {
+      status: 'pending',
+      artifactId: null,
+      errorMessage: null,
+      attempts: 0,
+    });
+    expect(result).toEqual({ rewoundTo: 'step-1', undone: ['step-1', 'step-2'] });
+  });
+
+  it('resets a whole failed plan: the first step and the failed step after it, undoing only the artifact', async () => {
+    const { service, stepRepository, agentsService } = arrangeFailedBuild(buildService);
+
+    const result = await service.rewindStep('conv-1', 'step-1', 'user-1', 'org-1', true);
+
+    expect(agentsService.undoArtifact).toHaveBeenCalledTimes(1);
+    expect(agentsService.undoArtifact).toHaveBeenCalledWith('CreateComponent', 'version-1', 'org-1', {
+      id: 'component-1',
+      pageId: 'page-1',
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'pending' }));
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-2', expect.objectContaining({ status: 'pending' }));
+    expect(result).toEqual({ rewoundTo: 'step-1', undone: ['step-1', 'step-2'] });
+  });
+
+  it('leaves the target step untouched without the flag — inclusive is opt-in per request', async () => {
+    const { service, stepRepository, agentsService } = arrangeFailedBuild(buildService);
+
+    await service.rewindStep('conv-1', 'step-1', 'user-1', 'org-1');
+
+    expect(agentsService.undoArtifact).not.toHaveBeenCalled();
+    expect(stepRepository.updateOne).not.toHaveBeenCalledWith('step-1', expect.anything());
+  });
+});
+
 /** @group platform */
 describe('AiService.voteAiMessage', () => {
   it('rejects when messageId or voteType is missing', async () => {
