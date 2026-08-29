@@ -9,6 +9,7 @@
 // (rotating placeholder, no example chips) with the shared useCreateAppFromPrompt
 // handoff, so the submit assertions mirror aiBuilderCreateAppWithPrompt.cy.js — same
 // real-backend convention, same reliance on a configured OpenAI-compatible endpoint.
+import { dashboardSelector } from "Selectors/dashboard";
 const edition = Cypress.env('edition') || 'ce';
 
 describe('AI Builder - /home prompt section (empty workspace entry point)', () => {
@@ -27,7 +28,7 @@ describe('AI Builder - /home prompt section (empty workspace entry point)', () =
     cy.visit('/my-workspace/home', { failOnStatusCode: false });
     cy.url({ timeout: 20000 }).should('not.include', '/home');
     // The dashboard's own apps-list prompt entry is where CE lands instead.
-    cy.get('[data-cy="create-app-with-prompt-input"]', { timeout: 20000 }).should('be.visible');
+    cy.get(dashboardSelector.homePagePromptTextArea, { timeout: 20000 }).should('be.visible');
   });
 
   (edition === 'ce' ? describe.skip : describe)('prompt section (non-CE build only)', () => {
@@ -40,7 +41,7 @@ describe('AI Builder - /home prompt section (empty workspace entry point)', () =
       cy.get('[data-cy="home-page-prompt-header"]')
         .should('be.visible')
         .and('have.text', 'What do you want to build today?');
-      cy.get('[data-cy="create-app-with-prompt-input"]').should('be.visible');
+      cy.get(dashboardSelector.homePagePromptTextArea).should('be.visible');
       // Home variant: no example-chips row below the prompt bar.
       cy.get('[data-cy="example-prompts-row"]').should('not.exist');
       // Empty input shows the Example prompts dropdown; the submit button stays hidden
@@ -60,8 +61,8 @@ describe('AI Builder - /home prompt section (empty workspace entry point)', () =
 
       // Selecting an example fills the input and flips the swap: submit visible+enabled,
       // dropdown gone.
-      cy.get('[data-cy="create-app-with-prompt-input"]').should(($input) => {
-        expect($input.val().length).to.be.greaterThan(200);
+      cy.get(dashboardSelector.homePagePromptTextArea).should(($input) => {
+        expect($input[0].textContent.length).to.be.greaterThan(200);
       });
       cy.get('[data-cy="create-app-with-prompt-submit-button"]').should('be.visible').and('be.enabled');
       cy.get('[data-cy="example-prompts-dropdown"]').should('not.be.visible');
@@ -70,14 +71,14 @@ describe('AI Builder - /home prompt section (empty workspace entry point)', () =
     it('accepts the rotating example with Tab', () => {
       cy.visit('/my-workspace/home');
 
-      cy.get('[data-cy="create-app-with-prompt-input"]', { timeout: 20000 }).should('be.visible').focus();
+      cy.get(dashboardSelector.homePagePromptTextArea, { timeout: 20000 }).should('be.visible').focus();
       cy.realPress('Tab');
 
       // The Tab handler fills the input with the currently shown example (one of the
       // rotating set, per CreateAppWithPrompt's ROTATING_EXAMPLES), and the submit button
       // only enables once there is text to send.
-      cy.get('[data-cy="create-app-with-prompt-input"]').should(($input) => {
-        const value = $input.val();
+      cy.get(dashboardSelector.homePagePromptTextArea).should(($input) => {
+        const value = $input[0].textContent.trim();
         expect([
           'Build an inventory management system for a manufacturing company',
           'Build a customer support ticketing system for SaaS startup',
@@ -97,10 +98,10 @@ describe('AI Builder - /home prompt section (empty workspace entry point)', () =
       cy.intercept('POST', '**/api/ai/conversation').as('createConversation');
       cy.intercept('POST', '**/api/ai/conversation/message').as('sendMessage');
 
-      cy.get('[data-cy="create-app-with-prompt-input"]', { timeout: 20000 }).should('be.visible');
+      cy.get(dashboardSelector.homePagePromptTextArea, { timeout: 20000 }).should('be.visible');
       cy.get('[data-cy="create-app-with-prompt-submit-button"]').should('be.disabled');
 
-      cy.get('[data-cy="create-app-with-prompt-input"]').type(prompt);
+      cy.get(dashboardSelector.homePagePromptTextArea).type(prompt);
       cy.get('[data-cy="create-app-with-prompt-submit-button"]').should('be.enabled').click();
 
       cy.wait('@createApp');

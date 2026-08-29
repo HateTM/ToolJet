@@ -4,6 +4,7 @@
 // backend/DB rather than stubbing responses — the AI Builder feature itself already
 // depends on a configured OpenAI-compatible endpoint (OPENAI_BASE_URL/OPENAI_API_KEY/
 // AI_MODEL) to function at all, same as every other AI Builder flow.
+import { dashboardSelector } from "Selectors/dashboard";
 describe("AI Builder - homepage create app with prompt", () => {
   beforeEach(() => {
     cy.defaultWorkspaceLogin();
@@ -18,10 +19,10 @@ describe("AI Builder - homepage create app with prompt", () => {
     cy.intercept("POST", "**/api/ai/conversation").as("createConversation");
     cy.intercept("POST", "**/api/ai/conversation/message").as("sendMessage");
 
-    cy.get('[data-cy="create-app-with-prompt-input"]', { timeout: 20000 }).should("be.visible");
+    cy.get(dashboardSelector.homePagePromptTextArea, { timeout: 20000 }).should("be.visible");
     cy.get('[data-cy="create-app-with-prompt-submit-button"]').should("be.disabled");
 
-    cy.get('[data-cy="create-app-with-prompt-input"]').type(prompt);
+    cy.get(dashboardSelector.homePagePromptTextArea).type(prompt);
     cy.get('[data-cy="create-app-with-prompt-submit-button"]').should("be.enabled").click();
 
     cy.wait("@createApp");
@@ -52,7 +53,7 @@ describe("AI Builder - homepage create app with prompt", () => {
   // against the real app-creation flow.
   const createAppFromPrompt = (prompt) => {
     cy.intercept("POST", "**/api/apps").as("createApp");
-    cy.get('[data-cy="create-app-with-prompt-input"]', { timeout: 20000 }).should("be.visible").type(prompt);
+    cy.get(dashboardSelector.homePagePromptTextArea, { timeout: 20000 }).should("be.visible").type(prompt);
     cy.get('[data-cy="create-app-with-prompt-submit-button"]').should("be.enabled").click();
     cy.wait("@createApp");
     cy.url({ timeout: 20000 }).should("match", /\/apps\/[^/]+$/);

@@ -8,6 +8,7 @@ import Spinner from '@/_ui/Spinner';
 import { globalDatasourceService } from '@/_services';
 import { getWorkspaceId } from '@/_helpers/utils';
 import { withEditionSpecificComponent } from '@/modules/common/helpers/withEditionSpecificComponent';
+import PromptEditor from './PromptEditor';
 
 // `createApp` is HomePage.jsx's own method (already threading a `prompt` param through to
 // appsService.createApp and, on success, navigating into the new app with
@@ -188,8 +189,8 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
   const [exampleIndex, setExampleIndex] = useState(0);
   const hasPrompt = !!prompt.trim();
 
-  // Rotating Tab-to-accept placeholder (home variant only): cycles through example
-  // prompts while the textarea is empty; the user's typed text freezes the rotation.
+  // Rotating Tab-to-accept placeholder (home variant only): cycles through the
+  // example prompts while the prompt is empty; typed text freezes the rotation.
   useEffect(() => {
     if (!isHomeVariant || hasPrompt) return undefined;
     const timer = setInterval(() => {
@@ -217,18 +218,41 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
     );
   };
 
-  const handleKeyDown = (e) => {
-    // Tab accepts the currently shown example when nothing has been typed yet.
-    if (isHomeVariant && e.key === 'Tab' && !hasPrompt) {
-      e.preventDefault();
+  const handleTabAccept = (docText) => {
+    // Tab accepts the currently shown example while nothing has been typed yet;
+    // with content the binding is consumed as a no-op (a plain Tab never
+    // inserts anything into the prompt).
+    if (isHomeVariant && !docText.trim()) {
       setPrompt(ROTATING_EXAMPLES[exampleIndex]);
-      return;
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleCreate();
-    }
+    return true;
   };
+
+  // Stacked placeholder overlay (ticket #46): production renders all four
+  // rotating lines at once — one `.active`, each with its own ⇥ Tab badge —
+  // and cross-fades between them. Shown only while the prompt is empty.
+  const stackedPlaceholderOverlay =
+    isHomeVariant && !hasPrompt ? (
+      <div
+        className="tw-pointer-events-none tw-absolute tw-inset-0 tw-z-10 tw-flex tw-flex-col tw-justify-start tw-overflow-hidden"
+        data-cy="prompt-placeholder-overlay"
+      >
+        {ROTATING_EXAMPLES.map((example, index) => (
+          <div
+            key={example}
+            data-cy="prompt-placeholder-line"
+            className={`prompt-placeholder-line tw-flex tw-h-[20px] tw-shrink-0 tw-items-center tw-gap-2 tw-transition-opacity tw-duration-500 ${
+              index === exampleIndex ? 'active tw-opacity-100' : 'tw-opacity-0'
+            } ${index > 0 ? 'tw--mt-[20px]' : ''}`}
+          >
+            <span className="tw-truncate tw-text-sm tw-text-text-placeholder">{example}</span>
+            <kbd className="tw-flex tw-shrink-0 tw-items-center tw-rounded tw-border tw-border-solid tw-border-border-weak tw-bg-background-surface-layer-02 tw-px-1 tw-py-0.5 tw-text-[10px] tw-text-text-placeholder">
+              ⇥ Tab
+            </kbd>
+          </div>
+        ))}
+      </div>
+    ) : null;
 
   return (
     <div className="tw-w-full" data-cy="create-app-with-prompt-wrapper">
@@ -236,19 +260,18 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
         className="tw-flex tw-items-end tw-gap-2 tw-rounded-md tw-border tw-border-solid tw-border-border-weak tw-bg-background-surface-layer-01 tw-p-3"
         data-cy="create-app-with-prompt"
       >
-        <textarea
-          className="tw-flex-1 tw-resize-none tw-border-none tw-bg-transparent tw-text-sm tw-text-text-default focus:tw-outline-none"
-          rows={1}
+        <PromptEditor
+          value={prompt}
+          onChange={setPrompt}
+          onSubmit={handleCreate}
+          onTabAccept={handleTabAccept}
+          disabled={isCreating}
+          overlay={stackedPlaceholderOverlay}
           placeholder={
             isHomeVariant
-              ? ROTATING_EXAMPLES[exampleIndex]
+              ? undefined
               : t('homePage.createAppWithPrompt.placeholder', 'Describe the app you want to build...')
           }
-          value={prompt}
-          disabled={isCreating}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={handleKeyDown}
-          data-cy="create-app-with-prompt-input"
         />
         {taggedDatasources.length > 0 && (
           <div className="tw-flex tw-shrink-0 tw-flex-wrap tw-items-center tw-gap-1" data-cy="datasource-tags">
