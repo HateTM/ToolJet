@@ -61,8 +61,10 @@ export class AiController implements IAiController {
   @InitFeature(FEATURE_KEY.REWIND_STEP)
   @Post('conversation/rewind-step')
   async rewindStep(@User() user, @Body() body) {
-    const { conversationId, stepId } = body ?? {};
-    return await this.aiService.rewindStep(conversationId, stepId, user.id, user.organizationId);
+    const { conversationId, stepId, inclusive } = body ?? {};
+    // `inclusive` (ticket #15): the "undo this build" offer after a failed plan rewinds
+    // inclusively to the plan's first step, so the first step's Artifact is discarded too.
+    return await this.aiService.rewindStep(conversationId, stepId, user.id, user.organizationId, inclusive === true);
   }
 
   // Ticket #21: records the user's decision to skip a step of a running plan. Not SSE — the

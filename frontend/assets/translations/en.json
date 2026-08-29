@@ -1055,6 +1055,8 @@
             "makeChanges": "I want to make changes",
             "rewindToStep": "Rewind to this step",
             "skipStep": "Skip this step",
+            "undoBuild": "Undo this build",
+            "undoBuildHint": "Undo everything this build changed",
             "defaultPhaseName": "Implementation steps",
             "regenerate": "Regenerate response",
             "voteUp": "Good response",

@@ -46,7 +46,13 @@ export interface IAiService {
     dataSourceId?: string
   ): Promise<any>;
 
-  rewindStep(conversationId: string, stepId: string, userId: string, organizationId: string): Promise<any>;
+  rewindStep(
+    conversationId: string,
+    stepId: string,
+    userId: string,
+    organizationId: string,
+    inclusive?: boolean
+  ): Promise<any>;
 
   regenerateAiMessage(parentMessageId: string, userId: string, organizationId: string): Promise<AiConversationMessage | any>;
 

@@ -2,6 +2,11 @@
 status: accepted
 ---
 
+> **Amended by ADR-0022** (ticket #15): `rewindStep` now also supports an `inclusive` mode
+> in which the target step itself is undone along with everything after it — that is how the
+> offered "undo this build" action after a failed plan works. Without the flag, everything
+> below holds verbatim, including "the target step itself is left untouched".
+
 # Rewind discards every step after the target within its own plan, by reverting each Artifact's real App change and resetting the Step row to pending
 
 Ticket #7 asks the user to "rewind" a completed plan to an earlier step: everything the plan built after that point should disappear from the App, not just from the chat transcript. A `Step`'s `messageId` already ties it to the one `approvePrd` call that created it (ADR-0004), and `Step.order` already gives a plan its execution order — so "the current plan's execution" and "every step after the rewind target" are both direct queries on existing columns: `steps` where `conversationId` and `messageId` match the target step's, and `order > target.order`. No new column or concept is needed to satisfy "does not affect steps from a separately approved PRD" — a later `approvePrd` call always produces Steps under a new `messageId` (a fresh PRD-approval message), so they're already disjoint from an earlier plan's Steps by construction.

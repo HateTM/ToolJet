@@ -269,9 +269,28 @@ const groupStepsByPhase = (steps) => {
 const countResolvedSteps = (steps) =>
   steps.filter((step) => step.status === 'succeeded' || step.status === 'skipped').length;
 
-const StepProgressList = ({ steps, onRewind, rewindingStepId, onSkip, skippable, skippingStepId }) => {
+// Ticket #15: when a plan has stopped on a failure, an explicit "Undo this build" action
+// rests at the bottom of the strip — it reuses rewind's discard via the store's undoBuild
+// and is only offered while there is something built to undo (a succeeded step) and the
+// plan isn't executing.
+// Exported for the ticket #15 undo-offer visibility tests; not part of the module surface otherwise.
+export const StepProgressList = ({
+  steps,
+  onRewind,
+  rewindingStepId,
+  onSkip,
+  skippable,
+  skippingStepId,
+  isExecuting,
+  onUndoBuild,
+  undoingBuild,
+}) => {
   const { t } = useTranslation();
   const groups = groupStepsByPhase(steps);
+  // Ticket #15: the undo offer rests only on a stopped plan that both failed somewhere and
+  // built something before that — nothing to undo otherwise, and never while executing.
+  const canUndoBuild =
+    !isExecuting && steps.some((step) => step.status === 'failed') && steps.some((step) => step.status === 'succeeded');
   return (
     <div className="tw-flex tw-flex-col tw-gap-2 tw-border-0 tw-border-b tw-border-solid tw-border-border-weak tw-px-3 tw-py-3">
       {groups.map((group, groupIndex) => (
@@ -340,6 +359,20 @@ const StepProgressList = ({ steps, onRewind, rewindingStepId, onSkip, skippable,
           })}
         </div>
       ))}
+      {canUndoBuild && (
+        <button
+          type="button"
+          className="tw-flex tw-items-center tw-gap-1 tw-self-start tw-rounded-md tw-border-none tw-bg-transparent tw-p-0.5 tw-text-xs tw-text-text-placeholder hover:tw-text-text-default disabled:tw-opacity-50"
+          onClick={onUndoBuild}
+          disabled={undoingBuild || Boolean(rewindingStepId)}
+          aria-label={t('leftSidebar.AI Builder.undoBuild', 'Undo this build')}
+          title={t('leftSidebar.AI Builder.undoBuildHint', 'Undo everything this build changed')}
+          data-cy="ai-builder-undo-build-button"
+        >
+          {undoingBuild ? <Spinner size="small" /> : <RotateCcw width="12" height="12" />}
+          <span>{tAiBuilder(t, 'undoBuild', 'Undo this build')}</span>
+        </button>
+      )}
     </div>
   );
 };
@@ -370,6 +403,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     isPreviewing,
     rewindingStepId,
     skippingStepId,
+    undoingBuild,
     votes,
     regeneratingMessageId,
     promotingMessageId,
@@ -388,6 +422,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     discardPendingPlan,
     rewindStep,
     skipStep,
+    undoBuild,
     voteMessage,
     regenerateMessage,
     promoteConversation,
@@ -407,6 +442,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.isPreviewing,
       state.rewindingStepId,
       state.skippingStepId,
+      state.undoingBuild,
       state.votes,
       state.regeneratingMessageId,
       state.promotingMessageId,
@@ -425,6 +461,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.discardPendingPlan,
       state.rewindStep,
       state.skipStep,
+      state.undoBuild,
       state.voteMessage,
       state.regenerateMessage,
       state.promoteConversation,
@@ -687,6 +724,9 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
           onSkip={skipStep}
           skippable={isApproving}
           skippingStepId={skippingStepId}
+          isExecuting={isApproving}
+          onUndoBuild={undoBuild}
+          undoingBuild={undoingBuild}
         />
       )}
 
