@@ -52,6 +52,12 @@ const createApp = jest.fn().mockResolvedValue({ id: 'app-1' });
 
 const cy = (selector) => document.querySelector(`[data-cy="${selector}"]`);
 
+// Ticket #46: the prompt input is a CodeMirror 6 editor now. The editable
+// content is `.cm-content` inside the `prompt-textarea` wrapper — the same path
+// the cypress `clearAndTypeOnCodeMirror` helper drives.
+const editorContent = () => document.querySelector('[data-cy="prompt-textarea"] .cm-content');
+const editorValue = () => editorContent()?.textContent ?? '';
+
 // Radix dropdowns position via floating-ui, which requires ResizeObserver (absent in jsdom).
 class ResizeObserverMock {
   observe() {}
@@ -59,6 +65,18 @@ class ResizeObserverMock {
   disconnect() {}
 }
 global.ResizeObserver = global.ResizeObserver || ResizeObserverMock;
+
+// jsdom's Range has no client-rect geometry, which CodeMirror's measurement
+// pass calls on every draw — stub the rects as empty.
+beforeAll(() => {
+  const originalCreateRange = document.createRange.bind(document);
+  document.createRange = () => {
+    const range = originalCreateRange();
+    range.getClientRects = () => [];
+    range.getBoundingClientRect = () => ({ top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 });
+    return range;
+  };
+});
 
 const EMPTY_TAGGED_RESOURCES = { datasources: [], tables: [] };
 
@@ -71,7 +89,7 @@ beforeEach(() => {
 });
 
 describe('CreateAppWithPrompt — apps-list variant (default)', () => {
-  it('renders the example chip row and fills the textarea on click without submitting', async () => {
+  it('renders the example chip row and fills the editor on click without submitting', async () => {
     const user = userEvent.setup();
     render(<CreateAppWithPrompt createApp={createApp} />);
 
@@ -79,16 +97,16 @@ describe('CreateAppWithPrompt — apps-list variant (default)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Task manager' }));
 
-    expect(screen.getByRole('textbox')).toHaveValue('Build a task management app for a small team');
+    expect(editorValue()).toBe('Build a task management app for a small team');
     expect(createApp).not.toHaveBeenCalled();
   });
 
-  it('still submits via Enter after a chip fills the textarea', async () => {
+  it('still submits via Enter after a chip fills the editor', async () => {
     const user = userEvent.setup();
     render(<CreateAppWithPrompt createApp={createApp} />);
 
     await user.click(screen.getByRole('button', { name: 'Employee directory' }));
-    await user.type(screen.getByRole('textbox'), '{Enter}');
+    await user.type(editorContent(), '{Enter}');
 
     expect(createApp).toHaveBeenCalledWith(
       'Untitled App: test-uuid',
@@ -100,36 +118,45 @@ describe('CreateAppWithPrompt — apps-list variant (default)', () => {
 });
 
 describe('CreateAppWithPrompt — home variant', () => {
-  it('accepts the rotating placeholder example with Tab without submitting', async () => {
+  it('shows the stacked placeholder overlay and accepts the active example with Tab without submitting', async () => {
     const user = userEvent.setup();
     render(<CreateAppWithPrompt createApp={createApp} variant="home" />);
 
-    const textarea = screen.getByRole('textbox');
-    expect(textarea).toHaveAttribute('placeholder', 'Build an inventory management system for a manufacturing company');
+    // Ticket #46: all four rotating lines render at once, one active, each with
+    // its own ⇥ Tab badge — matching the production stacked overlay.
+    const overlay = cy('prompt-placeholder-overlay');
+    expect(overlay).toBeInTheDocument();
+    const lines = overlay.querySelectorAll('[data-cy="prompt-placeholder-line"]');
+    expect(lines).toHaveLength(4);
+    expect(overlay.querySelectorAll('kbd')).toHaveLength(4);
+    expect(overlay.querySelectorAll('.tw-opacity-100')).toHaveLength(1);
+    expect(lines[0]).toHaveTextContent('Build an inventory management system for a manufacturing company');
 
     await user.tab();
-    await user.type(textarea, '{Tab}');
+    await user.type(editorContent(), '{Tab}');
 
-    expect(textarea).toHaveValue('Build an inventory management system for a manufacturing company');
+    expect(editorValue()).toBe('Build an inventory management system for a manufacturing company');
     expect(createApp).not.toHaveBeenCalled();
   });
 
-  it('Tab types through normally once the textarea has content', async () => {
+  it('Tab never inserts anything once the editor has content', async () => {
     const user = userEvent.setup();
     render(<CreateAppWithPrompt createApp={createApp} variant="home" />);
 
-    const textarea = screen.getByRole('textbox');
-    await user.type(textarea, 'my own idea');
-    await user.type(textarea, '{Tab}');
+    await user.type(editorContent(), 'my own idea');
+    await user.type(editorContent(), '{Tab}');
 
-    expect(textarea).toHaveValue('my own idea');
+    expect(editorValue()).toBe('my own idea');
     expect(createApp).not.toHaveBeenCalled();
   });
 
   it('keeps the default static placeholder on the apps-list variant', () => {
     render(<CreateAppWithPrompt createApp={createApp} />);
 
-    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Describe the app you want to build...');
+    // CodeMirror renders the placeholder as a span, not an attribute.
+    expect(document.querySelector('[data-cy="prompt-textarea"] .cm-placeholder')).toHaveTextContent(
+      'Describe the app you want to build...'
+    );
   });
 });
 
@@ -146,8 +173,8 @@ describe('CreateAppWithPrompt — datasource tagging (ticket #47)', () => {
     expect(cy('datasource-tag-postgres')).toBeInTheDocument();
     expect(mockGetAllDatasources).toHaveBeenCalledWith('ws-1');
 
-    await user.type(screen.getByRole('textbox'), 'Build a CRM');
-    await user.type(screen.getByRole('textbox'), '{Enter}');
+    await user.type(editorContent(), 'Build a CRM');
+    await user.type(editorContent(), '{Enter}');
 
     expect(createApp).toHaveBeenCalledWith('Untitled App: test-uuid', undefined, 'Build a CRM', {
       datasources: [{ id: 'ds-1', name: 'Postgres', kind: 'postgresql' }],
@@ -169,8 +196,8 @@ describe('CreateAppWithPrompt — datasource tagging (ticket #47)', () => {
 
     expect(cy('datasource-tag-users-db')).not.toBeInTheDocument();
 
-    await user.type(screen.getByRole('textbox'), 'Build a CRM');
-    await user.type(screen.getByRole('textbox'), '{Enter}');
+    await user.type(editorContent(), 'Build a CRM');
+    await user.type(editorContent(), '{Enter}');
 
     expect(createApp).toHaveBeenCalledWith('Untitled App: test-uuid', undefined, 'Build a CRM', EMPTY_TAGGED_RESOURCES);
   });
