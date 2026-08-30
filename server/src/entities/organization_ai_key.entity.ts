@@ -30,6 +30,15 @@ export class OrganizationAiKey extends BaseEntity {
   @Column({ name: 'provider', type: 'varchar', length: 50, default: 'anthropic' })
   provider: string;
 
+  @Column({ name: 'model', type: 'varchar', length: 120, nullable: true })
+  model: string | null;
+
+  @Column({ name: 'context_window', type: 'integer', nullable: true })
+  contextWindow: number | null;
+
+  @Column({ name: 'use_environment_config', type: 'boolean', default: false })
+  useEnvironmentConfig: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
 

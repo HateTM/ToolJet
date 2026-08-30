@@ -20,6 +20,14 @@ const buildService = (conversationType: 'generate' | 'learn') => {
       })(),
     })),
     sendSSE: jest.fn(),
+    initSSE: jest.fn(),
+    startHeartbeat: jest.fn(),
+    estimateTokenCount: jest.fn().mockReturnValue(0),
+    getContextWindow: jest.fn().mockReturnValue(128_000),
+    fitMessagesToContextWindow: jest.fn().mockImplementation((msgs) => ({ messages: msgs, truncated: [] })),
+    fitMessagesToContextWindowForOrg: jest
+      .fn()
+      .mockImplementation((_orgId: string, msgs: any[]) => ({ messages: msgs, truncated: [] })),
   };
   const conversationRepo = {
     findById: jest.fn().mockResolvedValue({
@@ -35,7 +43,14 @@ const buildService = (conversationType: 'generate' | 'learn') => {
     createOne: jest.fn().mockImplementation((message: any) => Promise.resolve({ id: 'msg-x', ...message })),
     updateOne: jest.fn(),
   };
-  const response = { setHeader: jest.fn(), write: jest.fn(), end: jest.fn() } as any;
+  const response = {
+    setHeader: jest.fn(),
+    write: jest.fn(),
+    end: jest.fn(),
+    once: jest.fn(),
+    flush: jest.fn(),
+    flushHeaders: jest.fn(),
+  } as any;
 
   const service = new AiService(
     aiUtilService as any,
@@ -49,11 +64,26 @@ const buildService = (conversationType: 'generate' | 'learn') => {
       undoArtifact: jest.fn(),
     } as any,
     { createOne: jest.fn(), findById: jest.fn(), deleteOne: jest.fn() } as any,
-    { createOne: jest.fn(), updateOne: jest.fn(), findById: jest.fn(), findAfterOrder: jest.fn(), findPendingForMessage: jest.fn().mockResolvedValue([]) } as any,
-    { getAllVersions: jest.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]) } as any,
+    {
+      createOne: jest.fn(),
+      updateOne: jest.fn(),
+      findById: jest.fn(),
+      findAfterOrder: jest.fn(),
+      findPendingForMessage: jest.fn().mockResolvedValue([]),
+    } as any,
+    {
+      getAllVersions: jest.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]),
+    } as any,
     { findByMessageId: jest.fn(), createOne: jest.fn(), updateOne: jest.fn() } as any,
     { assemble: jest.fn().mockResolvedValue('App: Test app\nPages: Orders') } as any,
-    { listQueryableSources: jest.fn().mockResolvedValue([]) } as any
+    { listQueryableSources: jest.fn().mockResolvedValue([]) } as any,
+    {
+      beginRun: jest.fn().mockResolvedValue(undefined),
+      touchRun: jest.fn().mockResolvedValue(undefined),
+      endRun: jest.fn().mockResolvedValue(undefined),
+      findActiveRun: jest.fn().mockResolvedValue(null),
+      cleanupStaleRuns: jest.fn().mockResolvedValue(0),
+    } as any
   );
 
   return { service, aiUtilService, conversationRepo, messageRepo, response };

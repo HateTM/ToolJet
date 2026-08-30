@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Res, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Res, Query, UseGuards } from '@nestjs/common';
 import { User } from '@modules/app/decorators/user.decorator';
 import { UserPermissionsDecorator } from '@modules/app/decorators/user-permission.decorator';
 import { UserPermissions } from '@modules/ability/types';
@@ -7,6 +7,8 @@ import { IAiController } from './interfaces/IController';
 import { InitFeature } from '@modules/app/decorators/init-feature.decorator';
 import { FEATURE_KEY } from './constants';
 import { AiService } from './service';
+import { AiKeySettingsService } from './services/ai-key-settings.service';
+import { UpdateAiKeyDto } from './dto';
 import { JwtAuthGuard } from '@modules/session/guards/jwt-auth.guard';
 import { FeatureAbilityGuard } from './ability/guard';
 import { InitModule } from '@modules/app/decorators/init-module';
@@ -19,7 +21,10 @@ import { MODULES } from '@modules/app/constants/modules';
 @InitModule(MODULES.AI)
 @UseGuards(JwtAuthGuard, FeatureAbilityGuard)
 export class AiController implements IAiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly aiKeySettingsService: AiKeySettingsService
+  ) {}
 
   @InitFeature(FEATURE_KEY.FETCH_ZERO_STATE)
   @Get('/zero-state')
@@ -155,5 +160,23 @@ export class AiController implements IAiController {
   @Get('conversation/:conversationId/active-run')
   async getActiveRun(@User() user, @Param('conversationId') conversationId: string) {
     return await this.aiService.getActiveRun(conversationId, user.id);
+  }
+
+  // Ticket #59: org-scoped BYOK provider settings — admin-only (enforced in
+  // AiKeySettingsService), the API key is never returned, only masked.
+  @InitFeature(FEATURE_KEY.GET_KEY_SETTINGS)
+  @Get('/key-settings')
+  async getKeySettings(@User() user, @UserPermissionsDecorator() userPermissions: UserPermissions) {
+    return await this.aiKeySettingsService.getKeySettings(user, userPermissions);
+  }
+
+  @InitFeature(FEATURE_KEY.UPDATE_KEY)
+  @Patch('/update-key')
+  async updateKey(
+    @User() user,
+    @UserPermissionsDecorator() userPermissions: UserPermissions,
+    @Body() updateAiKeyDto: UpdateAiKeyDto
+  ) {
+    return await this.aiKeySettingsService.updateKey(user, userPermissions, updateAiKeyDto);
   }
 }
