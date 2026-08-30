@@ -1645,9 +1645,9 @@ export class AiService implements IAiService {
     });
 
     const messages = this.buildPrdMessages(priorMessages, content, this.buildMentionedResourcesContext(references));
-    const { messages: budgetedMessages, truncated } = this.aiUtilService.fitMessagesToContextWindow(
-      messages,
-      'openai'
+    const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
+      organizationId,
+      messages
     );
     if (truncated.length) {
       this.logger.warn(`[sendUserMessage] context truncated: ${JSON.stringify(truncated)}`);
@@ -1760,9 +1760,9 @@ export class AiService implements IAiService {
         content,
         this.buildMentionedResourcesContext(references)
       );
-      const { messages: budgetedMessages, truncated } = this.aiUtilService.fitMessagesToContextWindow(
-        messages,
-        'openai'
+      const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
+        organizationId,
+        messages
       );
       if (truncated.length) {
         this.logger.warn(`[sendUserDocsMessage] context truncated: ${JSON.stringify(truncated)}`);
@@ -2021,9 +2021,9 @@ export class AiService implements IAiService {
       conversation?.conversationType === 'learn'
         ? this.buildLearnMessages(await this.assembleAppInventory(conversation.appId), priorMessages)
         : this.buildPrdMessages(priorMessages);
-    const { messages: budgetedMessages, truncated } = this.aiUtilService.fitMessagesToContextWindow(
-      messages,
-      'openai'
+    const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
+      organizationId,
+      messages
     );
     if (truncated.length) {
       this.logger.warn(`[regenerateAiMessage] context truncated: ${JSON.stringify(truncated)}`);

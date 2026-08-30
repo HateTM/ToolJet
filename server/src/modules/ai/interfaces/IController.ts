@@ -34,4 +34,8 @@ export interface IAiController {
   createConversation(user: User, body: any): Promise<any>;
 
   getConversationById(user: User, conversationId: string): Promise<any>;
+
+  getKeySettings(user: User, userPermissions: UserPermissions): Promise<any>;
+
+  updateKey(user: User, userPermissions: UserPermissions, updateAiKeyDto: any): Promise<any>;
 }

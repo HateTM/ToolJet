@@ -22,6 +22,9 @@ const buildMockAiUtilService = () => ({
   estimateTokenCount: jest.fn().mockReturnValue(0),
   getContextWindow: jest.fn().mockReturnValue(128_000),
   fitMessagesToContextWindow: jest.fn().mockImplementation((msgs) => ({ messages: msgs, truncated: [] })),
+  fitMessagesToContextWindowForOrg: jest
+    .fn()
+    .mockImplementation((_orgId: string, msgs: any[]) => ({ messages: msgs, truncated: [] })),
 });
 
 const buildMockAiActiveRunService = () => ({
@@ -419,8 +422,11 @@ describe('AiService.sendUserMessage', () => {
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
 
-    const budgetedMessages = [{ role: 'system', content: 'truncated system' }, { role: 'user', content: 'Hi' }];
-    aiUtilService.fitMessagesToContextWindow.mockReturnValue({ messages: budgetedMessages, truncated: [{}] });
+    const budgetedMessages = [
+      { role: 'system', content: 'truncated system' },
+      { role: 'user', content: 'Hi' },
+    ];
+    aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({ messages: budgetedMessages, truncated: [{}] });
     aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
 
     await service.sendUserMessage(
@@ -430,12 +436,12 @@ describe('AiService.sendUserMessage', () => {
       'org-1'
     );
 
-    expect(aiUtilService.fitMessagesToContextWindow).toHaveBeenCalledWith(
+    expect(aiUtilService.fitMessagesToContextWindowForOrg).toHaveBeenCalledWith(
+      'org-1',
       expect.arrayContaining([
         expect.objectContaining({ role: 'system' }),
         expect.objectContaining({ role: 'user', content: 'Hi' }),
-      ]),
-      'openai'
+      ])
     );
     expect(aiUtilService.AIGateway).toHaveBeenCalledWith(
       'openai',

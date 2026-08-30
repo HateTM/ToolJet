@@ -13,6 +13,15 @@ jest.mock('@ai-sdk/openai', () => ({
   createOpenAI: (...args: unknown[]) => mockCreateOpenAI(...args),
 }));
 
+const mockCreateAnthropic = jest.fn().mockReturnValue(mockProviderFn);
+const mockCreateGoogle = jest.fn().mockReturnValue(mockProviderFn);
+jest.mock('@ai-sdk/anthropic', () => ({
+  createAnthropic: (...args: unknown[]) => mockCreateAnthropic(...args),
+}));
+jest.mock('@ai-sdk/google', () => ({
+  createGoogleGenerativeAI: (...args: unknown[]) => mockCreateGoogle(...args),
+}));
+
 jest.mock('ai', () => ({
   streamText: (...args: unknown[]) => mockStreamText(...args),
   generateText: (...args: unknown[]) => mockGenerateText(...args),
@@ -31,6 +40,20 @@ const buildMockConversationRepository = () => ({
 const buildMockMessageRepository = () => ({
   findLatestByConversationId: jest.fn(),
 });
+
+// Ticket #59: every AIGateway call now consults the org BYOK config first.
+// Default mock returns null → env fallback (the pre-ticket behavior), so all
+// existing assertions keep passing unchanged.
+const buildMockKeySettingsService = () => ({
+  getEffectiveOrgConfig: jest.fn().mockResolvedValue(null),
+});
+
+const buildService = (conversationRepo?: any, messageRepo?: any, keySettingsService?: any) =>
+  new AiUtilService(
+    conversationRepo ?? buildMockConversationRepository(),
+    messageRepo ?? buildMockMessageRepository(),
+    keySettingsService ?? buildMockKeySettingsService()
+  ) as any;
 
 /** @group platform */
 describe('AiUtilService.AIGateway', () => {
@@ -51,7 +74,7 @@ describe('AiUtilService.AIGateway', () => {
   });
 
   it('builds the OpenAI-compatible provider from env vars, resolves AI_MODEL, and passes prompt_body through to streamText', async () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const promptBody = {
       messages: [{ role: 'user', content: 'Build me a table' }],
     };
@@ -79,7 +102,7 @@ describe('AiUtilService.AIGateway', () => {
   });
 
   it('passes through tools and any other AI SDK call params in prompt_body', async () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const tools = { CreateTable: { description: 'create a table' } };
     const promptBody = { messages: [{ role: 'user', content: 'hi' }], tools };
 
@@ -93,9 +116,9 @@ describe('AiUtilService.AIGateway', () => {
   });
 
   it('rejects unsupported providers without calling the AI SDK', async () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
 
-    await expect(service.AIGateway('anthropic', 'create-component', {}, 'org-1')).rejects.toThrow(
+    await expect(service.AIGateway('not-a-provider', 'create-component', {}, 'org-1')).rejects.toThrow(
       /unsupported provider/i
     );
 
@@ -124,7 +147,7 @@ describe('AiUtilService.AIGatewayGenerate', () => {
   });
 
   it('builds the same OpenAI-compatible provider as AIGateway but calls generateText, not streamText', async () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const promptBody = {
       system: 'You design table schemas.',
       messages: [{ role: 'user', content: 'Create a customers table' }],
@@ -144,9 +167,9 @@ describe('AiUtilService.AIGatewayGenerate', () => {
   });
 
   it('rejects unsupported providers without calling the AI SDK', async () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
 
-    await expect(service.AIGatewayGenerate('anthropic', 'approve-prd-plan', {}, 'org-1')).rejects.toThrow(
+    await expect(service.AIGatewayGenerate('not-a-provider', 'approve-prd-plan', {}, 'org-1')).rejects.toThrow(
       /unsupported provider/i
     );
 
@@ -164,7 +187,7 @@ describe('AiUtilService.sendSSE', () => {
   });
 
   it('writes a standard SSE frame: event line, JSON data line, blank line', () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const res = buildRes();
 
     service.sendSSE(res as any, 'chunk', { content: 'hello' });
@@ -174,7 +197,7 @@ describe('AiUtilService.sendSSE', () => {
   });
 
   it('does not write when the response has already ended', () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const res = buildRes({ writableEnded: true });
 
     service.sendSSE(res as any, 'chunk', { content: 'hello' });
@@ -184,7 +207,7 @@ describe('AiUtilService.sendSSE', () => {
   });
 
   it('does not write when the response has been destroyed', () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const res = buildRes({ destroyed: true });
 
     service.sendSSE(res as any, 'chunk', { content: 'hello' });
@@ -197,7 +220,7 @@ describe('AiUtilService.sendSSE', () => {
 /** @group platform */
 describe('AiUtilService.initSSE', () => {
   it('sets SSE headers, flushes them, and writes a heartbeat comment', () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const res = {
       setHeader: jest.fn(),
       flushHeaders: jest.fn(),
@@ -227,7 +250,7 @@ describe('AiUtilService.startHeartbeat', () => {
   });
 
   it('sends a heartbeat event every 5 seconds by default', () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const res = { write: jest.fn(), flush: jest.fn(), once: jest.fn() };
 
     service.startHeartbeat(res as any);
@@ -240,7 +263,7 @@ describe('AiUtilService.startHeartbeat', () => {
   });
 
   it('clears the interval when the response closes', () => {
-    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const service = buildService();
     const closeHandlers: Array<() => void> = [];
     const res = {
       write: jest.fn(),
@@ -263,7 +286,7 @@ describe('AiUtilService.createNewConversation', () => {
   it('reactivates and returns the given conversation when currentConversationId is provided', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     const result = await service.createNewConversation('user-1', 'app-1', 'generate', 'conv-1');
 
@@ -275,7 +298,7 @@ describe('AiUtilService.createNewConversation', () => {
   it('reactivates a learn conversation the same way', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.findById.mockResolvedValue({ id: 'learn-1', userId: 'user-1', conversationType: 'learn' });
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     const result = await service.createNewConversation('user-1', 'app-1', 'learn', 'learn-1');
 
@@ -289,7 +312,7 @@ describe('AiUtilService.createNewConversation', () => {
   it('refuses to continue a conversation under a different conversationType', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.findById.mockResolvedValue({ id: 'learn-1', userId: 'user-1', conversationType: 'learn' });
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     await expect(service.createNewConversation('user-1', 'app-1', 'generate', 'learn-1')).rejects.toBeInstanceOf(
       BadRequestException
@@ -301,7 +324,7 @@ describe('AiUtilService.createNewConversation', () => {
   it('404s when the conversation to continue does not exist', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.findById.mockResolvedValue(null);
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     await expect(service.createNewConversation('user-1', 'app-1', 'generate', 'gone')).rejects.toBeInstanceOf(
       NotFoundException
@@ -312,7 +335,7 @@ describe('AiUtilService.createNewConversation', () => {
   it('creates a brand new conversation when no currentConversationId is given', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.createNewConversation.mockResolvedValue({ id: 'conv-2', metadata: null });
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     const result = await service.createNewConversation('user-1', 'app-1', 'generate');
 
@@ -324,7 +347,7 @@ describe('AiUtilService.createNewConversation', () => {
   it('records handoff:true in metadata when creating a new conversation with handoff', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.createNewConversation.mockResolvedValue({ id: 'conv-3', metadata: null });
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     const result = await service.createNewConversation('user-1', 'app-1', 'generate', undefined, true);
 
@@ -340,7 +363,7 @@ describe('AiUtilService.getConversationById', () => {
     const messageRepo = buildMockMessageRepository();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1' });
     messageRepo.findLatestByConversationId.mockResolvedValue([{ id: 'msg-1' }]);
-    const service = new AiUtilService(conversationRepo as any, messageRepo as any);
+    const service = buildService(conversationRepo, messageRepo);
 
     const result = await service.getConversationById('conv-1', 'user-1');
 
@@ -350,7 +373,7 @@ describe('AiUtilService.getConversationById', () => {
   it('throws NotFoundException when the conversation does not exist', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.findById.mockResolvedValue(null);
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     await expect(service.getConversationById('missing', 'user-1')).rejects.toThrow(NotFoundException);
   });
@@ -358,7 +381,7 @@ describe('AiUtilService.getConversationById', () => {
   it('throws NotFoundException when the conversation belongs to a different user', async () => {
     const conversationRepo = buildMockConversationRepository();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'someone-else' });
-    const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
+    const service = buildService(conversationRepo);
 
     await expect(service.getConversationById('conv-1', 'user-1')).rejects.toThrow(NotFoundException);
   });
@@ -380,7 +403,7 @@ describe('AiUtilService context window', () => {
 
   describe('estimateTokenCount', () => {
     it('returns 0 for empty, null, or undefined content', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       expect(service.estimateTokenCount('')).toBe(0);
       expect(service.estimateTokenCount(null as any)).toBe(0);
@@ -388,7 +411,7 @@ describe('AiUtilService context window', () => {
     });
 
     it('approximates tokens as UTF-8 byte length / 4 by default', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
       const content = 'a'.repeat(40);
 
       // 40 bytes / 4 = 10 tokens, rounded up (already exact here).
@@ -396,7 +419,7 @@ describe('AiUtilService context window', () => {
     });
 
     it('rounds partial token counts up', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
       const content = 'a'.repeat(41);
 
       expect(service.estimateTokenCount(content)).toBe(11);
@@ -404,7 +427,7 @@ describe('AiUtilService context window', () => {
 
     it('respects AI_TOKEN_ESTIMATION_RATIO', () => {
       process.env.AI_TOKEN_ESTIMATION_RATIO = '2';
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       // 40 bytes / 2 = 20 tokens.
       expect(service.estimateTokenCount('a'.repeat(40))).toBe(20);
@@ -414,20 +437,20 @@ describe('AiUtilService context window', () => {
   describe('getContextWindow', () => {
     it('returns the configured window from AI_CONTEXT_WINDOW when set', () => {
       process.env.AI_CONTEXT_WINDOW = '8192';
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       expect(service.getContextWindow('openai')).toBe(8192);
     });
 
     it('prefers the explicit configuredWindow argument over the env var', () => {
       process.env.AI_CONTEXT_WINDOW = '8192';
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       expect(service.getContextWindow('openai', 16384)).toBe(16384);
     });
 
     it('returns provider defaults when nothing is configured', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       expect(service.getContextWindow('openai')).toBe(128_000);
       expect(service.getContextWindow('anthropic')).toBe(200_000);
@@ -436,13 +459,13 @@ describe('AiUtilService context window', () => {
     });
 
     it('falls back to the openai default for unknown providers', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       expect(service.getContextWindow('unknown-provider')).toBe(128_000);
     });
 
     it('honors small configured windows and floors only zero/negative values at 1', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       expect(service.getContextWindow('openai', 100)).toBe(100);
       process.env.AI_CONTEXT_WINDOW = '100';
@@ -455,7 +478,7 @@ describe('AiUtilService context window', () => {
 
   describe('fitMessagesToContextWindow', () => {
     it('returns messages unchanged when they fit the budget', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
       const messages = [
         { role: 'system', content: 'system prompt' },
         { role: 'user', content: 'hello' },
@@ -468,7 +491,7 @@ describe('AiUtilService context window', () => {
     });
 
     it('keeps system and inventory messages, dropping oldest conversation turns first', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
       // With the default 4-bytes-per-token ratio and MESSAGE_TOKEN_OVERHEAD of 4, token costs
       // here are: 'system prompt' = ceil(13/4)+4 = 8, 'app inventory' = 8, history turns = 7
       // each. A budget of 14 keeps the system prompt (8) and leaves 6 for the inventory, which
@@ -492,7 +515,7 @@ describe('AiUtilService context window', () => {
     });
 
     it('truncates an oversized single message instead of dropping it when it is the only content', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
       const longContent = 'a'.repeat(100);
       const messages = [{ role: 'user', content: longContent }];
 
@@ -506,7 +529,7 @@ describe('AiUtilService context window', () => {
     });
 
     it('logs truncation details through the Nest logger', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
       const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation(() => {});
 
       const messages = [
@@ -522,7 +545,7 @@ describe('AiUtilService context window', () => {
     });
 
     it('gracefully degrades when the budget is too small to hold even the system prompt', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
       const messages = [
         { role: 'system', content: 'system prompt' },
         { role: 'user', content: 'user message' },
@@ -540,12 +563,117 @@ describe('AiUtilService context window', () => {
     });
 
     it('handles an empty message list', () => {
-      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const service = buildService();
 
       const result = service.fitMessagesToContextWindow([], 'openai', 100);
 
       expect(result.messages).toEqual([]);
       expect(result.truncated).toEqual([]);
     });
+  });
+});
+
+/** @group platform */
+describe('AiUtilService multi-provider resolveModel (ticket #59)', () => {
+  const ORIGINAL_ENV = process.env;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCreateOpenAI.mockClear().mockReturnValue(mockProviderFn);
+    mockCreateAnthropic.mockClear().mockReturnValue(mockProviderFn);
+    mockCreateGoogle.mockClear().mockReturnValue(mockProviderFn);
+    process.env = {
+      ...ORIGINAL_ENV,
+      OPENAI_BASE_URL: 'https://localai.internal/v1',
+      OPENAI_API_KEY: 'test-api-key',
+      AI_MODEL: 'llama-3-70b',
+    };
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('falls back to the env-configured OpenAI-compatible gateway when the org has no BYOK config', async () => {
+    const service = buildService();
+    await service.AIGateway('openai', 'send-message', { messages: [] }, 'org-1');
+
+    expect(mockCreateOpenAI).toHaveBeenCalledWith({
+      baseURL: 'https://localai.internal/v1',
+      apiKey: 'test-api-key',
+    });
+    expect(mockProviderFn).toHaveBeenCalledWith('llama-3-70b');
+  });
+
+  it('routes to the org-configured anthropic provider and model when a BYOK config is active', async () => {
+    const keySettings = buildMockKeySettingsService();
+    keySettings.getEffectiveOrgConfig.mockResolvedValue({
+      source: 'org',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4',
+      apiKey: 'sk-ant-org-key',
+      contextWindow: 200000,
+    });
+    const service = buildService(undefined, undefined, keySettings);
+
+    await service.AIGateway('openai', 'send-message', { messages: [] }, 'org-1');
+
+    expect(mockCreateAnthropic).toHaveBeenCalledWith({ apiKey: 'sk-ant-org-key' });
+    expect(mockProviderFn).toHaveBeenCalledWith('claude-sonnet-4');
+    expect(mockCreateOpenAI).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['gemini', 'createGoogle'],
+    ['grok', 'createOpenAI'],
+    ['openrouter', 'createOpenAI'],
+  ])('builds %s through the provider factory with its base URL', async (provider, factory) => {
+    const keySettings = buildMockKeySettingsService();
+    keySettings.getEffectiveOrgConfig.mockResolvedValue({
+      source: 'org',
+      provider,
+      model: `model-${provider}`,
+      apiKey: 'org-key',
+      contextWindow: 128000,
+    });
+    const service = buildService(undefined, undefined, keySettings);
+
+    await service.AIGateway('openai', 'send-message', { messages: [] }, 'org-1');
+
+    expect(mockProviderFn).toHaveBeenCalledWith(`model-${provider}`);
+    if (factory === 'createGoogle') {
+      expect(mockCreateGoogle).toHaveBeenCalledWith({ apiKey: 'org-key' });
+    } else {
+      expect(mockCreateOpenAI).toHaveBeenCalledWith(
+        expect.objectContaining({ apiKey: 'org-key', baseURL: expect.stringContaining('https://') })
+      );
+    }
+  });
+
+  it('honors useEnvironmentConfig via the service returning null and falls back to env', async () => {
+    const keySettings = buildMockKeySettingsService();
+    keySettings.getEffectiveOrgConfig.mockResolvedValue(null);
+    const service = buildService(undefined, undefined, keySettings);
+
+    await service.AIGateway('openai', 'send-message', { messages: [] }, 'org-1');
+
+    expect(mockCreateOpenAI).toHaveBeenCalledWith({ baseURL: 'https://localai.internal/v1', apiKey: 'test-api-key' });
+  });
+
+  it('fits messages against the org model window when a BYOK config is active', async () => {
+    const keySettings = buildMockKeySettingsService();
+    keySettings.getEffectiveOrgConfig.mockResolvedValue({
+      source: 'org',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4',
+      apiKey: 'sk-ant-org-key',
+      contextWindow: 512, // tiny window to force deterministic truncation
+    });
+    const service = buildService(undefined, undefined, keySettings);
+
+    const messages = Array.from({ length: 30 }, (_, i) => ({ role: 'user', content: 'x'.repeat(200) }));
+    const { truncated } = await service.fitMessagesToContextWindowForOrg('org-1', messages);
+
+    expect(truncated.length).toBeGreaterThan(0);
   });
 });

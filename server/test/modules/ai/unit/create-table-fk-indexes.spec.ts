@@ -22,6 +22,15 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     AIGateway: jest.fn(),
     AIGatewayGenerate: jest.fn(),
     sendSSE: jest.fn(),
+    initSSE: jest.fn(),
+    startHeartbeat: jest.fn(),
+    estimateTokenCount: jest.fn().mockReturnValue(0),
+    getContextWindow: jest.fn().mockReturnValue(128_000),
+    fitMessagesToContextWindow: jest.fn().mockImplementation((msgs) => ({ messages: msgs, truncated: [] })),
+    fitMessagesToContextWindowForOrg: jest
+      .fn()
+      .mockImplementation((_orgId: string, msgs: any[]) => ({ messages: msgs, truncated: [] })),
+
     createNewConversation: jest.fn(),
     getConversationsList: jest.fn(),
     getConversationById: jest.fn(),
@@ -60,10 +69,19 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     agentsService as any,
     artifactRepository as any,
     stepRepository as any,
-    { getAllVersions: jest.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]) } as any,
+    {
+      getAllVersions: jest.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]),
+    } as any,
     { findByMessageId: jest.fn(), createOne: jest.fn(), updateOne: jest.fn() } as any,
     { assemble: jest.fn().mockResolvedValue('App: Test app') } as any,
-    { listQueryableSources: jest.fn().mockResolvedValue([]) } as any
+    { listQueryableSources: jest.fn().mockResolvedValue([]) } as any,
+    {
+      beginRun: jest.fn().mockResolvedValue(undefined),
+      touchRun: jest.fn().mockResolvedValue(undefined),
+      endRun: jest.fn().mockResolvedValue(undefined),
+      findActiveRun: jest.fn().mockResolvedValue(null),
+      cleanupStaleRuns: jest.fn().mockResolvedValue(0),
+    } as any
   );
 
   return { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository };
@@ -74,6 +92,9 @@ const response = () =>
     setHeader: jest.fn(),
     write: jest.fn(),
     end: jest.fn(),
+    once: jest.fn(),
+    flush: jest.fn(),
+    flushHeaders: jest.fn(),
   }) as any;
 
 const pendingStep = (id: string, order: number, type: string, description: string, extra: any = {}) => ({
@@ -98,7 +119,16 @@ const idColumn = {
 const customersPlannedStep = pendingStep('step-1', 0, 'CreateTable', 'Create a customers table', {
   plannedTable: {
     table_name: 'customers',
-    columns: [idColumn, { column_name: 'name', data_type: 'character varying', is_primary_key: false, is_not_null: true, is_unique: false }],
+    columns: [
+      idColumn,
+      {
+        column_name: 'name',
+        data_type: 'character varying',
+        is_primary_key: false,
+        is_not_null: true,
+        is_unique: false,
+      },
+    ],
   },
 });
 
@@ -110,7 +140,16 @@ describe('AiService executeCreateTableStep — foreign-key validation (ticket #2
       pendingStep('step-2', 1, 'CreateTable', 'Create an orders table', {
         plannedTable: {
           table_name: 'orders',
-          columns: [idColumn, { column_name: 'customer_id', data_type: 'integer', is_primary_key: false, is_not_null: true, is_unique: false }],
+          columns: [
+            idColumn,
+            {
+              column_name: 'customer_id',
+              data_type: 'integer',
+              is_primary_key: false,
+              is_not_null: true,
+              is_unique: false,
+            },
+          ],
           foreign_keys: [
             {
               column_names: ['customer_id'],
@@ -122,9 +161,10 @@ describe('AiService executeCreateTableStep — foreign-key validation (ticket #2
         },
       }),
     ]);
-    agentsService.CreateTable
-      .mockResolvedValueOnce({ id: 'tjdb-uuid-1', table_name: 'customers' })
-      .mockResolvedValueOnce({ id: 'tjdb-uuid-2', table_name: 'orders' });
+    agentsService.CreateTable.mockResolvedValueOnce({
+      id: 'tjdb-uuid-1',
+      table_name: 'customers',
+    }).mockResolvedValueOnce({ id: 'tjdb-uuid-2', table_name: 'orders' });
 
     await service.approvePrd('conv-1', 'PRD', USER, PERMISSIONS, response());
 
@@ -151,7 +191,16 @@ describe('AiService executeCreateTableStep — foreign-key validation (ticket #2
       pendingStep('step-1', 0, 'CreateTable', 'Create an orders table', {
         plannedTable: {
           table_name: 'orders',
-          columns: [idColumn, { column_name: 'customer_id', data_type: 'integer', is_primary_key: false, is_not_null: true, is_unique: false }],
+          columns: [
+            idColumn,
+            {
+              column_name: 'customer_id',
+              data_type: 'integer',
+              is_primary_key: false,
+              is_not_null: true,
+              is_unique: false,
+            },
+          ],
           foreign_keys: [
             { column_names: ['customer_id'], referenced_table_name: 'customers', referenced_column_names: ['id'] },
           ],
@@ -173,7 +222,16 @@ describe('AiService executeCreateTableStep — foreign-key validation (ticket #2
       pendingStep('step-1', 0, 'CreateTable', 'Create an orders table', {
         plannedTable: {
           table_name: 'orders',
-          columns: [idColumn, { column_name: 'customer_id', data_type: 'integer', is_primary_key: false, is_not_null: true, is_unique: false }],
+          columns: [
+            idColumn,
+            {
+              column_name: 'customer_id',
+              data_type: 'integer',
+              is_primary_key: false,
+              is_not_null: true,
+              is_unique: false,
+            },
+          ],
           foreign_keys: [
             { column_names: ['customer_id'], referenced_table_name: 'customres', referenced_column_names: ['id'] },
           ],
@@ -199,20 +257,31 @@ describe('AiService executeCreateTableStep — foreign-key validation (ticket #2
       table_name: 'orders',
       columns: [
         idColumn,
-        { column_name: 'customer_id', data_type: 'integer', is_primary_key: false, is_not_null: true, is_unique: false },
+        {
+          column_name: 'customer_id',
+          data_type: 'integer',
+          is_primary_key: false,
+          is_not_null: true,
+          is_unique: false,
+        },
       ],
-      foreign_keys: [{ column_names: ['customer_id'], referenced_table_name: 'customers', referenced_column_names: ['id'] }],
+      foreign_keys: [
+        { column_names: ['customer_id'], referenced_table_name: 'customers', referenced_column_names: ['id'] },
+      ],
     };
-    aiUtilService.AIGatewayGenerate
-      .mockResolvedValueOnce({
-        toolCalls: [
-          {
-            toolName: 'createTable',
-            args: { ...goodArgs, foreign_keys: [{ column_names: ['customer_id'], referenced_table_name: 'customres', referenced_column_names: ['id'] }] },
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce({
+      toolCalls: [
+        {
+          toolName: 'createTable',
+          args: {
+            ...goodArgs,
+            foreign_keys: [
+              { column_names: ['customer_id'], referenced_table_name: 'customres', referenced_column_names: ['id'] },
+            ],
           },
-        ],
-      })
-      .mockResolvedValueOnce({ toolCalls: [{ toolName: 'createTable', args: goodArgs }] });
+        },
+      ],
+    }).mockResolvedValueOnce({ toolCalls: [{ toolName: 'createTable', args: goodArgs }] });
     agentsService.ViewTables.mockResolvedValue([{ id: 'pre-existing-uuid', tableName: 'customers' }]);
     agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid-1', table_name: 'orders' });
 
@@ -231,15 +300,21 @@ describe('AiService executeCreateTableStep — foreign-key validation (ticket #2
 describe('AiService buildTableParams — indexes (ticket #23)', () => {
   it('forwards planner-proposed indexes verbatim on the planned-table path', async () => {
     const { service, agentsService, stepRepository } = buildService();
-    const indexes = [
-      { column_names: ['customer_id', 'status'] },
-      { column_names: ['email'], is_unique: true },
-    ];
+    const indexes = [{ column_names: ['customer_id', 'status'] }, { column_names: ['email'], is_unique: true }];
     stepRepository.findPendingForMessage.mockResolvedValue([
       pendingStep('step-1', 0, 'CreateTable', 'Create an orders table', {
         plannedTable: {
           table_name: 'orders',
-          columns: [idColumn, { column_name: 'customer_id', data_type: 'integer', is_primary_key: false, is_not_null: true, is_unique: false }],
+          columns: [
+            idColumn,
+            {
+              column_name: 'customer_id',
+              data_type: 'integer',
+              is_primary_key: false,
+              is_not_null: true,
+              is_unique: false,
+            },
+          ],
           indexes,
         },
       }),

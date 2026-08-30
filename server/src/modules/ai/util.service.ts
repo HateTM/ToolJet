@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { streamText, generateText } from 'ai';
 import { IAiUtilService } from './interfaces/IUtilService';
 import { AiConversationRepository } from './repositories/ai-conversation.repository';
 import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
 import { AiConversation } from '@entities/ai_conversation.entity';
+import { AiKeySettingsService } from './services/ai-key-settings.service';
+import { EffectiveAiConfig } from './interfaces/IAiKeySettingsService';
 import {
   DEFAULT_LLM_PROVIDER,
   DEFAULT_TOKEN_ESTIMATION_RATIO,
@@ -14,7 +18,9 @@ import {
   VALID_LLM_PROVIDERS,
 } from './constants/llm';
 
-const SUPPORTED_AI_PROVIDERS = ['openai'];
+// Ticket #59: every provider the factory can build is now a valid routing input;
+// the org BYOK config decides which one actually serves the request.
+const SUPPORTED_AI_PROVIDERS: string[] = VALID_LLM_PROVIDERS;
 
 // Mirrors AiConversation.conversationType — the repositories are typed against this
 // union, but IAiUtilService (and controllers upstream) pass conversationType as a
@@ -29,7 +35,8 @@ export class AiUtilService implements IAiUtilService {
 
   constructor(
     private readonly aiConversationRepository: AiConversationRepository,
-    private readonly aiConversationMessageRepository: AiConversationMessageRepository
+    private readonly aiConversationMessageRepository: AiConversationMessageRepository,
+    private readonly aiKeySettingsService: AiKeySettingsService
   ) {}
 
   public getAgentAssetPath(filename) {
@@ -63,7 +70,10 @@ export class AiUtilService implements IAiUtilService {
    * silently dropped.
    */
   async AIGateway(provider: string, operation_id: string, prompt_body: any, organizationId: string): Promise<any> {
-    const model = this.resolveModel(provider, operation_id, organizationId);
+    if (!SUPPORTED_AI_PROVIDERS.includes(provider)) {
+      throw new Error(`AIGateway: unsupported provider "${provider}"`);
+    }
+    const model = await this.resolveModel(provider, operation_id, organizationId);
 
     return streamText({
       model,
@@ -84,20 +94,58 @@ export class AiUtilService implements IAiUtilService {
     prompt_body: any,
     organizationId: string
   ): Promise<any> {
-    const model = this.resolveModel(provider, operation_id, organizationId);
-
-    return generateText({
-      model,
-      ...prompt_body,
-    });
-  }
-
-  private resolveModel(provider: string, operation_id: string, organizationId: string) {
     if (!SUPPORTED_AI_PROVIDERS.includes(provider)) {
       throw new Error(`AIGateway: unsupported provider "${provider}"`);
     }
 
+    return generateText({
+      model: await this.resolveModel(provider, operation_id, organizationId),
+      ...prompt_body,
+    });
+  }
+
+  /**
+   * Ticket #59: provider factory. Builds the AI SDK language model for the org's
+   * configured provider. OpenAI-compatible providers (openai/grok/openrouter)
+   * share `createOpenAI` with a per-provider base URL; `baseURL` from the org
+   * config is honored for plain `openai` so self-hosted gateways keep working.
+   */
+  private buildProvider(config: EffectiveAiConfig) {
+    switch (config.provider) {
+      case 'anthropic':
+        return createAnthropic({ apiKey: config.apiKey })(config.model);
+      case 'gemini':
+        return createGoogleGenerativeAI({ apiKey: config.apiKey })(config.model);
+      case 'grok':
+        return createOpenAI({ baseURL: 'https://api.x.ai/v1', apiKey: config.apiKey })(config.model);
+      case 'openrouter':
+        return createOpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: config.apiKey })(config.model);
+      case 'openai':
+        return createOpenAI({ baseURL: config.baseURL, apiKey: config.apiKey })(config.model);
+      default:
+        throw new Error(`AIGateway: unsupported org provider "${config.provider}"`);
+    }
+  }
+
+  /**
+   * Resolves the language model for an AIGateway/AIGatewayGenerate call.
+   *
+   * Priority (ticket #59): the organization's BYOK configuration (provider,
+   * model, decrypted key — re-read per request, so changes apply without a
+   * server restart) falls back to the env-configured OpenAI-compatible gateway.
+   * The `provider` argument remains the request-level default, used for
+   * validation and env-fallback tagging.
+   */
+  private async resolveModel(provider: string, operation_id: string, organizationId: string) {
     this.logger.debug(`[AIGateway] provider=${provider} operation_id=${operation_id} organizationId=${organizationId}`);
+
+    const orgConfig = await this.aiKeySettingsService.getEffectiveOrgConfig(organizationId);
+    if (orgConfig) {
+      this.logger.debug(
+        `[AIGateway] using org config: provider=${orgConfig.provider} model=${orgConfig.model} organizationId=${organizationId}`
+      );
+      return this.buildProvider(orgConfig);
+    }
 
     const openaiProvider = createOpenAI({
       baseURL: process.env.OPENAI_BASE_URL,
@@ -105,6 +153,31 @@ export class AiUtilService implements IAiUtilService {
     });
 
     return openaiProvider(process.env.AI_MODEL);
+  }
+
+  /**
+   * Context-window fitting against the provider the request will actually use:
+   * the org's configured provider/model window when a BYOK config is active,
+   * otherwise the previous env-default ('openai') behavior.
+   */
+  async fitMessagesToContextWindowForOrg(
+    organizationId: string,
+    messages: Array<{ role: string; content: string }>
+  ): Promise<{
+    messages: Array<{ role: string; content: string }>;
+    truncated: Array<{
+      role: string;
+      originalTokens: number;
+      keptTokens: number;
+      droppedTokens: number;
+      reason: 'content-truncated' | 'message-dropped';
+    }>;
+  }> {
+    const orgConfig = await this.aiKeySettingsService.getEffectiveOrgConfig(organizationId);
+    if (orgConfig) {
+      return this.fitMessagesToContextWindow(messages, orgConfig.provider, orgConfig.contextWindow);
+    }
+    return this.fitMessagesToContextWindow(messages, 'openai');
   }
 
   async createComponentfromSteps(steps, componentDatapath?: string): Promise<any> {

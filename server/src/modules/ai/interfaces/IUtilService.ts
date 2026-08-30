@@ -50,6 +50,20 @@ export interface IAiUtilService {
 
   getContextWindow(provider?: string, configuredWindow?: number): number;
 
+  fitMessagesToContextWindowForOrg(
+    organizationId: string,
+    messages: Array<{ role: string; content: string }>
+  ): Promise<{
+    messages: Array<{ role: string; content: string }>;
+    truncated: Array<{
+      role: string;
+      originalTokens: number;
+      keptTokens: number;
+      droppedTokens: number;
+      reason: 'content-truncated' | 'message-dropped';
+    }>;
+  }>;
+
   fitMessagesToContextWindow(
     messages: Array<{ role: string; content: string }>,
     provider?: string,

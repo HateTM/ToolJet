@@ -44,6 +44,10 @@ export class AiModule extends SubModule {
     const { PageHelperService } = await import(`${importPath}/apps/services/page.util.service`);
     const { AppsUtilService } = await import(`${importPath}/apps/util.service`);
     const { AiCacheService } = await import(`${importPath}/ai/ai-cache`);
+    const { AiKeySettingsService } = await import(`${importPath}/ai/services/ai-key-settings.service`);
+    const { OrganizationAiKeyRepository } = await import(
+      `${importPath}/ai/repositories/organization-ai-key.repository`
+    );
 
     return this.cacheModule(cacheKey, {
       module: AiModule,
@@ -85,6 +89,8 @@ export class AiModule extends SubModule {
         PageHelperService,
         AppsUtilService,
         AiCacheService,
+        AiKeySettingsService,
+        OrganizationAiKeyRepository,
         ...(isMainImport ? [AiService, AiCacheService] : []),
       ],
       exports: [AiUtilService],
