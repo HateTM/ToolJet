@@ -150,4 +150,10 @@ export class AiController implements IAiController {
   async getConversationById(@User() user, @Param('conversationId') conversationId: string) {
     return await this.aiService.getConversationById(conversationId, user.id);
   }
+
+  @InitFeature(FEATURE_KEY.GET_ACTIVE_RUN)
+  @Get('conversation/:conversationId/active-run')
+  async getActiveRun(@User() user, @Param('conversationId') conversationId: string) {
+    return await this.aiService.getActiveRun(conversationId, user.id);
+  }
 }

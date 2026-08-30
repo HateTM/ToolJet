@@ -3,6 +3,7 @@ import { getImportPath } from '@modules/app/constants';
 import { AiConversationRepository } from './repositories/ai-conversation.repository';
 import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
 import { AiResponseVoteRepository } from './repositories/ai-response-vote.repository';
+import { AiActiveRunRepository } from './repositories/ai-active-run.repository';
 import { AppsRepository } from '@modules/apps/repository';
 import { FeatureAbilityFactory } from './ability';
 import { TooljetDbModule } from '@modules/tooljet-db/module';
@@ -35,6 +36,8 @@ export class AiModule extends SubModule {
     const { AgentsService } = await import(`${importPath}/ai/services/agents.service`);
     const { AppInventoryService } = await import(`${importPath}/ai/services/app-inventory.service`);
     const { DataSourceInventoryService } = await import(`${importPath}/ai/services/data-source-inventory.service`);
+    const { AiActiveRunService } = await import(`${importPath}/ai/services/ai-active-run.service`);
+    const { AiActiveRunScheduler } = await import(`${importPath}/ai/services/ai-active-run-scheduler.service`);
     const { ComponentsService } = await import(`${importPath}/apps/services/component.service`);
     const { EventsService } = await import(`${importPath}/apps/services/event.service`);
     const { PageService } = await import(`${importPath}/apps/services/page.service`);
@@ -60,6 +63,9 @@ export class AiModule extends SubModule {
         AgentsService,
         AppInventoryService,
         DataSourceInventoryService,
+        AiActiveRunService,
+        AiActiveRunRepository,
+        AiActiveRunScheduler,
         ComponentsService,
         // ImportExportResourcesService,
         AiConversationRepository,

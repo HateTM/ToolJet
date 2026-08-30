@@ -19,6 +19,9 @@ const initialState = {
   messages: [],
   streamingMessage: null, // { messageType: 'ai', content: string } while a response is in flight
   isSending: false,
+  // True while any generate stream is active in this conversation (send message or approve).
+  // Mirrors the backend active-run lock so the UI can disable conflicting actions.
+  isGenerating: false,
   isLoadingConversation: false,
   isLoadingConversations: false,
   zeroState: null,
@@ -121,6 +124,7 @@ const useAiBuilderStore = create(
             state.messages = [];
             state.streamingMessage = null;
             state.isSending = false;
+            state.isGenerating = false;
             state.steps = [];
             state.isApproving = false;
             state.pendingPlan = [];
@@ -152,6 +156,7 @@ const useAiBuilderStore = create(
             state.messages = [];
             state.streamingMessage = null;
             state.isSending = false;
+            state.isGenerating = false;
             state.steps = [];
             state.isApproving = false;
             state.pendingPlan = [];
@@ -315,7 +320,10 @@ const useAiBuilderStore = create(
           'aiBuilder/loadConversation/start'
         );
         try {
-          const conversation = await aiService.getConversation(conversationId);
+          const [conversation, activeRun] = await Promise.all([
+            aiService.getConversation(conversationId),
+            aiService.getActiveRun(conversationId),
+          ]);
           set(
             (state) => {
               state.currentConversationId = conversation?.id ?? conversationId;
@@ -324,6 +332,7 @@ const useAiBuilderStore = create(
               state.streamingMessage = null;
               state.pendingPlan = [];
               state.isPreviewing = false;
+              state.isGenerating = activeRun?.active ?? false;
               state.isLoadingConversation = false;
             },
             false,
@@ -415,6 +424,7 @@ const useAiBuilderStore = create(
             state.messages.push(userMessage);
             state.streamingMessage = { messageType: 'ai', content: '' };
             state.isSending = true;
+            state.isGenerating = true;
             // The preview belonged to the pre-refinement PRD; this message makes it stale.
             state.pendingPlan = [];
             state.error = null;
@@ -446,6 +456,7 @@ const useAiBuilderStore = create(
                 state.error = buildErrorMessage(error, 'Failed to start conversation');
                 state.streamingMessage = null;
                 state.isSending = false;
+                state.isGenerating = false;
               },
               false,
               'aiBuilder/sendMessage/createConversationFailed'
@@ -487,6 +498,7 @@ const useAiBuilderStore = create(
                 }
                 state.streamingMessage = null;
                 state.isSending = false;
+                state.isGenerating = false;
               },
               false,
               'aiBuilder/sendMessage/done'
@@ -497,6 +509,7 @@ const useAiBuilderStore = create(
                 state.error = data?.message || 'Something went wrong while generating a response';
                 state.streamingMessage = null;
                 state.isSending = false;
+                state.isGenerating = false;
               },
               false,
               'aiBuilder/sendMessage/error'
@@ -520,6 +533,7 @@ const useAiBuilderStore = create(
               state.error = buildErrorMessage(error, 'Failed to send message');
               state.streamingMessage = null;
               state.isSending = false;
+              state.isGenerating = false;
             },
             false,
             'aiBuilder/sendMessage/catch'
@@ -590,6 +604,7 @@ const useAiBuilderStore = create(
         set(
           (state) => {
             state.isApproving = true;
+            state.isGenerating = true;
             state.steps = [];
             state.pendingPlan = [];
             state.error = null;
@@ -657,6 +672,7 @@ const useAiBuilderStore = create(
               (state) => {
                 if (data?.message) state.messages.push(data.message);
                 state.isApproving = false;
+                state.isGenerating = false;
               },
               false,
               'aiBuilder/approvePrd/done'
@@ -666,6 +682,7 @@ const useAiBuilderStore = create(
               (state) => {
                 state.error = data?.message || 'Failed to build the plan';
                 state.isApproving = false;
+                state.isGenerating = false;
               },
               false,
               'aiBuilder/approvePrd/error'
@@ -680,6 +697,7 @@ const useAiBuilderStore = create(
             (state) => {
               state.error = buildErrorMessage(error, 'Failed to approve the plan');
               state.isApproving = false;
+              state.isGenerating = false;
             },
             false,
             'aiBuilder/approvePrd/catch'
