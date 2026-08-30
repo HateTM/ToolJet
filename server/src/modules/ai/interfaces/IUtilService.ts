@@ -42,6 +42,29 @@ export interface IAiUtilService {
 
   sendSSE(res: any, type: string, data: any): any;
 
+  initSSE(res: any): any;
+
+  startHeartbeat(res: any, intervalMs?: number): any;
+
+  estimateTokenCount(content: string): number;
+
+  getContextWindow(provider?: string, configuredWindow?: number): number;
+
+  fitMessagesToContextWindow(
+    messages: Array<{ role: string; content: string }>,
+    provider?: string,
+    configuredWindow?: number
+  ): {
+    messages: Array<{ role: string; content: string }>;
+    truncated: Array<{
+      role: string;
+      originalTokens: number;
+      keptTokens: number;
+      droppedTokens: number;
+      reason: 'content-truncated' | 'message-dropped';
+    }>;
+  };
+
   getConversation(appId: string, userId: string, conversationType: string): Promise<any>;
 
   createNewConversation(

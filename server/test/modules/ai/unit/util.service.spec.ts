@@ -157,13 +157,104 @@ describe('AiUtilService.AIGatewayGenerate', () => {
 
 /** @group platform */
 describe('AiUtilService.sendSSE', () => {
+  const buildRes = (overrides: Record<string, any> = {}) => ({
+    write: jest.fn(),
+    flush: jest.fn(),
+    ...overrides,
+  });
+
   it('writes a standard SSE frame: event line, JSON data line, blank line', () => {
     const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
-    const res = { write: jest.fn() };
+    const res = buildRes();
 
     service.sendSSE(res as any, 'chunk', { content: 'hello' });
 
     expect(res.write).toHaveBeenCalledWith('event: chunk\ndata: {"content":"hello"}\n\n');
+    expect(res.flush).toHaveBeenCalled();
+  });
+
+  it('does not write when the response has already ended', () => {
+    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const res = buildRes({ writableEnded: true });
+
+    service.sendSSE(res as any, 'chunk', { content: 'hello' });
+
+    expect(res.write).not.toHaveBeenCalled();
+    expect(res.flush).not.toHaveBeenCalled();
+  });
+
+  it('does not write when the response has been destroyed', () => {
+    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const res = buildRes({ destroyed: true });
+
+    service.sendSSE(res as any, 'chunk', { content: 'hello' });
+
+    expect(res.write).not.toHaveBeenCalled();
+    expect(res.flush).not.toHaveBeenCalled();
+  });
+});
+
+/** @group platform */
+describe('AiUtilService.initSSE', () => {
+  it('sets SSE headers, flushes them, and writes a heartbeat comment', () => {
+    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const res = {
+      setHeader: jest.fn(),
+      flushHeaders: jest.fn(),
+      write: jest.fn(),
+      flush: jest.fn(),
+    };
+
+    service.initSSE(res as any);
+
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-cache');
+    expect(res.setHeader).toHaveBeenCalledWith('Connection', 'keep-alive');
+    expect(res.flushHeaders).toHaveBeenCalled();
+    expect(res.write).toHaveBeenCalledWith(':heartbeat\n\n');
+    expect(res.flush).toHaveBeenCalled();
+  });
+});
+
+/** @group platform */
+describe('AiUtilService.startHeartbeat', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('sends a heartbeat event every 5 seconds by default', () => {
+    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const res = { write: jest.fn(), flush: jest.fn(), once: jest.fn() };
+
+    service.startHeartbeat(res as any);
+    jest.advanceTimersByTime(5000);
+
+    expect(res.write).toHaveBeenCalledTimes(1);
+    const written = res.write.mock.calls[0][0];
+    expect(written).toContain('event: heartbeat');
+    expect(written).toContain('"timestamp":');
+  });
+
+  it('clears the interval when the response closes', () => {
+    const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+    const closeHandlers: Array<() => void> = [];
+    const res = {
+      write: jest.fn(),
+      flush: jest.fn(),
+      once: jest.fn((_event: string, handler: () => void) => {
+        closeHandlers.push(handler);
+      }),
+    };
+
+    service.startHeartbeat(res as any);
+    closeHandlers.forEach((handler) => handler());
+    jest.advanceTimersByTime(10000);
+
+    expect(res.write).not.toHaveBeenCalled();
   });
 });
 
@@ -270,5 +361,191 @@ describe('AiUtilService.getConversationById', () => {
     const service = new AiUtilService(conversationRepo as any, buildMockMessageRepository() as any);
 
     await expect(service.getConversationById('conv-1', 'user-1')).rejects.toThrow(NotFoundException);
+  });
+});
+
+/** @group platform */
+describe('AiUtilService context window', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.AI_CONTEXT_WINDOW;
+    delete process.env.AI_TOKEN_ESTIMATION_RATIO;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  describe('estimateTokenCount', () => {
+    it('returns 0 for empty, null, or undefined content', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      expect(service.estimateTokenCount('')).toBe(0);
+      expect(service.estimateTokenCount(null as any)).toBe(0);
+      expect(service.estimateTokenCount(undefined as any)).toBe(0);
+    });
+
+    it('approximates tokens as UTF-8 byte length / 4 by default', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const content = 'a'.repeat(40);
+
+      // 40 bytes / 4 = 10 tokens, rounded up (already exact here).
+      expect(service.estimateTokenCount(content)).toBe(10);
+    });
+
+    it('rounds partial token counts up', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const content = 'a'.repeat(41);
+
+      expect(service.estimateTokenCount(content)).toBe(11);
+    });
+
+    it('respects AI_TOKEN_ESTIMATION_RATIO', () => {
+      process.env.AI_TOKEN_ESTIMATION_RATIO = '2';
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      // 40 bytes / 2 = 20 tokens.
+      expect(service.estimateTokenCount('a'.repeat(40))).toBe(20);
+    });
+  });
+
+  describe('getContextWindow', () => {
+    it('returns the configured window from AI_CONTEXT_WINDOW when set', () => {
+      process.env.AI_CONTEXT_WINDOW = '8192';
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      expect(service.getContextWindow('openai')).toBe(8192);
+    });
+
+    it('prefers the explicit configuredWindow argument over the env var', () => {
+      process.env.AI_CONTEXT_WINDOW = '8192';
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      expect(service.getContextWindow('openai', 16384)).toBe(16384);
+    });
+
+    it('returns provider defaults when nothing is configured', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      expect(service.getContextWindow('openai')).toBe(128_000);
+      expect(service.getContextWindow('anthropic')).toBe(200_000);
+      expect(service.getContextWindow('grok')).toBe(500_000);
+      expect(service.getContextWindow('gemini')).toBe(1_000_000);
+    });
+
+    it('falls back to the openai default for unknown providers', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      expect(service.getContextWindow('unknown-provider')).toBe(128_000);
+    });
+
+    it('honors small configured windows and floors only zero/negative values at 1', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      expect(service.getContextWindow('openai', 100)).toBe(100);
+      process.env.AI_CONTEXT_WINDOW = '100';
+      expect(service.getContextWindow('openai')).toBe(100);
+      expect(service.getContextWindow('openai', 0)).toBe(1);
+      process.env.AI_CONTEXT_WINDOW = '-5';
+      expect(service.getContextWindow('openai')).toBe(1);
+    });
+  });
+
+  describe('fitMessagesToContextWindow', () => {
+    it('returns messages unchanged when they fit the budget', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const messages = [
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: 'hello' },
+      ];
+
+      const result = service.fitMessagesToContextWindow(messages, 'openai', 128_000);
+
+      expect(result.messages).toEqual(messages);
+      expect(result.truncated).toEqual([]);
+    });
+
+    it('keeps system and inventory messages, dropping oldest conversation turns first', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      // With the default 4-bytes-per-token ratio and MESSAGE_TOKEN_OVERHEAD of 4, token costs
+      // here are: 'system prompt' = ceil(13/4)+4 = 8, 'app inventory' = 8, history turns = 7
+      // each. A budget of 14 keeps the system prompt (8) and leaves 6 for the inventory, which
+      // does not fit whole — it is content-truncated to 2 content tokens (8 chars). The two
+      // history turns are dropped entirely.
+      const messages = [
+        { role: 'system', content: 'system prompt' },
+        { role: 'system', content: 'app inventory' },
+        { role: 'user', content: 'old question' },
+        { role: 'assistant', content: 'old answer' },
+      ];
+
+      const result = service.fitMessagesToContextWindow(messages, 'openai', 14);
+
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0]).toEqual(messages[0]);
+      expect(result.messages[1].role).toBe('system');
+      expect(result.messages[1].content.length).toBeLessThan(messages[1].content.length);
+      const dropped = result.truncated.filter((t) => t.reason === 'message-dropped');
+      expect(dropped).toHaveLength(2);
+    });
+
+    it('truncates an oversized single message instead of dropping it when it is the only content', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const longContent = 'a'.repeat(100);
+      const messages = [{ role: 'user', content: longContent }];
+
+      // 100 bytes / 4 = 25 content tokens + 4 overhead = 29. Budget 20 leaves 16 content
+      // tokens (64 bytes), so the message is content-truncated, not dropped.
+      const result = service.fitMessagesToContextWindow(messages, 'openai', 20);
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].content.length).toBeLessThan(longContent.length);
+      expect(result.truncated[0].reason).toBe('content-truncated');
+    });
+
+    it('logs truncation details through the Nest logger', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation(() => {});
+
+      const messages = [
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: 'a'.repeat(200) },
+      ];
+
+      service.fitMessagesToContextWindow(messages, 'openai', 30);
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('prompt truncated');
+      warnSpy.mockRestore();
+    });
+
+    it('gracefully degrades when the budget is too small to hold even the system prompt', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+      const messages = [
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: 'user message' },
+      ];
+
+      // 'system prompt' costs ceil(13/4)+4 = 8 tokens, so a budget of 4 cannot hold it: the
+      // content is truncated to zero, the message survives as an empty system prompt, and the
+      // user message is dropped.
+      const result = service.fitMessagesToContextWindow(messages, 'openai', 4);
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].role).toBe('system');
+      expect(result.messages[0].content.length).toBeLessThan(messages[0].content.length);
+      expect(result.truncated[0].reason).toBe('content-truncated');
+    });
+
+    it('handles an empty message list', () => {
+      const service = new AiUtilService(buildMockConversationRepository() as any, buildMockMessageRepository() as any);
+
+      const result = service.fitMessagesToContextWindow([], 'openai', 100);
+
+      expect(result.messages).toEqual([]);
+      expect(result.truncated).toEqual([]);
+    });
   });
 });

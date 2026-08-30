@@ -5,6 +5,14 @@ import { IAiUtilService } from './interfaces/IUtilService';
 import { AiConversationRepository } from './repositories/ai-conversation.repository';
 import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
 import { AiConversation } from '@entities/ai_conversation.entity';
+import {
+  DEFAULT_LLM_PROVIDER,
+  DEFAULT_TOKEN_ESTIMATION_RATIO,
+  LlmProvider,
+  MESSAGE_TOKEN_OVERHEAD,
+  PROVIDER_CONTEXT_WINDOWS,
+  VALID_LLM_PROVIDERS,
+} from './constants/llm';
 
 const SUPPORTED_AI_PROVIDERS = ['openai'];
 
@@ -129,15 +137,287 @@ export class AiUtilService implements IAiUtilService {
    *   data: <JSON.stringify(data)>
    *   (blank line)
    *
+   * Guards against writing to a response that has already been closed, and
+   * flushes the underlying stream so proxies do not buffer the event.
    * Caller is responsible for setting the SSE response headers before the
    * first call, and for ending the response once done.
    */
   public sendSSE(res: any, type: string, data: any) {
+    if (!res || res.writableEnded || res.destroyed || res.finished) {
+      return;
+    }
+
     res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+
+    if (typeof res.flush === 'function') {
+      res.flush();
+    }
+  }
+
+  /**
+   * Starts a recurring heartbeat on an active SSE response. Sends an event of
+   * type `heartbeat` with `{ timestamp }` every `intervalMs` milliseconds.
+   *
+   * The interval is automatically cleared when the response emits `close` or
+   * `finish`, so disconnecting/aborting clients never leave a dangling timer
+   * and never trigger writes after the response has ended.
+   */
+  public startHeartbeat(res: any, intervalMs = 5000): ReturnType<typeof setInterval> {
+    const interval = setInterval(() => {
+      this.sendSSE(res, 'heartbeat', { timestamp: Date.now() });
+    }, intervalMs);
+
+    const cleanup = () => clearInterval(interval);
+    res.once('close', cleanup);
+    res.once('finish', cleanup);
+
+    return interval;
+  }
+
+  /**
+   * Initializes an SSE response: sets the required headers, flushes them to
+   * the client immediately, and writes a comment line so proxies see bytes on
+   * the wire and do not buffer the stream.
+   */
+  public initSSE(res: any) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    res.flushHeaders();
+    res.write(':heartbeat\n\n');
+
+    if (typeof res.flush === 'function') {
+      res.flush();
+    }
   }
 
   async getConversation(appId: string, userId: string, conversationType: string): Promise<AiConversation> {
     return this.aiConversationRepository.findByAppAndUser(appId, userId, conversationType as ConversationType);
+  }
+
+  /**
+   * Estimates the number of tokens in a text string using a simple bytes-per-token
+   * heuristic. AI Builder CE does not ship a real tokenizer, so this approximation is
+   * intentionally conservative: it divides the UTF-8 byte length by a configurable
+   * ratio (default 4) and rounds up. It is good enough for budget-based truncation
+   * and avoids pulling in heavy native tokenization dependencies.
+   *
+   * The ratio can be tuned with `AI_TOKEN_ESTIMATION_RATIO` (a positive number).
+   */
+  estimateTokenCount(content: string): number {
+    if (!content) return 0;
+    const ratio = this.getEstimationRatio();
+    return Math.ceil(Buffer.byteLength(content, 'utf8') / ratio);
+  }
+
+  private getEstimationRatio(): number {
+    const parsed = parseFloat(process.env.AI_TOKEN_ESTIMATION_RATIO || '');
+    return parsed > 0 ? parsed : DEFAULT_TOKEN_ESTIMATION_RATIO;
+  }
+
+  private messageTokenCost(content: string): number {
+    return this.estimateTokenCount(content) + MESSAGE_TOKEN_OVERHEAD;
+  }
+
+  /**
+   * Resolves the effective context-window size (in tokens) for a provider.
+   *
+   * Precedence:
+   * 1. Explicit `configuredWindow` argument (e.g., per-model setting in a later ticket).
+   * 2. `AI_CONTEXT_WINDOW` environment variable.
+   * 3. Hard-coded default for the provider.
+   *
+   * Explicit and env values are floored at 1 so a zero/negative value cannot accidentally make
+   * the whole window 0 (which would drop every message); otherwise the value is honored as-is so
+   * a small configured window can exercise the truncation path in tests.
+   */
+  getContextWindow(provider?: string, configuredWindow?: number): number {
+    if (typeof configuredWindow === 'number' && !Number.isNaN(configuredWindow)) {
+      return Math.max(1, configuredWindow);
+    }
+
+    const envWindow = parseInt(process.env.AI_CONTEXT_WINDOW || '', 10);
+    if (!Number.isNaN(envWindow)) {
+      return Math.max(1, envWindow);
+    }
+
+    const normalized = (provider || '').toLowerCase();
+    const validProvider = VALID_LLM_PROVIDERS.includes(normalized as LlmProvider)
+      ? (normalized as LlmProvider)
+      : DEFAULT_LLM_PROVIDER;
+
+    return PROVIDER_CONTEXT_WINDOWS[validProvider] ?? PROVIDER_CONTEXT_WINDOWS[DEFAULT_LLM_PROVIDER];
+  }
+
+  /**
+   * Truncates a message list so the estimated total token count fits inside the
+   * configured context window for `provider`.
+   *
+   * Truncation follows the priority required by ticket #58:
+   *   1. The first system prompt (e.g., PRD_SYSTEM_PROMPT / LEARN_SYSTEM_PROMPT).
+   *   2. Other system messages — App inventory, @-mention context, and other injections.
+   *   3. Conversation history, keeping the most recent messages and dropping older ones.
+   *
+   * When a single message does not fit in the remaining budget, its content is trimmed
+   * from the end rather than dropped entirely, so the request degrades controllably and
+   * never produces an unhandled context-overflow error.
+   *
+   * Returns the truncated messages (in original order) and an array describing what was
+   * cut, so callers can log or surface the degradation.
+   */
+  fitMessagesToContextWindow(
+    messages: Array<{ role: string; content: string }>,
+    provider?: string,
+    configuredWindow?: number
+  ): {
+    messages: Array<{ role: string; content: string }>;
+    truncated: Array<{
+      role: string;
+      originalTokens: number;
+      keptTokens: number;
+      droppedTokens: number;
+      reason: 'content-truncated' | 'message-dropped';
+    }>;
+  } {
+    if (!messages?.length) {
+      return { messages: [], truncated: [] };
+    }
+
+    const contextWindow = this.getContextWindow(provider, configuredWindow);
+    const working = messages.map((message, idx) => ({
+      ...message,
+      idx,
+      priority: message.role === 'system' ? (idx === 0 ? 0 : 1) : 2,
+    }));
+    const kept = new Array(working.length).fill(false);
+    const truncated: Array<{
+      role: string;
+      originalTokens: number;
+      keptTokens: number;
+      droppedTokens: number;
+      reason: 'content-truncated' | 'message-dropped';
+    }> = [];
+
+    const logTruncation = (
+      role: string,
+      originalTokens: number,
+      keptTokens: number,
+      reason: 'content-truncated' | 'message-dropped'
+    ) => {
+      if (originalTokens <= keptTokens && reason === 'content-truncated') return;
+      truncated.push({
+        role,
+        originalTokens,
+        keptTokens,
+        droppedTokens: Math.max(0, originalTokens - keptTokens),
+        reason,
+      });
+    };
+
+    let remaining = contextWindow;
+
+    // Pass 1: the primary system prompt (always the first message in AI Builder prompts).
+    if (working[0]?.role === 'system') {
+      const cost = this.messageTokenCost(working[0].content);
+      if (cost <= remaining) {
+        kept[0] = true;
+        remaining -= cost;
+      } else {
+        const allowed = Math.max(0, remaining - MESSAGE_TOKEN_OVERHEAD);
+        const trimmed = this.truncateContentToTokenBudget(working[0].content, allowed);
+        const keptCost = this.messageTokenCost(trimmed);
+        working[0].content = trimmed;
+        kept[0] = true;
+        remaining = Math.max(0, remaining - keptCost);
+        logTruncation('system', cost, keptCost, 'content-truncated');
+      }
+    }
+
+    // Pass 2: remaining system messages (inventory, @-mentions, etc.) in original order.
+    for (let i = 1; i < working.length; i++) {
+      if (working[i].role !== 'system') continue;
+      const cost = this.messageTokenCost(working[i].content);
+
+      if (remaining <= 0) {
+        logTruncation(working[i].role, cost, 0, 'message-dropped');
+        continue;
+      }
+
+      if (cost <= remaining) {
+        kept[i] = true;
+        remaining -= cost;
+      } else {
+        const allowed = Math.max(0, remaining - MESSAGE_TOKEN_OVERHEAD);
+        const trimmed = this.truncateContentToTokenBudget(working[i].content, allowed);
+        const keptCost = this.messageTokenCost(trimmed);
+        working[i].content = trimmed;
+        kept[i] = true;
+        remaining = 0;
+        logTruncation(working[i].role, cost, keptCost, 'content-truncated');
+      }
+    }
+
+    // Pass 3: conversation history, newest first, so older turns are dropped first.
+    for (let i = working.length - 1; i >= 0; i--) {
+      if (working[i].priority !== 2) continue;
+      const cost = this.messageTokenCost(working[i].content);
+
+      if (remaining <= 0) {
+        logTruncation(working[i].role, cost, 0, 'message-dropped');
+        continue;
+      }
+
+      if (cost <= remaining) {
+        kept[i] = true;
+        remaining -= cost;
+      } else {
+        const allowed = Math.max(0, remaining - MESSAGE_TOKEN_OVERHEAD);
+        const trimmed = this.truncateContentToTokenBudget(working[i].content, allowed);
+        const keptCost = this.messageTokenCost(trimmed);
+        working[i].content = trimmed;
+        kept[i] = true;
+        remaining = 0;
+        logTruncation(working[i].role, cost, keptCost, 'content-truncated');
+      }
+    }
+
+    const resultMessages = working.filter((_, idx) => kept[idx]).map(({ role, content }) => ({ role, content }));
+
+    if (truncated.length) {
+      const totalDropped = truncated.reduce((sum, entry) => sum + entry.droppedTokens, 0);
+      this.logger.warn(
+        `[contextWindow] prompt truncated for provider=${provider}; totalDroppedTokens=${totalDropped}, details=${JSON.stringify(
+          truncated
+        )}`
+      );
+    }
+
+    return { messages: resultMessages, truncated };
+  }
+
+  /**
+   * Trims `content` so its estimated token count is at most `maxTokens`.
+   *
+   * Operates on UTF-8 byte boundaries so it never produces invalid partial characters.
+   * If `maxTokens` is zero or negative, returns an empty string.
+   */
+  private truncateContentToTokenBudget(content: string, maxTokens: number): string {
+    if (maxTokens <= 0) return '';
+    const ratio = this.getEstimationRatio();
+    const maxBytes = Math.max(0, Math.floor(maxTokens * ratio));
+    const buffer = Buffer.from(content, 'utf8');
+
+    if (buffer.length <= maxBytes) return content;
+
+    // Walk back from maxBytes to the last byte that is not a UTF-8 continuation byte
+    // (0x80-0xBF), so the slice ends on a complete character.
+    let end = maxBytes;
+    while (end > 0 && (buffer[end] & 0xc0) === 0x80) {
+      end--;
+    }
+
+    return buffer.subarray(0, end).toString('utf8');
   }
 
   /**
