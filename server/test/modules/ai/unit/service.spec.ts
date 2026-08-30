@@ -54,6 +54,10 @@ const buildMockAppInventoryService = () => ({
   assemble: jest.fn().mockResolvedValue('App: Test app'),
 });
 
+const buildMockAiFeasibilityService = () => ({
+  assess: jest.fn().mockReturnValue({ type: 'feasible' }),
+});
+
 // Defaults to "nothing external connected", which is every pre-ADR-0019 test's world: the
 // plan targets ToolJet DB and no data-source block reaches any prompt.
 const buildMockDataSourceInventoryService = () => ({
@@ -122,7 +126,7 @@ const buildMockResponse = () => {
   return response;
 };
 
-// Builds an AiService with all 11 constructor dependencies mocked, any of which can be
+// Builds an AiService with all 12 constructor dependencies mocked, any of which can be
 // overridden. Centralizing this avoids repeating the full mock/constructor wiring in
 // every test (and having to update all of them whenever the constructor's shape changes).
 const buildService = (overrides: Partial<Record<string, any>> = {}) => {
@@ -137,6 +141,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const appInventoryService = overrides.appInventoryService ?? buildMockAppInventoryService();
   const dataSourceInventoryService = overrides.dataSourceInventoryService ?? buildMockDataSourceInventoryService();
   const aiActiveRunService = overrides.aiActiveRunService ?? buildMockAiActiveRunService();
+  const aiFeasibilityService = overrides.aiFeasibilityService ?? buildMockAiFeasibilityService();
 
   const service = new AiService(
     aiUtilService as any,
@@ -149,7 +154,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     aiResponseVoteRepository as any,
     appInventoryService as any,
     dataSourceInventoryService as any,
-    aiActiveRunService as any
+    aiActiveRunService as any,
+    aiFeasibilityService as any
   );
 
   return {
@@ -165,6 +171,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     appInventoryService,
     dataSourceInventoryService,
     aiActiveRunService,
+    aiFeasibilityService,
   };
 };
 
@@ -449,6 +456,112 @@ describe('AiService.sendUserMessage', () => {
       { messages: budgetedMessages },
       'org-1'
     );
+  });
+
+  it('assembles the app inventory and asks the feasibility service before calling the LLM', async () => {
+    const { service, conversationRepo, messageRepo, appInventoryService, aiFeasibilityService, aiUtilService } =
+      buildService();
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      conversationType: 'generate',
+      appId: 'app-1',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValue({ id: 'user-msg-1' });
+    appInventoryService.assemble.mockResolvedValue('App: CRM\n\nPages:\n- Home');
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
+
+    await service.sendUserMessage(
+      { conversationId: 'conv-1', content: 'Build a CRM', references: [{ type: 'page', id: 'p1', name: 'Home' }] },
+      buildMockResponse() as any,
+      'user-1',
+      'org-1'
+    );
+
+    expect(appInventoryService.assemble).toHaveBeenCalledWith('app-1', 'version-1');
+    expect(aiFeasibilityService.assess).toHaveBeenCalledWith(
+      'Build a CRM',
+      'App: CRM\n\nPages:\n- Home',
+      expect.arrayContaining([expect.objectContaining({ name: 'Home' })])
+    );
+  });
+
+  it('returns an infeasible request as a normal AI message without calling the LLM', async () => {
+    const { service, conversationRepo, messageRepo, appInventoryService, aiFeasibilityService, aiUtilService } =
+      buildService();
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      conversationType: 'generate',
+      appId: 'app-1',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne
+      .mockResolvedValueOnce({ id: 'user-msg-1' })
+      .mockResolvedValueOnce({ id: 'ai-msg-1', content: 'I could not find that page.' });
+    appInventoryService.assemble.mockResolvedValue('App: CRM');
+    aiFeasibilityService.assess.mockReturnValue({
+      type: 'infeasible',
+      messageForUser: 'I could not find that page.',
+    });
+
+    const response = buildMockResponse();
+    await service.sendUserMessage(
+      { conversationId: 'conv-1', content: 'Add a button to the Dashboard page' },
+      response as any,
+      'user-1',
+      'org-1'
+    );
+
+    expect(aiUtilService.AIGateway).not.toHaveBeenCalled();
+    expect(messageRepo.createOne).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        aiConversationId: 'conv-1',
+        messageType: 'ai',
+        content: 'I could not find that page.',
+        parentId: 'user-msg-1',
+        metadata: { feasibility: { type: 'infeasible', messageForUser: 'I could not find that page.' } },
+      })
+    );
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', {
+      message: { id: 'ai-msg-1', content: 'I could not find that page.' },
+    });
+    expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a noData response as a normal AI message without calling the LLM', async () => {
+    const { service, conversationRepo, messageRepo, appInventoryService, aiFeasibilityService, aiUtilService } =
+      buildService();
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      conversationType: 'generate',
+      appId: 'app-1',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+    appInventoryService.assemble.mockResolvedValue('App: CRM');
+    aiFeasibilityService.assess.mockReturnValue({
+      type: 'noData',
+      recommendations: ['Try describing an app you want to build.'],
+    });
+
+    const response = buildMockResponse();
+    await service.sendUserMessage({ conversationId: 'conv-1', content: 'hi' }, response as any, 'user-1', 'org-1');
+
+    expect(aiUtilService.AIGateway).not.toHaveBeenCalled();
+    expect(messageRepo.createOne).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        aiConversationId: 'conv-1',
+        messageType: 'ai',
+        metadata: {
+          feasibility: { type: 'noData', recommendations: ['Try describing an app you want to build.'] },
+        },
+      })
+    );
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', expect.any(Object));
+    expect(response.end).toHaveBeenCalledTimes(1);
   });
 });
 

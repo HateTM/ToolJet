@@ -17,6 +17,7 @@ import {
   renderConnectedDataSources,
 } from './services/data-source-inventory.service';
 import { AiActiveRunService } from './services/ai-active-run.service';
+import { AiFeasibilityService } from './services/ai-feasibility.service';
 import { VersionRepository } from '@modules/versions/repository';
 import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
@@ -589,7 +590,8 @@ export class AiService implements IAiService {
     private readonly aiResponseVoteRepository: AiResponseVoteRepository,
     private readonly appInventoryService: AppInventoryService,
     private readonly dataSourceInventoryService: DataSourceInventoryService,
-    private readonly aiActiveRunService: AiActiveRunService
+    private readonly aiActiveRunService: AiActiveRunService,
+    private readonly aiFeasibilityService: AiFeasibilityService
   ) {}
 
   /**
@@ -1644,6 +1646,36 @@ export class AiService implements IAiService {
       isLatest: true,
     });
 
+    // Ticket #61: feasibility gating — refuse to burn an LLM call on a request that names
+    // non-existent entities or is too vague to act on. The verdict is persisted as a normal
+    // AI message so the thread continues and the user can clarify.
+    const inventory = await this.assembleAppInventory(conversation.appId);
+    const verdict = this.aiFeasibilityService.assess(content, inventory, references);
+    if (verdict.type !== 'feasible') {
+      this.aiUtilService.initSSE(response);
+      this.aiUtilService.startHeartbeat(response);
+
+      const aiContent =
+        verdict.type === 'infeasible'
+          ? verdict.messageForUser
+          : `I don't have enough detail to build that. Here are a few ways to proceed:\n\n${verdict.recommendations
+              .map((recommendation) => `- ${recommendation}`)
+              .join('\n')}`;
+
+      const aiMessage = await this.aiConversationMessageRepository.createOne({
+        aiConversationId: conversationId,
+        messageType: 'ai',
+        content: aiContent,
+        parentId: userMessage.id,
+        isLatest: true,
+        metadata: { feasibility: verdict },
+      });
+
+      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
+      response.end();
+      return;
+    }
+
     const messages = this.buildPrdMessages(priorMessages, content, this.buildMentionedResourcesContext(references));
     const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
       organizationId,
@@ -1660,7 +1692,12 @@ export class AiService implements IAiService {
     let fullText = '';
 
     try {
-      const result = await this.aiUtilService.AIGateway('openai', 'send-message', { messages: budgetedMessages }, organizationId);
+      const result = await this.aiUtilService.AIGateway(
+        'openai',
+        'send-message',
+        { messages: budgetedMessages },
+        organizationId
+      );
 
       for await (const chunk of result.textStream) {
         fullText += chunk;

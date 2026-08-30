@@ -103,6 +103,7 @@ const ConversationModeSelector = ({ conversationType, onChange, disabled }) => {
 const ChatBubble = ({ message, vote, onVote, canRegenerate, onRegenerate, isRegenerating, onPromote, isPromoting }) => {
   const { t } = useTranslation();
   const isPersistedAiMessage = message.messageType !== 'user' && Boolean(message.id);
+  const isNoData = message.metadata?.feasibility?.type === 'noData';
 
   return (
     <div
@@ -117,7 +118,18 @@ const ChatBubble = ({ message, vote, onVote, canRegenerate, onRegenerate, isRege
           'tw-bg-background-surface-layer-02 tw-text-text-default': message.messageType !== 'user',
         })}
       >
-        {message.content}
+        {isNoData ? (
+          <div className="tw-flex tw-flex-col tw-gap-2">
+            <span>I don&apos;t have enough detail to build that. Here are a few ways to proceed:</span>
+            <ul className="tw-list-disc tw-pl-4 tw-space-y-1">
+              {message.metadata.feasibility.recommendations.map((recommendation, index) => (
+                <li key={index}>{recommendation}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          message.content
+        )}
       </div>
       {isPersistedAiMessage && (
         <div className="tw-flex tw-items-center tw-gap-0.5 tw-px-1">
@@ -592,12 +604,19 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   };
 
   const latestAiMessage = [...messages].reverse().find((message) => message.messageType !== 'user');
+  const isFeasibilityVerdict = ['infeasible', 'noData'].includes(latestAiMessage?.metadata?.feasibility?.type);
   // Nothing to approve until there's a PRD reply, and once a plan exists this conversation's
   // approval is already in flight or done — CONTEXT.md's "Approve" is one-way per PRD. Never
   // in a Learn conversation: it has no PRD to approve, and the backend refuses approvePrd on
   // one outright — this just keeps the control from being offered in the first place.
+  // Ticket #61: feasibility verdicts (refusal / noData) are also not approvable.
   const canApprove =
-    !isLearnMode && Boolean(latestAiMessage) && !streamingMessage && !isGenerating && steps.length === 0;
+    !isLearnMode &&
+    Boolean(latestAiMessage) &&
+    !streamingMessage &&
+    !isGenerating &&
+    steps.length === 0 &&
+    !isFeasibilityVerdict;
 
   const handleApprove = () => {
     if (!latestAiMessage || isGenerating) return;
