@@ -17,6 +17,7 @@ export const aiService = {
   autoSort,
   getTokenUsage,
   fetchZeroState,
+  getActiveRun,
   approvePrd,
   previewPlan,
   rewindStep,
@@ -228,6 +229,11 @@ async function autoSort(body) {
 async function getTokenUsage(conversationId) {
   const requestOptions = { method: 'GET', headers: authHeader(), credentials: 'include' };
   return fetch(`${config.apiUrl}/ai/conversation/${conversationId}/token-usage`, requestOptions).then(handleResponse);
+}
+
+async function getActiveRun(conversationId) {
+  const requestOptions = { method: 'GET', headers: authHeader(), credentials: 'include' };
+  return fetch(`${config.apiUrl}/ai/conversation/${conversationId}/active-run`, requestOptions).then(handleResponse);
 }
 
 async function fetchZeroState() {

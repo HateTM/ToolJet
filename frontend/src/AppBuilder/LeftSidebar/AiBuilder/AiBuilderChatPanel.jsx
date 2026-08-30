@@ -414,6 +414,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     messages,
     streamingMessage,
     isSending,
+    isGenerating,
     zeroState,
     isZeroStateLoading,
     conversations,
@@ -453,6 +454,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.messages,
       state.streamingMessage,
       state.isSending,
+      state.isGenerating,
       state.zeroState,
       state.isZeroStateLoading,
       state.conversations,
@@ -561,7 +563,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   const handleSend = (content) => {
     const text = content ?? draft;
     const trimmed = text.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed || isGenerating) return;
     // Only mentions still present in the message text ride the payload — a mention the
     // user typed and then deleted is no longer something they referenced. The name must
     // end at a word boundary, so a shorter earlier mention isn't matched by a longer
@@ -575,7 +577,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   };
 
   const handleModeChange = (nextType) => {
-    if (isSending || isApproving) return;
+    if (isGenerating) return;
     setHistoryOpen(false);
     setDraft('');
     pendingMentionsRef.current = [];
@@ -594,10 +596,11 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
   // approval is already in flight or done — CONTEXT.md's "Approve" is one-way per PRD. Never
   // in a Learn conversation: it has no PRD to approve, and the backend refuses approvePrd on
   // one outright — this just keeps the control from being offered in the first place.
-  const canApprove = !isLearnMode && Boolean(latestAiMessage) && !streamingMessage && !isSending && steps.length === 0;
+  const canApprove =
+    !isLearnMode && Boolean(latestAiMessage) && !streamingMessage && !isGenerating && steps.length === 0;
 
   const handleApprove = () => {
-    if (!latestAiMessage || isApproving) return;
+    if (!latestAiMessage || isGenerating) return;
     approvePrd(latestAiMessage.content);
   };
 
@@ -629,7 +632,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
           <ConversationModeSelector
             conversationType={conversationType}
             onChange={handleModeChange}
-            disabled={isSending || isApproving}
+            disabled={isGenerating}
           />
         </div>
         <div className="tw-flex tw-items-center tw-gap-1">
@@ -718,7 +721,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
                   onClick={handleApprove}
                   variant="primary"
                   size="small"
-                  disabled={isApproving}
+                  disabled={isGenerating}
                   data-cy="ai-builder-approve-prd-button"
                 >
                   {isApproving ? <Spinner size="small" /> : tAiBuilder(t, 'looksGoodRunIt', 'Looks good, run it')}
@@ -777,7 +780,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
             value={draft}
             onChange={setDraft}
             onSubmit={() => handleSend()}
-            disabled={isSending}
+            disabled={isGenerating}
             placeholder={
               isLearnMode
                 ? tAiBuilder(t, 'learnInputPlaceholder', 'Ask a question about this app...')
@@ -794,7 +797,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
           onClick={() => handleSend()}
           variant="primary"
           size="medium"
-          disabled={isSending || !draft.trim()}
+          disabled={isGenerating || !draft.trim()}
           aria-label={tAiBuilder(t, 'send', 'Send')}
           data-cy="ai-builder-send-button"
         >

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Res, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, Query, UseGuards } from '@nestjs/common';
 import { User } from '@modules/app/decorators/user.decorator';
 import { UserPermissionsDecorator } from '@modules/app/decorators/user-permission.decorator';
 import { UserPermissions } from '@modules/ability/types';
@@ -7,8 +7,17 @@ import { IAiController } from './interfaces/IController';
 import { InitFeature } from '@modules/app/decorators/init-feature.decorator';
 import { FEATURE_KEY } from './constants';
 import { AiService } from './service';
+import { JwtAuthGuard } from '@modules/session/guards/jwt-auth.guard';
+import { FeatureAbilityGuard } from './ability/guard';
+import { InitModule } from '@modules/app/decorators/init-module';
+import { MODULES } from '@modules/app/constants/modules';
 
+// No global APP_GUARD exists in this app — every route must declare its own guards
+// (see tooljet-db/controller.ts). JwtAuthGuard is what populates request.user for
+// @User(); without it the handlers crash on undefined (live-stack 500 regression).
 @Controller('ai')
+@InitModule(MODULES.AI)
+@UseGuards(JwtAuthGuard, FeatureAbilityGuard)
 export class AiController implements IAiController {
   constructor(private readonly aiService: AiService) {}
 
@@ -140,5 +149,11 @@ export class AiController implements IAiController {
   @Get('conversation/:conversationId')
   async getConversationById(@User() user, @Param('conversationId') conversationId: string) {
     return await this.aiService.getConversationById(conversationId, user.id);
+  }
+
+  @InitFeature(FEATURE_KEY.GET_ACTIVE_RUN)
+  @Get('conversation/:conversationId/active-run')
+  async getActiveRun(@User() user, @Param('conversationId') conversationId: string) {
+    return await this.aiService.getActiveRun(conversationId, user.id);
   }
 }

@@ -6,6 +6,7 @@ jest.mock('@/_services/ai.service', () => ({
     listConversations: jest.fn(),
     createConversation: jest.fn(),
     getConversation: jest.fn(),
+    getActiveRun: jest.fn(),
     fetchZeroState: jest.fn(),
     approvePrd: jest.fn(),
     rewindStep: jest.fn(),
@@ -31,6 +32,7 @@ describe('aiBuilderStore', () => {
     // Most tests don't care about first-message conversation creation; give it a
     // default resolved value so sendMessage's auto-create step doesn't block them.
     aiService.createConversation.mockResolvedValue({ id: 'conv-auto' });
+    aiService.getActiveRun.mockResolvedValue({ active: false });
   });
 
   it('has the expected initial state', () => {

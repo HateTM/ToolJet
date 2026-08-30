@@ -14,9 +14,22 @@ const buildMockAiUtilService = () => ({
   AIGateway: jest.fn(),
   AIGatewayGenerate: jest.fn(),
   sendSSE: jest.fn(),
+  initSSE: jest.fn(),
+  startHeartbeat: jest.fn(),
   createNewConversation: jest.fn(),
   getConversationsList: jest.fn(),
   getConversationById: jest.fn(),
+  estimateTokenCount: jest.fn().mockReturnValue(0),
+  getContextWindow: jest.fn().mockReturnValue(128_000),
+  fitMessagesToContextWindow: jest.fn().mockImplementation((msgs) => ({ messages: msgs, truncated: [] })),
+});
+
+const buildMockAiActiveRunService = () => ({
+  beginRun: jest.fn().mockResolvedValue({ conversationId: 'conv-1' }),
+  touchRun: jest.fn().mockResolvedValue(undefined),
+  endRun: jest.fn().mockResolvedValue(undefined),
+  findActiveRun: jest.fn().mockResolvedValue(null),
+  cleanupStaleRuns: jest.fn().mockResolvedValue(0),
 });
 
 // Defaults to a Generate conversation so the tests that don't care about the type (most of
@@ -87,13 +100,26 @@ const buildMockVersionRepository = () => ({
   getAllVersions: jest.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]),
 });
 
-const buildMockResponse = () => ({
-  setHeader: jest.fn(),
-  write: jest.fn(),
-  end: jest.fn(),
-});
+const buildMockResponse = () => {
+  const closeHandlers: Array<() => void> = [];
+  const response = {
+    setHeader: jest.fn(),
+    write: jest.fn(),
+    flush: jest.fn(),
+    flushHeaders: jest.fn(),
+    end: jest.fn(() => {
+      closeHandlers.forEach((handler) => handler());
+    }),
+    once: jest.fn((event: string, handler: () => void) => {
+      if (event === 'close' || event === 'finish') {
+        closeHandlers.push(handler);
+      }
+    }),
+  };
+  return response;
+};
 
-// Builds an AiService with all 10 constructor dependencies mocked, any of which can be
+// Builds an AiService with all 11 constructor dependencies mocked, any of which can be
 // overridden. Centralizing this avoids repeating the full mock/constructor wiring in
 // every test (and having to update all of them whenever the constructor's shape changes).
 const buildService = (overrides: Partial<Record<string, any>> = {}) => {
@@ -107,6 +133,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const aiResponseVoteRepository = overrides.aiResponseVoteRepository ?? buildMockAiResponseVoteRepository();
   const appInventoryService = overrides.appInventoryService ?? buildMockAppInventoryService();
   const dataSourceInventoryService = overrides.dataSourceInventoryService ?? buildMockDataSourceInventoryService();
+  const aiActiveRunService = overrides.aiActiveRunService ?? buildMockAiActiveRunService();
 
   const service = new AiService(
     aiUtilService as any,
@@ -118,7 +145,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     versionRepository as any,
     aiResponseVoteRepository as any,
     appInventoryService as any,
-    dataSourceInventoryService as any
+    dataSourceInventoryService as any,
+    aiActiveRunService as any
   );
 
   return {
@@ -133,6 +161,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     aiResponseVoteRepository,
     appInventoryService,
     dataSourceInventoryService,
+    aiActiveRunService,
   };
 };
 
@@ -211,6 +240,50 @@ describe('AiService.sendUserMessage', () => {
     );
 
     expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('initializes the SSE stream and starts a heartbeat for an active stream', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
+
+    const response = buildMockResponse();
+
+    await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+    expect(aiUtilService.initSSE).toHaveBeenCalledWith(response);
+    expect(aiUtilService.startHeartbeat).toHaveBeenCalledWith(response);
+  });
+
+  it('registers an active run at stream start and ends it when the stream finishes', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, aiActiveRunService } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
+
+    const response = buildMockResponse();
+
+    await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+    expect(aiActiveRunService.beginRun).toHaveBeenCalledWith('conv-1', 'user-1', 'org-1');
+    expect(aiActiveRunService.endRun).toHaveBeenCalledWith('conv-1');
+  });
+
+  it('ends the active run even when the stream fails', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, aiActiveRunService } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValue({ id: 'user-msg-1' });
+    aiUtilService.AIGateway.mockRejectedValue(new Error('LLM gateway timed out'));
+
+    const response = buildMockResponse();
+
+    await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+    expect(aiActiveRunService.endRun).toHaveBeenCalledWith('conv-1');
   });
 
   it('grounds every request in a PRD-focused system prompt (Generate conversations only ever propose a PRD, never build)', async () => {
@@ -338,6 +411,38 @@ describe('AiService.sendUserMessage', () => {
       )
     ).rejects.toThrow(NotFoundException);
     expect(messageRepo.createOne).not.toHaveBeenCalled();
+  });
+
+  it('fits the assembled prompt to the model context window before sending it to the gateway', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+
+    const budgetedMessages = [{ role: 'system', content: 'truncated system' }, { role: 'user', content: 'Hi' }];
+    aiUtilService.fitMessagesToContextWindow.mockReturnValue({ messages: budgetedMessages, truncated: [{}] });
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
+
+    await service.sendUserMessage(
+      { conversationId: 'conv-1', content: 'Hi' },
+      buildMockResponse() as any,
+      'user-1',
+      'org-1'
+    );
+
+    expect(aiUtilService.fitMessagesToContextWindow).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'system' }),
+        expect.objectContaining({ role: 'user', content: 'Hi' }),
+      ]),
+      'openai'
+    );
+    expect(aiUtilService.AIGateway).toHaveBeenCalledWith(
+      'openai',
+      'send-message',
+      { messages: budgetedMessages },
+      'org-1'
+    );
   });
 });
 
@@ -4028,7 +4133,7 @@ describe('AiService.copilot', () => {
 });
 
 // Ticket #21: phases on the plan and skip during execution.
-  const conversationRepoDefaults = (conversationRepo, messageRepo) => {
+const conversationRepoDefaults = (conversationRepo, messageRepo) => {
   conversationRepo.findById.mockResolvedValue({
     id: 'conv-1',
     appId: 'app-1',
@@ -4041,7 +4146,6 @@ describe('AiService.copilot', () => {
 };
 
 describe('AiService.approvePrd - phases (ticket #21)', () => {
-
   it("persists the planner's phase label on each Step and carries it on the plan SSE event", async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
     conversationRepoDefaults(conversationRepo, messageRepo);
@@ -4256,7 +4360,6 @@ describe('AiService.skipStep (ticket #21)', () => {
 });
 
 describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
-
   const twoStepPlanToolCall = () => ({
     toolCalls: [
       {
@@ -4419,8 +4522,24 @@ describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
       .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')));
 
     stepRepository.createOne
-      .mockResolvedValueOnce({ id: 'step-1', conversationId: 'conv-1', messageId: 'ai-msg-1', order: 0, type: 'CreateTable', description: 'Create a customers table', status: 'pending' })
-      .mockResolvedValueOnce({ id: 'step-2', conversationId: 'conv-1', messageId: 'ai-msg-1', order: 1, type: 'CreateTable', description: 'Create an orders table', status: 'pending' });
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateTable',
+        description: 'Create an orders table',
+        status: 'pending',
+      });
 
     let step1Reads = 0;
     stepRepository.findById.mockImplementation((id: string) => {
@@ -4444,7 +4563,10 @@ describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
     // Neither terminal status was written over 'skipped'...
-    expect(stepRepository.updateOne).not.toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'succeeded' }));
+    expect(stepRepository.updateOne).not.toHaveBeenCalledWith(
+      'step-1',
+      expect.objectContaining({ status: 'succeeded' })
+    );
     expect(stepRepository.updateOne).not.toHaveBeenCalledWith('step-1', expect.objectContaining({ status: 'failed' }));
     // ...the change attempt 2 made is undone...
     expect(agentsService.undoArtifact).toHaveBeenCalled();

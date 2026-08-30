@@ -16,6 +16,7 @@ import {
   QueryableDataSource,
   renderConnectedDataSources,
 } from './services/data-source-inventory.service';
+import { AiActiveRunService } from './services/ai-active-run.service';
 import { VersionRepository } from '@modules/versions/repository';
 import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
@@ -347,10 +348,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe('name of an already-created query (from context) whose data this chart should plot'),
-      chartType: z
-        .enum(['line', 'bar', 'pie'])
-        .default('line')
-        .describe("Chart rendering style; default 'line'"),
+      chartType: z.enum(['line', 'bar', 'pie']).default('line').describe("Chart rendering style; default 'line'"),
     }),
     z.object({
       type: z.literal('Image'),
@@ -590,8 +588,41 @@ export class AiService implements IAiService {
     private readonly versionRepository: VersionRepository,
     private readonly aiResponseVoteRepository: AiResponseVoteRepository,
     private readonly appInventoryService: AppInventoryService,
-    private readonly dataSourceInventoryService: DataSourceInventoryService
+    private readonly dataSourceInventoryService: DataSourceInventoryService,
+    private readonly aiActiveRunService: AiActiveRunService
   ) {}
+
+  /**
+   * Registers an active run for a streaming AI Builder operation, starts a heartbeat
+   * that keeps the run alive, and returns a cleanup function that must be called when
+   * the stream ends (success, error, or client disconnect).
+   */
+  private async beginActiveRun(
+    conversationId: string,
+    userId: string,
+    organizationId: string,
+    response: Response
+  ): Promise<() => void> {
+    await this.aiActiveRunService.beginRun(conversationId, userId, organizationId);
+
+    const heartbeat = setInterval(() => {
+      this.aiActiveRunService.touchRun(conversationId).catch((error) => {
+        this.logger.error(`[activeRun] heartbeat failed for conversationId=${conversationId}`, error?.message);
+      });
+    }, 5000);
+
+    const cleanup = () => {
+      clearInterval(heartbeat);
+      this.aiActiveRunService.endRun(conversationId).catch((error) => {
+        this.logger.error(`[activeRun] endRun failed for conversationId=${conversationId}`, error?.message);
+      });
+    };
+
+    response.once('close', cleanup);
+    response.once('finish', cleanup);
+
+    return cleanup;
+  }
 
   /**
    * Loads the conversation `conversationId` names and asserts it is of `expectedType`.
@@ -758,9 +789,9 @@ export class AiService implements IAiService {
       throw new BadRequestException('No PRD message found to approve');
     }
 
-    response.setHeader('Content-Type', 'text/event-stream');
-    response.setHeader('Cache-Control', 'no-cache');
-    response.setHeader('Connection', 'keep-alive');
+    this.aiUtilService.initSSE(response);
+    this.aiUtilService.startHeartbeat(response);
+    const endActiveRun = await this.beginActiveRun(conversation.id, user.id, user.organizationId, response);
 
     try {
       const appVersionId = await this.resolveAppVersionId(conversation.appId);
@@ -854,6 +885,8 @@ export class AiService implements IAiService {
       this.logger.error(`[approvePrd] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
       this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Failed to build the plan' });
       response.end();
+    } finally {
+      endActiveRun();
     }
   }
 
@@ -886,6 +919,24 @@ export class AiService implements IAiService {
     // steps (and their planned tables) are stripped from what the preview shows.
     const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
     return { steps: this.mapStepsForWire(filteredSteps) };
+  }
+
+  /**
+   * Returns the active run for a conversation, or null if none. Ownership is enforced so a
+   * caller cannot probe another user's conversations.
+   */
+  async getActiveRun(conversationId: string, userId: string): Promise<{ active: boolean; startedAt?: Date }> {
+    const conversation = await this.aiConversationRepository.findById(conversationId);
+    if (!conversation || conversation.userId !== userId) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const run = await this.aiActiveRunService.findActiveRun(conversationId);
+    if (!run) {
+      return { active: false };
+    }
+
+    return { active: true, startedAt: run.startedAt };
   }
 
   /**
@@ -1199,9 +1250,7 @@ export class AiService implements IAiService {
 
     const unknownTables = [
       ...new Set(
-        referencedNames.filter(
-          (name) => name === null || (!planTableNames.has(name) && !existingTableNames.has(name))
-        )
+        referencedNames.filter((name) => name === null || (!planTableNames.has(name) && !existingTableNames.has(name)))
       ),
     ];
     if (unknownTables.length) {
@@ -1535,7 +1584,11 @@ export class AiService implements IAiService {
    * optional trailing user turn (sendUserMessage's new message — regenerateAiMessage has
    * none, since the user turn it's replying to is already the last entry in priorMessages).
    */
-  private buildPrdMessages(priorMessages: AiConversationMessage[], trailingUserContent?: string, referencesContext?: string | null) {
+  private buildPrdMessages(
+    priorMessages: AiConversationMessage[],
+    trailingUserContent?: string,
+    referencesContext?: string | null
+  ) {
     return [
       { role: 'system', content: PRD_SYSTEM_PROMPT },
       ...(referencesContext ? [{ role: 'system', content: referencesContext }] : []),
@@ -1577,7 +1630,7 @@ export class AiService implements IAiService {
     // Generate-only, the mirror of sendUserDocsMessage being Learn-only: this path answers
     // with a PRD, and a PRD in a Learn conversation could never be approved (approvePrd
     // refuses one), so it would be a proposal with no way to act on it.
-    await this.loadConversationOfType(conversationId, 'generate', userId);
+    const conversation = await this.loadConversationOfType(conversationId, 'generate', userId);
 
     // Conversation history precedes the new user message; it's fetched before
     // persisting so the new message isn't accidentally double-counted.
@@ -1592,15 +1645,22 @@ export class AiService implements IAiService {
     });
 
     const messages = this.buildPrdMessages(priorMessages, content, this.buildMentionedResourcesContext(references));
+    const { messages: budgetedMessages, truncated } = this.aiUtilService.fitMessagesToContextWindow(
+      messages,
+      'openai'
+    );
+    if (truncated.length) {
+      this.logger.warn(`[sendUserMessage] context truncated: ${JSON.stringify(truncated)}`);
+    }
 
-    response.setHeader('Content-Type', 'text/event-stream');
-    response.setHeader('Cache-Control', 'no-cache');
-    response.setHeader('Connection', 'keep-alive');
+    this.aiUtilService.initSSE(response);
+    this.aiUtilService.startHeartbeat(response);
+    const endActiveRun = await this.beginActiveRun(conversation.id, userId, organizationId, response);
 
     let fullText = '';
 
     try {
-      const result = await this.aiUtilService.AIGateway('openai', 'send-message', { messages }, organizationId);
+      const result = await this.aiUtilService.AIGateway('openai', 'send-message', { messages: budgetedMessages }, organizationId);
 
       for await (const chunk of result.textStream) {
         fullText += chunk;
@@ -1621,6 +1681,8 @@ export class AiService implements IAiService {
       this.logger.error(`[sendUserMessage] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
       this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Something went wrong' });
       response.end();
+    } finally {
+      endActiveRun();
     }
   }
 
@@ -1684,9 +1746,9 @@ export class AiService implements IAiService {
       isLatest: true,
     });
 
-    response.setHeader('Content-Type', 'text/event-stream');
-    response.setHeader('Cache-Control', 'no-cache');
-    response.setHeader('Connection', 'keep-alive');
+    this.aiUtilService.initSSE(response);
+    this.aiUtilService.startHeartbeat(response);
+    const endActiveRun = await this.beginActiveRun(conversation.id, userId, organizationId, response);
 
     let fullText = '';
 
@@ -1698,8 +1760,20 @@ export class AiService implements IAiService {
         content,
         this.buildMentionedResourcesContext(references)
       );
+      const { messages: budgetedMessages, truncated } = this.aiUtilService.fitMessagesToContextWindow(
+        messages,
+        'openai'
+      );
+      if (truncated.length) {
+        this.logger.warn(`[sendUserDocsMessage] context truncated: ${JSON.stringify(truncated)}`);
+      }
 
-      const result = await this.aiUtilService.AIGateway('openai', 'send-docs-message', { messages }, organizationId);
+      const result = await this.aiUtilService.AIGateway(
+        'openai',
+        'send-docs-message',
+        { messages: budgetedMessages },
+        organizationId
+      );
 
       for await (const chunk of result.textStream) {
         fullText += chunk;
@@ -1723,6 +1797,8 @@ export class AiService implements IAiService {
       );
       this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Something went wrong' });
       response.end();
+    } finally {
+      endActiveRun();
     }
   }
 
@@ -1945,11 +2021,18 @@ export class AiService implements IAiService {
       conversation?.conversationType === 'learn'
         ? this.buildLearnMessages(await this.assembleAppInventory(conversation.appId), priorMessages)
         : this.buildPrdMessages(priorMessages);
+    const { messages: budgetedMessages, truncated } = this.aiUtilService.fitMessagesToContextWindow(
+      messages,
+      'openai'
+    );
+    if (truncated.length) {
+      this.logger.warn(`[regenerateAiMessage] context truncated: ${JSON.stringify(truncated)}`);
+    }
 
     const result = await this.aiUtilService.AIGatewayGenerate(
       'openai',
       'regenerate-message',
-      { messages },
+      { messages: budgetedMessages },
       organizationId
     );
 
