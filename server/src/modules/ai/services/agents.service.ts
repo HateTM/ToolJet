@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { IAgentsService } from '../interfaces/IAgentsService';
 import { TooljetDbTableOperationsService } from '@modules/tooljet-db/services/tooljet-db-table-operations.service';
@@ -11,6 +11,8 @@ import { DataSourcesRepository } from '@modules/data-sources/repository';
 import { VersionRepository } from '@modules/versions/repository';
 import { Target } from '@entities/event_handler.entity';
 import { StepType } from '@entities/step.entity';
+import { sanitizeComponentSection } from '../helpers/component-type-validator';
+import { normalizeMalformedOptionsProperty } from '../helpers/component-options.utils';
 
 // Maps a ToolJet DB column data type to the Form field type the widget's JSON schema
 // understands. Every TJDB type from service.ts gets a deliberate choice; the fallback
@@ -171,6 +173,38 @@ export class AgentsService implements IAgentsService {
    * canvas footprint (matching the real widget's own `defaultSize` from
    * frontend/src/AppBuilder/WidgetManager/widgets/*.js, not invented).
    */
+  private readonly logger = new Logger(AgentsService.name);
+
+  /**
+   * Ticket #60: every assembled property/style of an LLM-generated widget is
+   * validated against the widget's componentsMeta before the diff is written —
+   * unknown keys are dropped and invalid values fall back to the widget
+   * defaults, each with a warning. Options structures get a structural repair
+   * pass. Warnings ride on the returned artifact content (and the server log),
+   * so a hallucinated property degrades to a warn instead of breaking render.
+   */
+  private sanitizeWidgetDefinition(
+    type: string,
+    properties: Record<string, any>,
+    styles: Record<string, any>
+  ): { properties: Record<string, any>; styles: Record<string, any>; warnings: string[] } {
+    // Options run first: the normalizer repairs string/char-array LLM output into a real
+    // array, so the section sanitizer (which expects the widget's array-shaped default)
+    // doesn't mistake recoverable options for a type error and drop them.
+    const { warnings: optionsWarnings } = normalizeMalformedOptionsProperty(type, properties);
+    const { result: sanitizedProperties, warnings: propertyWarnings } = sanitizeComponentSection(
+      type,
+      'properties',
+      properties
+    );
+    const { result: sanitizedStyles, warnings: styleWarnings } = sanitizeComponentSection(type, 'styles', styles);
+    const warnings = [...optionsWarnings, ...propertyWarnings, ...styleWarnings];
+    if (warnings.length) {
+      this.logger.warn(`[createWidgetComponent] ${type} sanitized: ${JSON.stringify(warnings)}`);
+    }
+    return { properties: sanitizedProperties, styles: sanitizedStyles, warnings };
+  }
+
   private async createWidgetComponent(
     appVersionId: string,
     pageId: string,
@@ -179,15 +213,16 @@ export class AgentsService implements IAgentsService {
     properties: Record<string, any>,
     styles: Record<string, any>,
     layout: { width: number; height: number }
-  ): Promise<{ id: string; pageId: string; type: string }> {
+  ): Promise<{ id: string; pageId: string; type: string; warnings?: string[] }> {
     const componentId = uuidv4();
+    const sanitized = this.sanitizeWidgetDefinition(type, properties, styles);
     const componentDiff = {
       [componentId]: {
         name,
         type,
         parent: null,
-        properties,
-        styles,
+        properties: sanitized.properties,
+        styles: sanitized.styles,
         layouts: {
           desktop: { top: 0, left: 0, width: layout.width, height: layout.height },
         },
@@ -198,7 +233,7 @@ export class AgentsService implements IAgentsService {
     // {} — see component.service.ts's dbTransactionForAppVersionAssociationsUpdate wrapper);
     // componentId is already known since it's generated here, so nothing is lost.
     await this.componentsService.create(componentDiff, pageId, appVersionId);
-    return { id: componentId, pageId, type };
+    return { id: componentId, pageId, type, warnings: sanitized.warnings };
   }
 
   /**
