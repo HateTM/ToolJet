@@ -1009,7 +1009,9 @@
       "skipStep": "Пропустить этот шаг",
       "defaultPhaseName": "Этапы реализации",
       "undoBuild": "Отменить эту сборку",
-      "undoBuildHint": "Отменить все изменения, внесённые этой сборкой"
+      "undoBuildHint": "Отменить все изменения, внесённые этой сборкой",
+      "seedReportCounts": "Демо-данные: вставлено {{inserted}}, обновлено {{updated}}, ошибок {{failed}}",
+      "seedReportRowFailed": "Строка {{row}}: {{error}}"
     },
     "Sources": {
       "text": "Источники",

@@ -27,7 +27,7 @@ The table definition (name, columns, foreign keys) the planner proposes for a `C
 _Avoid_: SQL, DDL
 
 **Planned seed rows**:
-The sample-data rows (1–50 plain records of column → primitive value) the planner proposes alongside a **Planned table** when the PRD calls for sample or starting data (ticket #48, [ADR-0024](docs/adr/0024-seed-data-is-planner-proposed-structured-rows-on-the-create-table-step.md)). The `Preview` renders them as a table, and `executeCreateTableStep` inserts them verbatim right after creating the table — no LLM call, no SQL. Malformed rows are dropped at plan time; the per-step LLM fallback never seeds.
+The sample-data rows (1–50 plain records of column → primitive value) the planner proposes alongside a **Planned table** when the PRD calls for sample or starting data (ticket #48, [ADR-0024](docs/adr/0024-seed-data-is-planner-proposed-structured-rows-on-the-create-table-step.md)). The `Preview` renders them as a table, and `executeCreateTableStep` inserts them verbatim right after creating the table — no LLM call, no SQL. Malformed rows are dropped at plan time; the per-step LLM fallback never seeds. Executed one row per query with a per-row outcome report in the run UI (ticket #62): a failed row leaves the rest standing, and only a total seed failure fails the Step.
 _Avoid_: Seed query, seed SQL, bulk insert step
 
 **Step**:

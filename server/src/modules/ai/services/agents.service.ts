@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { IAgentsService } from '../interfaces/IAgentsService';
+import { IAgentsService, SeedTableReport } from '../interfaces/IAgentsService';
 import { TooljetDbTableOperationsService } from '@modules/tooljet-db/services/tooljet-db-table-operations.service';
 import { TooljetDbBulkUploadService } from '@modules/tooljet-db/services/tooljet-db-bulk-upload.service';
 import { PageService } from '@modules/apps/services/page.service';
@@ -64,29 +64,53 @@ export class AgentsService implements IAgentsService {
   }
 
   /**
-   * Inserts seed rows into an already-created ToolJet DB table (ticket #48). Delegates to
-   * the bulk-upsert backend: rows carrying the primary key values upsert (the planner-
-   * provable equivalent of the study apps' `INSERT … ON CONFLICT DO NOTHING`), rows
-   * omitting a serial primary key plain-INSERT with the value auto-generated. A failed
-   * backend status is rethrown as an exception so the Step-execution retry loop sees it
-   * like any other step error, rather than silently reporting a seeded table that isn't.
+   * Inserts seed rows into an already-created ToolJet DB table (ticket #48, per-query
+   * reporting per ticket #62). Each row is executed as its own upsert query — a row
+   * carrying the primary key values upserts (the planner-provable equivalent of the study
+   * apps' `INSERT … ON CONFLICT DO NOTHING`), a row omitting a serial primary key
+   * plain-INSERTs with the value auto-generated — and every operation's outcome (status,
+   * row counts, error) lands in the returned report so the run UI can show what actually
+   * landed in the table.
+   *
+   * A failed row does not abort the remaining ones (ticket #62): the report accumulates
+   * partial success. Only a seed where *every* row failed throws into the Step-execution
+   * retry loop — that means the error is systematic (bad table, bad primary keys), while
+   * one bad row among successes would just fail the same way again on retry.
    */
   async SeedTable(
     organizationId: string,
     tableId: string,
     primaryKeyColumns: string[],
     rows: Record<string, any>[]
-  ): Promise<{ inserted: number; updated: number }> {
-    const result = await this.tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey(
-      rows,
-      tableId,
-      primaryKeyColumns,
-      organizationId
-    );
-    if (result?.status === 'failed') {
-      throw new Error(`Seeding the table failed: ${result.error}`);
+  ): Promise<SeedTableReport> {
+    const report: SeedTableReport = { total: rows.length, inserted: 0, updated: 0, failed: 0, failures: [] };
+
+    for (const [index, row] of rows.entries()) {
+      let result;
+      try {
+        result = await this.tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey(
+          [row],
+          tableId,
+          primaryKeyColumns,
+          organizationId
+        );
+      } catch (error) {
+        result = { status: 'failed', error: error?.message, inserted: 0, updated: 0 };
+      }
+
+      if (result?.status === 'failed') {
+        report.failed += 1;
+        report.failures.push({ row: index + 1, error: result.error || 'Unknown seed error' });
+        continue;
+      }
+      report.inserted += result.inserted ?? 0;
+      report.updated += result.updated ?? 0;
     }
-    return { inserted: result.inserted, updated: result.updated };
+
+    if (report.total > 0 && report.failed === report.total) {
+      throw new Error(`Seeding the table failed: ${report.failures[0].error}`);
+    }
+    return report;
   }
 
   /**

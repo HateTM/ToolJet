@@ -1,16 +1,28 @@
 import { StepType } from '@entities/step.entity';
 
+// Per-query outcome of a seed (ticket #62): one report entry per attempted row, so the run
+// UI can show exactly which seed rows landed and which failed with what error.
+export interface SeedTableReport {
+  total: number;
+  inserted: number;
+  updated: number;
+  failed: number;
+  failures: Array<{ row: number; error: string }>;
+}
+
 export interface IAgentsService {
   CreateTable(organizationId: string, tables: any): Promise<any>;
 
   // Inserts planner-proposed seed rows into an already-created ToolJet DB table
-  // (ticket #48). Throws when the backend bulk-upsert reports an error.
+  // (ticket #48). Each row runs as its own query and gets its own report entry
+  // (ticket #62); a failed row does not abort the others. Throws only when every
+  // row failed.
   SeedTable(
     organizationId: string,
     tableId: string,
     primaryKeyColumns: string[],
     rows: Record<string, any>[]
-  ): Promise<{ inserted: number; updated: number }>;
+  ): Promise<SeedTableReport>;
 
   // `type` + `props` per ADR-0002's generic "CreateComponent(type, props)" tool; the
   // props shape is type-specific (see AgentsService.CreateComponent's doc comment).

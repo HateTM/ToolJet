@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { IAiService } from './interfaces/IService';
 import { AiUtilService } from './util.service';
 import { AgentsService } from './services/agents.service';
+import { SeedTableReport } from './interfaces/IAgentsService';
 import { AiConversationRepository } from './repositories/ai-conversation.repository';
 import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
 import { ArtifactRepository } from './repositories/artifact.repository';
@@ -1279,8 +1280,10 @@ export class AiService implements IAiService {
       const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
       // Ticket #48: seed rows the planner proposed (and the preview showed) are inserted
       // here, right after the table exists — same deterministic, no-LLM contract as the
-      // table itself. A failure throws into the retry loop like any other step error.
-      let seed: { inserted: number; updated: number } | undefined;
+      // table itself. Ticket #62: rows run as individual queries with a per-row report
+      // (counts + failures) that rides into the Artifact so the run UI can show what
+      // landed. Only a total seed failure throws into the retry loop.
+      let seed: SeedTableReport | undefined;
       if (isWellFormedSeedRows(step.plannedSeedRows)) {
         const primaryKeyColumns = step.plannedTable.columns
           .filter((column: any) => column.is_primary_key)

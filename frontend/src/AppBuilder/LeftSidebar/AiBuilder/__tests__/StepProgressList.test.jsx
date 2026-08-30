@@ -5,9 +5,18 @@ import userEvent from '@testing-library/user-event';
 import { StepProgressList } from '../AiBuilderChatPanel';
 
 // react-i18next's `t(key, fallback)` — the component always passes an English fallback, so
-// the tests can query by the same visible text a user would see.
+// the tests can query by the same visible text a user would see. The `{{var}}` interpolation
+// real i18next performs is mimicked here for the seed-report strings (ticket #62).
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (_key, fallback) => fallback }),
+  useTranslation: () => ({
+    t: (_key, fallback, options) =>
+      fallback && options
+        ? Object.entries(options).reduce(
+            (text, [name, value]) => text.replaceAll(`{{${name}}}`, String(value)),
+            fallback
+          )
+        : fallback,
+  }),
 }));
 
 // lucide-react is ESM-only and outside this repo's Jest transform allowlist; the icons
@@ -137,5 +146,69 @@ describe('StepProgressList undo offer (ticket #15)', () => {
     });
 
     expect(screen.queryByText('Undo this build')).not.toBeInTheDocument();
+  });
+});
+
+// Ticket #62: a succeeded CreateTable step's seed report — counts of what landed, and
+// each failed row with its error when the seed partially failed.
+describe('StepProgressList seed report (ticket #62)', () => {
+  it('shows the seeded row counts for a succeeded step whose artifact carries a seed report', () => {
+    renderList({
+      steps: [
+        {
+          id: 'step-1',
+          type: 'CreateTable',
+          description: 'Create a table',
+          status: 'succeeded',
+          artifact: { content: { seed: { total: 3, inserted: 2, updated: 1, failed: 0, failures: [] } } },
+        },
+      ],
+    });
+
+    expect(screen.getByText('Sample data: 2 inserted, 1 updated, 0 failed')).toBeInTheDocument();
+    expect(screen.queryByText(/Row \d+:/)).not.toBeInTheDocument();
+  });
+
+  it('lists each failed seed row with its error on a partially failed seed', () => {
+    renderList({
+      steps: [
+        {
+          id: 'step-1',
+          type: 'CreateTable',
+          description: 'Create a table',
+          status: 'succeeded',
+          artifact: {
+            content: {
+              seed: {
+                total: 3,
+                inserted: 2,
+                updated: 0,
+                failed: 1,
+                failures: [{ row: 2, error: 'invalid input syntax for type boolean' }],
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    expect(screen.getByText('Sample data: 2 inserted, 0 updated, 1 failed')).toBeInTheDocument();
+    expect(screen.getByText('Row 2: invalid input syntax for type boolean')).toBeInTheDocument();
+  });
+
+  it('shows nothing for a succeeded step without a seed', () => {
+    renderList({
+      steps: [
+        {
+          id: 'step-1',
+          type: 'CreateTable',
+          description: 'Create a table',
+          status: 'succeeded',
+          artifact: { content: {} },
+        },
+      ],
+    });
+
+    expect(screen.queryByText(/Sample data:/)).not.toBeInTheDocument();
   });
 });

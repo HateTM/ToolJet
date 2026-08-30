@@ -253,6 +253,38 @@ const ZeroState = ({ zeroState, isZeroStateLoading, onSuggestionClick, isLearnMo
   );
 };
 
+// Ticket #62: per-query seed report for a succeeded CreateTable step — what landed in the
+// table (counts) and, when some rows failed, each failed row with its error. The report
+// rides in the Artifact's content, produced by AgentsService.SeedTable.
+const SeedReportSection = ({ seed }) => {
+  const { t } = useTranslation();
+  if (!seed || !seed.total) return null;
+
+  return (
+    <div className="tw-mt-1 tw-flex tw-flex-col tw-gap-0.5" data-cy="ai-builder-seed-report">
+      <span className="tw-text-xs tw-text-text-placeholder">
+        {t(
+          'leftSidebar.AI Builder.seedReportCounts',
+          'Sample data: {{inserted}} inserted, {{updated}} updated, {{failed}} failed',
+          {
+            inserted: seed.inserted ?? 0,
+            updated: seed.updated ?? 0,
+            failed: seed.failed ?? 0,
+          }
+        )}
+      </span>
+      {(seed.failures || []).map((failure) => (
+        <span key={failure.row} className="tw-text-xs tw-text-text-danger">
+          {t('leftSidebar.AI Builder.seedReportRowFailed', 'Row {{row}}: {{error}}', {
+            row: failure.row,
+            error: failure.error,
+          })}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const StepStatusIcon = ({ status }) => {
   if (status === 'running') return <Spinner size="small" />;
   if (status === 'succeeded') return <Check width="14" height="14" className="tw-text-icon-success" />;
@@ -339,6 +371,9 @@ export const StepProgressList = ({
                   </span>
                   {step.status === 'failed' && step.errorMessage && (
                     <span className="tw-text-xs tw-text-text-danger">{step.errorMessage}</span>
+                  )}
+                  {step.status === 'succeeded' && step.artifact?.content?.seed && (
+                    <SeedReportSection seed={step.artifact.content.seed} />
                   )}
                 </div>
                 {step.status === 'succeeded' && step.id && (

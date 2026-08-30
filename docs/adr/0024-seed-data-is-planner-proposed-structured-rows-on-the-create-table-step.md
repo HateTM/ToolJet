@@ -4,6 +4,8 @@ status: accepted
 
 # Seed data is planner-proposed structured rows, inserted by the same CreateTable step that creates the table
 
+> **Amended by ticket #62 (per-query seed report).** Seed rows are executed one row per query (`AgentsService.SeedTable`), each outcome recorded in a per-row report that rides in the CreateTable Artifact's content and renders in the run UI. A failed row no longer aborts the seed: the report accumulates partial success, and only a seed where *every* row failed throws into the step-execution retry loop. Everything below stands except the last sentence of "Execution reuses the existing bulk upsert".
+
 Ticket #48 revisits ADR-0020's rejection of seed data. That rejection rested on one factual claim — "ToolJet DB has no seed/bulk-insert operation" — and the claim was wrong. A production study of a generated app on app.tooljet.ai (the "Personal Task Manager" app) shows the production generator seeds its apps, and our own fork already ships the server capability this fork's ADR declared missing: `TooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey` performs bulk inserts with conflict handling against the ToolJet DB, no new server code required. The decision below therefore **amends** ADR-0020 (its schema-preview mechanics, inline-SQL rejection, and two-phase approve all stand untouched) and **supersedes only** its "Rejected: seed data in v1" clause; ADR-0020 carries the amendment banner.
 
 ## The decision
