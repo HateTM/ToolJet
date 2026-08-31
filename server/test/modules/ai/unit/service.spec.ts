@@ -4700,3 +4700,121 @@ describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
     expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', { succeeded: 0, total: 2 });
   });
 });
+
+describe('AiService.generate-path prompt budget (ticket #58)', () => {
+  // These endpoints force a tool call through AIGatewayGenerate (no SSE stream), so unlike the
+  // chat paths they used to send the assembled prompt straight to the gateway — now they fit it
+  // into the model's context window first, with the same system → messages priority order.
+  const suggestionToolCall = {
+    toolCalls: [{ toolName: 'proposeFix', args: { fixedValue: 'x', explanation: 'ok' } }],
+  };
+
+  it('fits the fix-with-ai prompt to the context window before sending it, and logs truncation', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
+    aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
+      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      truncated: [
+        { role: 'user', originalTokens: 100, keptTokens: 50, droppedTokens: 50, reason: 'content-truncated' },
+      ],
+    });
+
+    await service.fixWithAi({ expression: 'a', errorMessage: 'b' }, 'org-1');
+
+    expect(aiUtilService.fitMessagesToContextWindowForOrg).toHaveBeenCalledWith(
+      'org-1',
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'system' }),
+        expect.objectContaining({ role: 'user', content: expect.stringContaining('a') }),
+      ])
+    );
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
+      'openai',
+      'fix-with-ai',
+      expect.objectContaining({
+        system: 'system',
+        messages: [{ role: 'user', content: 'trimmed' }],
+      }),
+      'org-1'
+    );
+  });
+
+  it('keeps the trimmed system message rather than dropping it, even when the whole prompt overflows', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
+    aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({ messages: [], truncated: [] });
+
+    await service.fixWithAi({ expression: 'a', errorMessage: 'b' }, 'org-1');
+
+    // Pass 1 of the fitter always keeps the first system message (possibly trimmed to ''), so the
+    // budgeted prompt is never emptied out — the system prompt survives even a total overflow.
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
+      'openai',
+      'fix-with-ai',
+      expect.objectContaining({ system: '' }),
+      'org-1'
+    );
+  });
+
+  it('fits the Copilot prompt to the context window before sending it', async () => {
+    const { service, aiUtilService } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [{ toolName: 'writeCode', args: { code: 'x', explanation: 'ok' } }],
+    });
+    aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
+      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      truncated: [],
+    });
+
+    await service.copilot({ prompt: 'fetch the users', appId: 'app-1' }, 'org-1');
+
+    expect(aiUtilService.fitMessagesToContextWindowForOrg).toHaveBeenCalledWith(
+      'org-1',
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'system' }),
+        expect.objectContaining({ role: 'user', content: expect.stringContaining('fetch the users') }),
+      ])
+    );
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
+      'openai',
+      'copilot',
+      expect.objectContaining({
+        system: 'system',
+        messages: [{ role: 'user', content: 'trimmed' }],
+      }),
+      'org-1'
+    );
+  });
+
+  it('fits the step-plan prompt to the context window before sending it', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [{ toolName: 'proposeStepPlan', args: { steps: [{ type: 'createTable', description: 't' }] } }],
+    });
+    stepRepository.createOne.mockResolvedValue({ id: 'step-1', type: 'CreateTable', description: 't', status: 'pending' });
+    aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
+      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      truncated: [],
+    });
+
+    // previewPlan loads a generate conversation of the caller's before planning.
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([{ id: 'ai-msg-1', messageType: 'ai', content: 'PRD' }]);
+
+    await service.previewPlan('conv-1', USER, PERMISSIONS);
+
+    expect(aiUtilService.fitMessagesToContextWindowForOrg).toHaveBeenCalledWith(
+      'org-1',
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'system' }),
+        expect.objectContaining({ role: 'user' }),
+      ])
+    );
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
+      'openai',
+      'approve-prd-plan',
+      expect.objectContaining({ system: 'system', messages: [{ role: 'user', content: 'trimmed' }] }),
+      'org-1'
+    );
+  });
+});
