@@ -1062,6 +1062,8 @@
             "undoBuild": "Undo this build",
             "undoBuildHint": "Undo everything this build changed",
             "defaultPhaseName": "Implementation steps",
+            "seedReportCounts": "Sample data: {{inserted}} inserted, {{updated}} updated, {{failed}} failed",
+            "seedReportRowFailed": "Row {{row}}: {{error}}",
             "regenerate": "Regenerate response",
             "voteUp": "Good response",
             "voteDown": "Bad response"

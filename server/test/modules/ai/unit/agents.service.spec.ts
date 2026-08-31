@@ -772,33 +772,65 @@ describe('AgentsService.undoArtifact', () => {
 });
 
 /** @group ai-builder */
-describe('AgentsService.SeedTable (ticket #48)', () => {
+describe('AgentsService.SeedTable (ticket #48, per-query report #62)', () => {
   const rows = [
     { title: 'First task', done: false },
     { title: 'Second task', done: true },
   ];
 
-  it('delegates to the backend bulk upsert with the table id, primary keys and rows', async () => {
+  it('executes each seed row as its own upsert query and reports the totals', async () => {
     const { service, tooljetDbBulkUploadService } = buildAgentsService();
-    tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey.mockResolvedValue({
-      status: 'ok',
-      inserted: 2,
-      updated: 0,
-      rows,
-    });
+    tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey
+      .mockResolvedValueOnce({ status: 'ok', inserted: 1, updated: 0 })
+      .mockResolvedValueOnce({ status: 'ok', inserted: 0, updated: 1 });
 
     const result = await service.SeedTable('org-1', 'tjdb-uuid', ['id'], rows);
 
-    expect(tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey).toHaveBeenCalledWith(
-      rows,
-      'tjdb-uuid',
-      ['id'],
-      'org-1'
-    );
-    expect(result).toEqual({ inserted: 2, updated: 0 });
+    expect(tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey).toHaveBeenCalledTimes(2);
+    rows.forEach((row, index) => {
+      expect(tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey).toHaveBeenNthCalledWith(
+        index + 1,
+        [row],
+        'tjdb-uuid',
+        ['id'],
+        'org-1'
+      );
+    });
+    expect(result).toEqual({ total: 2, inserted: 1, updated: 1, failed: 0, failures: [] });
   });
 
-  it('throws when the backend reports a failed status instead of returning it as success', async () => {
+  it('reports a failed row and keeps seeding the remaining rows (partial success, ticket #62)', async () => {
+    const { service, tooljetDbBulkUploadService } = buildAgentsService();
+    tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey
+      .mockResolvedValueOnce({ status: 'failed', error: 'invalid input syntax for type boolean', inserted: 0, updated: 0 })
+      .mockResolvedValueOnce({ status: 'ok', inserted: 1, updated: 0 });
+
+    const result = await service.SeedTable('org-1', 'tjdb-uuid', ['id'], rows);
+
+    expect(tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      total: 2,
+      inserted: 1,
+      updated: 0,
+      failed: 1,
+      failures: [{ row: 1, error: 'invalid input syntax for type boolean' }],
+    });
+  });
+
+  it('treats a backend thrown error on one row as a failure, not an abort', async () => {
+    const { service, tooljetDbBulkUploadService } = buildAgentsService();
+    tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey
+      .mockRejectedValueOnce(new Error('connection refused'))
+      .mockResolvedValueOnce({ status: 'ok', inserted: 1, updated: 0 });
+
+    const result = await service.SeedTable('org-1', 'tjdb-uuid', ['id'], rows);
+
+    expect(result.failed).toBe(1);
+    expect(result.inserted).toBe(1);
+    expect(result.failures).toEqual([{ row: 1, error: 'connection refused' }]);
+  });
+
+  it('throws only when every row failed', async () => {
     const { service, tooljetDbBulkUploadService } = buildAgentsService();
     tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey.mockResolvedValue({
       status: 'failed',
@@ -811,5 +843,14 @@ describe('AgentsService.SeedTable (ticket #48)', () => {
     await expect(service.SeedTable('org-1', 'tjdb-uuid', ['id'], rows)).rejects.toThrow(
       'Seeding the table failed: Table not found'
     );
+  });
+
+  it('reports an empty seed as a zero report without calling the backend', async () => {
+    const { service, tooljetDbBulkUploadService } = buildAgentsService();
+
+    const result = await service.SeedTable('org-1', 'tjdb-uuid', ['id'], []);
+
+    expect(tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey).not.toHaveBeenCalled();
+    expect(result).toEqual({ total: 0, inserted: 0, updated: 0, failed: 0, failures: [] });
   });
 });
