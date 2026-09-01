@@ -19,3 +19,13 @@ Layout generation/post-processing is explicitly **not** part of the engine — i
 - The engine's internal stage boundaries (classify/PRD/LLD/planner/per-entity/evaluate) are free to evolve independently of the server, as long as the PRD and Step-list shapes at the boundary don't change.
 - LLD explicitly excludes data seeding — seeding real datasource tables stays server-side (`seedPostgresDatasource`/`seedMongoDatasource`), out of scope for this map (see issue #79, "Out of scope").
 - Evaluate/LLM-as-judge is a new stage with no fork precedent; its concrete pass/fail contract with the rest of the pipeline is left to implementation, not fixed by this ADR.
+
+## Note (2026-09-01, ticket #110): the pipeline's PRD stage is a plain LLM call
+
+The engine-side `prd` pipeline stage does **not** reuse #91's `streamPrd`/SSE seam. It
+stays a plain (non-streaming) LLM call inside the pipeline: streaming to the browser is
+the server proxy's concern (ADR-0027), #91's `POST /generate/prd` route remains the
+streaming PRD path end-to-end, and #113 will stream the PRD artifact over SSE from the
+proxy. The pipeline stage exists for non-streaming/internal callers (e.g. batch
+regeneration); duplicating the prompt is avoided by both using the same
+`prompts/prd.ts` system prompt from the #93 library.

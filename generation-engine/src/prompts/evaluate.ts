@@ -1,3 +1,4 @@
+// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Placeholder — ticket #93 (docs/adr/0030). Issue #82's evaluate stage (LLM-as-judge
 // post-processing) has no equivalent in the fork today. Content is left for the ticket
 // that implements this stage; per issue #87's testing-strategy decision, LLM output

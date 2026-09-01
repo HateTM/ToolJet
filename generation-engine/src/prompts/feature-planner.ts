@@ -1,3 +1,4 @@
+// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Placeholder — ticket #93 (docs/adr/0030). Issue #82's feature-planner stage sits after
 // LLD in the pipeline (classification -> PRD -> LLD -> feature-planner -> per-entity
 // generation -> evaluate). It is not yet settled whether this stage subsumes the fork's

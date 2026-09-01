@@ -33,6 +33,10 @@ _Avoid_: Seed query, seed SQL, bulk insert step
 **Step**:
 One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container), creates a ToolJet DB table, or creates a Query — against a ToolJet DB table, or against a `Queryable data source` — see [ADR-0002](docs/adr/0002-generic-component-tool.md) and [ADR-0019](docs/adr/0019-createquery-targets-connected-sql-sources-from-a-schema-it-was-shown.md).
 
+**Feature plan**:
+The Generation engine's internal, topological ordering of the tables an LLD proposes — produced by the engine's feature-planner stage so per-entity generation creates dependencies before their dependents (see [ADR-0028](docs/adr/0028-generation-engine-pipeline-stages.md)). Distinct from the `Step` list (see [ADR-0040](docs/adr/0040-feature-planner-and-step-plan-are-distinct-stages.md)): the feature plan orders engine-internal generation only and is never shown to the user; the Step list is the user-facing, previewable plan generated once at `Approve`/`Preview`.
+_Avoid_: Plan (unqualified), build plan, step plan
+
 **Artifact**:
 The concrete output of one `Step` — the generated/changed piece of the `App` (e.g. a component, a table). Persisted as `Artifact`, linked to the `Conversation` and to the specific AI `Message` that produced it.
 _Avoid_: Output, result, generation
@@ -106,3 +110,7 @@ A new top-level directory, standalone Node/TypeScript service built on Fastify (
 **Effective LLM config**:
 The resolved `{provider, model, apiKey, baseURL?}` envelope that crosses the server→Generation engine boundary for one request — either the org's decrypted BYOK settings or the env-configured fallback, already resolved before it reaches the engine. The engine never reads `organization_ai_keys` or decrypts anything itself (ADR-0038); it is a pure `EffectiveLlmConfig -> language model` function, matching `EffectiveAiConfig` in `server/src/modules/ai/interfaces/IAiKeySettingsService.ts` but without the `source`/`contextWindow` fields the server keeps for itself.
 _Avoid_: Provider config, resolved credentials (when the ambiguity between the server's and the engine's copy matters)
+
+**Pipeline stage (`generation-engine/src/pipeline/`)**:
+The engine's internal generation sequence per ADR-0028: classify -> PRD -> LLD -> feature-planner -> per-entity generation -> evaluate, implemented in ticket #95. Each stage is a `PipelineStage` (`types.ts`) that reads and extends a single accumulating `PipelineArtifacts` bag; `orchestrator.ts`'s `runPipeline` sequences them, short-circuiting on the first failure and naming which stage failed (`PipelineStageError`). Each stage module splits into a deterministic half (tool-call/schema parsing, routing, topological ordering — unit-tested per ADR-0034) and an injected LLM-calling half (a `deps` function the stage calls, left unimplemented against real prompts/catalogs/provider config until #92/#93/#94 land — see the `TODO(#9x)` comments at each stage's LLM seam). The evaluate stage's pass/fail contract (fail-closed on unparseable judge output, non-throwing on a failing verdict) is recorded in ADR-0039.
+_Avoid_: Pipeline phase, generation phase (reserve "phase" for the planner's own step-plan phases, ADR-0021)

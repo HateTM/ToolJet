@@ -1,3 +1,4 @@
+// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Ported verbatim from server/src/modules/ai/service.ts's CREATE_TABLE_SYSTEM_PROMPT
 // (ticket #93 — see docs/adr/0030). Per-entity generation prompt: designs one ToolJet
 // DB table's schema for a single CreateTable step.

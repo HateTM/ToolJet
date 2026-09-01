@@ -1,3 +1,4 @@
+// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Ported verbatim from server/src/modules/ai/service.ts's STEP_PLAN_SYSTEM_PROMPT
 // (ticket #93 — see docs/adr/0030). Turns an approved PRD into the fixed, ordered
 // Step-list the PRD -> Approve -> fixed Step-list contract (ADR-0001, ADR-0004) hands

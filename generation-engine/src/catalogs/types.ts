@@ -1,3 +1,4 @@
+// transit copy from PR #92 (feature/92-generation-engine-catalogs @ fc192cb7db) — dedupe at merge
 /**
  * Shared types for the component and event catalogs.
  *
