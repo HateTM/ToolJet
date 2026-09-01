@@ -196,8 +196,8 @@ export const COMPONENT_CATALOG: Record<string, ComponentCatalogEntry> = {
       { name: 'data', valueType: 'dynamic' },
     ],
     triggers: [
-      { id: 'onClick', displayName: 'Clicked' },
-      { id: 'onDoubleClick', displayName: 'Double clicked' },
+      { id: 'onClick', displayName: 'On data point click' },
+      { id: 'onDoubleClick', displayName: 'On double click' },
     ],
   },
   Image: {
@@ -233,7 +233,7 @@ export const COMPONENT_CATALOG: Record<string, ComponentCatalogEntry> = {
       { name: 'tooltipFormat', valueType: 'dynamic' },
     ],
     triggers: [
-      { id: 'onChange', displayName: 'Value changed' },
+      { id: 'onChange', displayName: 'On change' },
       { id: 'onCheck', displayName: 'Checked' },
       { id: 'onUnCheck', displayName: 'Unchecked' },
     ],
@@ -254,8 +254,8 @@ export const COMPONENT_CATALOG: Record<string, ComponentCatalogEntry> = {
       { name: 'serverSideSearch', valueType: 'boolean', defaultValue: false },
       { name: 'visibility', valueType: 'boolean', defaultValue: true },
       { name: 'collapseWhenHidden', valueType: 'boolean', defaultValue: false },
-      { name: 'disabledState', valueType: 'boolean', defaultValue: true },
-      { name: 'loadingState', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
       { name: 'tooltip', valueType: 'string', defaultValue: 'Enter tooltip text' },
       { name: 'tooltipFormat', valueType: 'dynamic' },
     ],

@@ -85,5 +85,26 @@ describe('component catalog', () => {
     it('Container (no events in the widget config) has an empty trigger list, not undefined', () => {
       expect(COMPONENT_CATALOG.Container.triggers).toEqual([]);
     });
+
+    it('trigger displayNames match the widget configs (dropdownV2.js / chart.js / checkbox.js)', () => {
+      // Regression for #117: catalog displayNames had drifted from the widget configs.
+      const triggerNames = (component: string) =>
+        COMPONENT_CATALOG[component].triggers.map((t) => `${t.id}: ${t.displayName}`);
+      expect(triggerNames('DropdownV2')).toContain('onSelect: Option selected');
+      expect(triggerNames('Chart')).toContain('onClick: On data point click');
+      expect(triggerNames('Chart')).toContain('onDoubleClick: On double click');
+      expect(triggerNames('Checkbox')).toContain('onChange: On change');
+    });
+  });
+
+  describe('effective defaults (#117 regression)', () => {
+    it('DropdownV2 disabledState/loadingState record the effective runtime default ({{false}})', () => {
+      // dropdownV2.js sets validation.defaultValue: true on these toggles (upstream quirk), but
+      // the widget's defaults block uses {{false}} — the effective runtime value. The catalog
+      // records effective values, so a generation stage must not emit disabled/loading dropdowns.
+      const dropdown = COMPONENT_CATALOG.DropdownV2.properties;
+      expect(dropdown.find((p) => p.name === 'disabledState')?.defaultValue).toBe(false);
+      expect(dropdown.find((p) => p.name === 'loadingState')?.defaultValue).toBe(false);
+    });
   });
 });
