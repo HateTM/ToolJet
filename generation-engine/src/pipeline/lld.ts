@@ -142,11 +142,11 @@ export interface LldStageDeps {
  * schema (TooljetDB `create_table` shape) with no seeding, enforced by
  * `validateLldSchema`.
  *
- * TODO(#92): the LLD prompt is expected to ground column data types against the
- * component/event catalogs (ADR-0033) so generated schemas stay renderable by the
- * fork's widget set — not wired up, no LLD prompt exists in `prompts/` yet.
- * TODO(#93): `prompts/lld.ts` is currently a placeholder stub (per #93's known gap #3
- * — only PRD had real prior-art to port).
+ * Wired per ticket #110: the production `deps.generateLld` (./llm-deps.ts) assembles
+ * its input via `buildLldStageInput` (./prompt-assembly.ts), which injects the
+ * component/event catalogs (#92's `toPromptContext()`, ADR-0033) so the schema stays
+ * renderable by the fork's widget set, against the LLD system prompt (#93). The stage
+ * itself keeps only the deterministic half: parse/validate (`parseLldSchema`).
  */
 export function buildLldStage(deps: LldStageDeps): PipelineStage {
   return {

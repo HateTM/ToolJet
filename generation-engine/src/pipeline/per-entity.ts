@@ -1,4 +1,11 @@
-import { EntityToolCall, FeaturePlan, PipelineArtifacts, PipelineStage, StageContext } from './types';
+import {
+  EntityToolCall,
+  FeaturePlan,
+  PipelineArtifacts,
+  PipelineStage,
+  StageContext,
+  UpdateTableCallPayload,
+} from './types';
 
 /**
  * Routes each feature-plan item to a distinct create/update tool-call (AC #3: "Per-entity
@@ -97,9 +104,10 @@ export interface PerEntityStageDeps {
  * (generation-engine prompts/update-table.ts, #93 branch) and the TooljetDB-side
  * execution (#111 branch) land alongside this ADR.
  *
- * TODO(#92): entity generation is expected to consult the component/event catalogs
- * (ADR-0033) to know which widgets/events a generated table can be wired to — not
- * wired up here.
+ * Wired per ticket #110: the production `executeToolCall` (./llm-deps.ts) builds the
+ * per-entity prompt via `buildPerEntityStageInput` (./prompt-assembly.ts), which
+ * consults the component/event catalogs (#92's `toPromptContext()`, ADR-0033) and uses
+ * the create/update-table prompts from the library (#93, ADR-0041).
  */
 export function buildPerEntityStage(deps: PerEntityStageDeps = {}): PipelineStage {
   return {

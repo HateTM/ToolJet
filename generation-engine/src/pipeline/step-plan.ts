@@ -155,9 +155,9 @@ export interface StepPlanStageDeps {
  * stage stays engine-internal (table ordering for per-entity generation); see ADR-0040
  * for why they are two stages.
  *
- * TODO(#93): `deps.generateStepPlan` should call the ported step-plan prompt
- * (`prompts/step-plan.ts` per ADR-0030) tool-forced like the fork's `approvePrd` does —
- * not yet importable from this branch.
+ * Wired per ticket #110: the production `deps.generateStepPlan` (./llm-deps.ts) calls
+ * the ported step-plan prompt (`prompts/step-plan.ts`, #93) on `ctx.llm` and parses the
+ * raw payload with `parseStepPlan` below.
  */
 export function buildStepPlanStage(deps: StepPlanStageDeps): PipelineStage {
   return {

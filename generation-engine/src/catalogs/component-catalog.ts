@@ -1,3 +1,4 @@
+// transit copy from PR #92 (feature/92-generation-engine-catalogs @ fc192cb7db) — dedupe at merge
 // AUTO-CURATED from server/src/modules/ai/helpers/componentsMeta.json (property names/coverage
 // only) and frontend/src/AppBuilder/WidgetManager/widgets/*.js (`events` blocks, for triggers).
 // Restructured per ADR-0033: not a port of componentsMeta.json's validation-schema shape, no

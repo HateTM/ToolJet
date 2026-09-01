@@ -12,6 +12,8 @@ export * from './feature-planner';
 export * from './per-entity';
 export * from './step-plan';
 export * from './evaluate';
+export * from './prompt-assembly';
+export * from './llm-deps';
 
 import { PipelineStage } from './types';
 import { buildClassifyStage, ClassifyStageDeps } from './classify';

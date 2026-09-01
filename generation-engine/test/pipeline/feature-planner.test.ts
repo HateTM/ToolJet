@@ -1,5 +1,5 @@
 import { buildFeaturePlanFromLld, buildFeaturePlannerStage } from '../../src/pipeline/feature-planner';
-import { LldSchema, PipelineArtifacts, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 const schema: LldSchema = {
   tables: [
@@ -29,7 +29,7 @@ describe('buildFeaturePlanFromLld', () => {
 });
 
 describe('buildFeaturePlannerStage', () => {
-  const ctx: StageContext = { organizationId: 'org-1' };
+  const ctx = makeTestCtx();
 
   it('throws if the LLD stage has not run', async () => {
     const stage = buildFeaturePlannerStage();

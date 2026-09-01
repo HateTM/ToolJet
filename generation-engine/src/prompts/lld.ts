@@ -1,3 +1,4 @@
+// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Placeholder — ticket #93 (docs/adr/0030). Issue #82's LLD stage (low-level design:
 // database schema, no seeding) has no equivalent in the fork today — the fork's planner
 // (see prompts/step-plan.ts) proposes table definitions inline as part of the Step plan,

@@ -1,5 +1,5 @@
 import { buildDefaultPipeline, runPipeline } from '../../src/pipeline/index';
-import { StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 describe('buildDefaultPipeline', () => {
   it('assembles the seven ADR-0028/ADR-0040 stages in order', () => {
@@ -23,7 +23,7 @@ describe('buildDefaultPipeline', () => {
   });
 
   it('runs end-to-end through runPipeline with fully faked LLM dependencies', async () => {
-    const ctx: StageContext = { organizationId: 'org-1' };
+    const ctx = makeTestCtx();
     const stages = buildDefaultPipeline({
       classify: { classify: jest.fn().mockResolvedValue({ intent: 'build_app', confidence: 0.9 }) },
       prd: { generatePrd: jest.fn().mockResolvedValue('# PRD') },
@@ -62,7 +62,7 @@ describe('buildDefaultPipeline', () => {
   });
 
   it('short-circuits after classify when the classification is unsupported', async () => {
-    const ctx: StageContext = { organizationId: 'org-1' };
+    const ctx = makeTestCtx();
     const generatePrd = jest.fn();
     const generateLld = jest.fn();
     const generateStepPlan = jest.fn();

@@ -1,5 +1,5 @@
 import { buildPrdStageInput, buildPrdStage } from '../../src/pipeline/prd';
-import { PipelineArtifacts, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 describe('buildPrdStageInput', () => {
   it('returns the prompt unchanged when there is no classification', () => {
@@ -18,7 +18,7 @@ describe('buildPrdStageInput', () => {
 });
 
 describe('buildPrdStage', () => {
-  const ctx: StageContext = { organizationId: 'org-1' };
+  const ctx = makeTestCtx();
   const artifacts: PipelineArtifacts = { prompt: 'build a CRM' };
 
   it('calls deps.generatePrd with the assembled input and stores the result', async () => {

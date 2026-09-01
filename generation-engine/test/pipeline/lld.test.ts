@@ -5,7 +5,7 @@ import {
   topologicallyOrderTables,
   buildLldStage,
 } from '../../src/pipeline/lld';
-import { LldSchema, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 const usersTable = {
   table_name: 'users',
@@ -113,7 +113,7 @@ describe('topologicallyOrderTables', () => {
 });
 
 describe('buildLldStage', () => {
-  const ctx: StageContext = { organizationId: 'org-1' };
+  const ctx = makeTestCtx();
 
   it('calls deps.generateLld with the PRD and stores the validated schema', async () => {
     const generateLld = jest.fn().mockResolvedValue({ tables: [usersTable] });

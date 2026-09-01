@@ -1,5 +1,5 @@
 import { parseEvaluationVerdict, buildEvaluateStage } from '../../src/pipeline/evaluate';
-import { PipelineArtifacts, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 describe('parseEvaluationVerdict', () => {
   it('accepts a well-formed pass verdict', () => {
@@ -36,7 +36,7 @@ describe('parseEvaluationVerdict', () => {
 });
 
 describe('buildEvaluateStage', () => {
-  const ctx: StageContext = { organizationId: 'org-1' };
+  const ctx = makeTestCtx();
   const artifacts: PipelineArtifacts = { prompt: 'x' };
 
   it('calls deps.judge with the full artifacts and stores the parsed verdict', async () => {

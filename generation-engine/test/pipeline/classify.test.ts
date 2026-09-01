@@ -1,5 +1,5 @@
 import { parseClassification, buildClassifyStage } from '../../src/pipeline/classify';
-import { PipelineArtifacts, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 describe('parseClassification', () => {
   it('accepts a well-formed payload', () => {
@@ -38,7 +38,7 @@ describe('parseClassification', () => {
 });
 
 describe('buildClassifyStage', () => {
-  const ctx: StageContext = { organizationId: 'org-1' };
+  const ctx = makeTestCtx();
   const artifacts: PipelineArtifacts = { prompt: 'build a CRM' };
 
   it('calls deps.classify with the prompt and stores the parsed result', async () => {

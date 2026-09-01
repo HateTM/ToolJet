@@ -34,14 +34,10 @@ export interface ClassifyStageDeps {
 }
 
 /**
- * Classification stage (ADR-0028's first stage). The fork's own `classify()`
- * (server/src/modules/ai/services/agents.service.ts) throws "Method not implemented."
- * and has no real prompt text (#93's known gap #3) — there is nothing to port yet.
- *
- * TODO(#93): swap `deps.classify`'s caller for the real classify prompt once
- * `generation-engine/src/prompts/classify.ts` stops being a stub.
- * TODO(#92): the classification prompt is expected to reference the component/event
- * catalogs (ADR-0033) once it exists — wire `toPromptContext()` in here then.
+ * Classification stage (ADR-0028's first stage). The injected `deps.classify` is the
+ * LLM-calling half; the real production implementation (./llm-deps.ts) calls the
+ * classify system prompt from the prompt library (#93) via `ctx.llm`. The stage itself
+ * stays prompt-agnostic — only `parseClassification` (deterministic, ADR-0034) lives here.
  */
 export function buildClassifyStage(deps: ClassifyStageDeps): PipelineStage {
   return {

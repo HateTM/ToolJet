@@ -1,7 +1,7 @@
 import { runPipeline, PipelineStageError } from '../../src/pipeline/orchestrator';
-import { PipelineArtifacts, PipelineStage, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
-const ctx: StageContext = { organizationId: 'org-1' };
+const ctx = makeTestCtx();
 const baseArtifacts: PipelineArtifacts = { prompt: 'build a CRM' };
 
 function fakeStage(name: string, fn: (a: PipelineArtifacts) => PipelineArtifacts): PipelineStage {

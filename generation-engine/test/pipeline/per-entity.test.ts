@@ -1,5 +1,5 @@
 import { routeEntityToolCalls, buildPerEntityStage, validateUpdateTableCall } from '../../src/pipeline/per-entity';
-import { EntityToolCall, FeaturePlan, PipelineArtifacts, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 const plan: FeaturePlan = {
   items: [
@@ -31,10 +31,21 @@ describe('validateUpdateTableCall', () => {
     table_name: 'users',
     columns: [
       { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
-      { column_name: 'email', data_type: 'character varying', is_primary_key: false, is_not_null: true, is_unique: true },
+      {
+        column_name: 'email',
+        data_type: 'character varying',
+        is_primary_key: false,
+        is_not_null: true,
+        is_unique: true,
+      },
     ],
   };
-  const updateCall: EntityToolCall = { entityName: 'users', action: 'update', toolName: 'update_table', payload: validPayload };
+  const updateCall: EntityToolCall = {
+    entityName: 'users',
+    action: 'update',
+    toolName: 'update_table',
+    payload: validPayload,
+  };
 
   it('returns no problems for a well-formed full-replace payload (ADR-0041)', () => {
     expect(validateUpdateTableCall(updateCall)).toEqual([]);
@@ -43,7 +54,20 @@ describe('validateUpdateTableCall', () => {
   it('returns no problems for a valid renames map whose target is a desired column', () => {
     const call: EntityToolCall = {
       ...updateCall,
-      payload: { ...validPayload, columns: [...validPayload.columns, { column_name: 'name', data_type: 'character varying', is_primary_key: false, is_not_null: false, is_unique: false }], renames: { user_name: 'name' } },
+      payload: {
+        ...validPayload,
+        columns: [
+          ...validPayload.columns,
+          {
+            column_name: 'name',
+            data_type: 'character varying',
+            is_primary_key: false,
+            is_not_null: false,
+            is_unique: false,
+          },
+        ],
+        renames: { user_name: 'name' },
+      },
     };
     expect(validateUpdateTableCall(call)).toEqual([]);
   });
@@ -66,7 +90,18 @@ describe('validateUpdateTableCall', () => {
   it('flags zero and multiple primary keys', () => {
     const noPk: EntityToolCall = {
       ...updateCall,
-      payload: { table_name: 'users', columns: [{ column_name: 'email', data_type: 'character varying', is_primary_key: false, is_not_null: true, is_unique: true }] },
+      payload: {
+        table_name: 'users',
+        columns: [
+          {
+            column_name: 'email',
+            data_type: 'character varying',
+            is_primary_key: false,
+            is_not_null: true,
+            is_unique: true,
+          },
+        ],
+      },
     };
     expect(validateUpdateTableCall(noPk).some((p) => /exactly one primary key column, found 0/.test(p))).toBe(true);
 
@@ -97,7 +132,7 @@ describe('validateUpdateTableCall', () => {
 });
 
 describe('buildPerEntityStage', () => {
-  const ctx: StageContext = { organizationId: 'org-1' };
+  const ctx = makeTestCtx();
 
   it('throws if the feature-planner stage has not run', async () => {
     const stage = buildPerEntityStage();

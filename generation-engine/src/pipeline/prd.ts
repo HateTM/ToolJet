@@ -25,11 +25,13 @@ export interface PrdStageDeps {
  * six for non-streaming/internal callers (e.g. batch regeneration), not to replace #91's
  * browser-facing streaming route.
  *
- * TODO(#91): once merged, `deps.generatePrd` should delegate to (or reuse the same
- * `streamText` call as) `generate-prd.ts`'s `streamPrd` seam, collecting the full text
- * instead of emitting SSE chunks, rather than duplicating the LLM call.
- * TODO(#93): use `prompts/prd.ts` (the ported system prompt) as the system prompt here —
- * not yet importable from this branch.
+ * Decision (ticket #110): the engine-side prd stage stays a plain, non-streaming LLM
+ * call — `deps.generatePrd` in production (./llm-deps.ts) uses the PRD system prompt
+ * from the prompt library (#93) with `generateText` on `ctx.llm`. It does NOT reuse
+ * #91's `streamPrd`/SSE seam: streaming to the browser is the server proxy's concern
+ * (ADR-0027), #91's `POST /generate/prd` route remains the streaming path, and #113
+ * will stream the PRD artifact over SSE from the proxy. A dated note is appended to
+ * ADR-0028.
  */
 export function buildPrdStage(deps: PrdStageDeps): PipelineStage {
   return {

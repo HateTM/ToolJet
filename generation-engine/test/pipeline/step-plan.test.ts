@@ -4,7 +4,7 @@ import {
   parseStepPlan,
   StepPlanValidationError,
 } from '../../src/pipeline/step-plan';
-import { LldSchema, PipelineArtifacts, StageContext } from '../../src/pipeline/types';
+import { makeTestCtx } from './ctx';
 
 const lld: LldSchema = {
   tables: [
@@ -124,7 +124,7 @@ describe('parseStepPlan', () => {
 });
 
 describe('buildStepPlanStage', () => {
-  const ctx: StageContext = { organizationId: 'org-1' };
+  const ctx = makeTestCtx();
   const artifacts: PipelineArtifacts = { prompt: 'x', prd: '# PRD text', lld };
 
   it('throws if the PRD stage has not run', async () => {

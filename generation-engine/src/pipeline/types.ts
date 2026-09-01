@@ -6,9 +6,9 @@
  * each stage's internal shape.
  *
  * This file intentionally has zero LLM/network code — it is the seam the seven stage
- * modules and their (still-external, see per-file TODOs) prompt/catalog/provider
- * dependencies plug into.
+ * modules and their prompt/catalog/provider dependencies plug into.
  */
+import { EffectiveLlmConfig } from '../config/provider';
 
 /** Classification stage output. See classify.ts for why this has no real prompt yet. */
 export interface ClassificationResult {
@@ -164,9 +164,13 @@ export interface PipelineArtifacts {
 
 export interface StageContext {
   organizationId: string;
-  // TODO(#94): once the LLM-provider-resolution seam (generation-engine/src/config/
-  // provider.ts, ADR-0035/0038) lands, an EffectiveLlmConfig belongs here so stages can
-  // resolve a model without reaching into env vars themselves.
+  /**
+   * The per-request LLM provider config (ADR-0038), already resolved by the caller
+   * (the server's proxy resolves org BYOK/env fallback before invoking the engine) and
+   * threaded through to every stage. Stages resolve their model from this — never from
+   * env vars directly.
+   */
+  llm: EffectiveLlmConfig;
 }
 
 export interface PipelineStage {
