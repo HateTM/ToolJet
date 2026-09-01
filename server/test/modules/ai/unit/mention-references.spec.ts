@@ -84,7 +84,8 @@ const buildService = (conversationType: 'generate' | 'learn') => {
       findActiveRun: jest.fn().mockResolvedValue(null),
       cleanupStaleRuns: jest.fn().mockResolvedValue(0),
     } as any,
-    { assess: jest.fn().mockReturnValue({ type: 'feasible' }) } as any
+    { assess: jest.fn().mockReturnValue({ type: 'feasible' }) } as any,
+    { isConfigured: jest.fn().mockReturnValue(false), streamPrd: jest.fn() } as any
   );
 
   return { service, aiUtilService, conversationRepo, messageRepo, response };

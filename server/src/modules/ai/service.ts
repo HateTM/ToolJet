@@ -36,6 +36,7 @@ import {
 } from "./services/data-source-inventory.service";
 import { AiActiveRunService } from "./services/ai-active-run.service";
 import { AiFeasibilityService } from "./services/ai-feasibility.service";
+import { GenerationEngineClient } from "./services/generation-engine-client";
 import { VersionRepository } from "@modules/versions/repository";
 import { Step, StepType } from "@entities/step.entity";
 import { Artifact } from "@entities/artifact.entity";
@@ -779,6 +780,7 @@ export class AiService implements IAiService {
     private readonly dataSourceInventoryService: DataSourceInventoryService,
     private readonly aiActiveRunService: AiActiveRunService,
     private readonly aiFeasibilityService: AiFeasibilityService,
+    private readonly generationEngineClient: GenerationEngineClient,
   ) {}
 
   /**
@@ -2381,9 +2383,65 @@ export class AiService implements IAiService {
   }
 
   /**
+   * PRD text generation (ticket #91), abstracted behind one async generator so
+   * `sendUserMessage` doesn't care which backend produced the tokens.
+   *
+   * When the Generation engine is configured (`GENERATION_ENGINE_URL` set,
+   * ADR-0032), proxies its `POST /generate/prd` SSE stream
+   * (GenerationEngineClient, ADR-0027) — forwarding starts as the engine's
+   * first `chunk` arrives, no buffering (AC#2). An `error` event from the
+   * client (engine unreachable, mid-stream failure, or a stream that ended
+   * with neither `done` nor `error` — AC#3) is thrown so it lands in the same
+   * catch/`sendSSE(..., 'error', ...)` path the in-process call already uses.
+   *
+   * Otherwise falls back to the existing in-process `AIGateway` call — this is
+   * the deliberate flag-guard from ADR-0035: nothing deploys the engine yet
+   * (CONTEXT.md, "not wired into the root build chain"), so a hard switch
+   * would break every PRD generation in dev and prod the moment this merges.
+   *
+   * `abortSignal` is wired to the browser response's `close` event by the
+   * caller so a disconnecting client also aborts the upstream engine request,
+   * rather than leaving it generating with nowhere to send the result.
+   */
+  private async *streamPrdText(
+    budgetedMessages: Array<{ role: string; content: string }>,
+    organizationId: string,
+    abortSignal: AbortSignal,
+  ): AsyncGenerator<string> {
+    if (this.generationEngineClient.isConfigured()) {
+      for await (const event of this.generationEngineClient.streamPrd(
+        budgetedMessages as any,
+        abortSignal,
+      )) {
+        if (event.type === "chunk") {
+          yield event.content;
+        } else if (event.type === "error") {
+          throw new Error(event.message);
+        } else if (event.type === "done") {
+          return;
+        }
+      }
+      return;
+    }
+
+    const result = await this.aiUtilService.AIGateway(
+      "openai",
+      "send-message",
+      { messages: budgetedMessages },
+      organizationId,
+    );
+
+    for await (const chunk of result.textStream) {
+      yield chunk;
+    }
+  }
+
+  /**
    * Loads/validates the conversation, persists the user's message, streams the
-   * assistant's reply from AIGateway over SSE, then persists the full reply as
-   * a new AiConversationMessage and closes the stream with a `done` event.
+   * assistant's reply (Generation engine when configured, in-process AIGateway
+   * otherwise — `streamPrdText`, ticket #91) over SSE, then persists the full
+   * reply as a new AiConversationMessage and closes the stream with a `done`
+   * event.
    *
    * SSE event contract (see AiUtilService.sendSSE):
    *  - `chunk` (repeated): { content: string } — one incremental text delta
@@ -2491,16 +2549,18 @@ export class AiService implements IAiService {
     );
 
     let fullText = "";
+    // Ticket #91: a disconnecting browser also aborts the upstream Generation
+    // engine request, rather than leaving it generating with nowhere to send
+    // the result. No-op for the in-process AIGateway fallback.
+    const abortController = new AbortController();
+    response.once("close", () => abortController.abort());
 
     try {
-      const result = await this.aiUtilService.AIGateway(
-        "openai",
-        "send-message",
-        { messages: budgetedMessages },
+      for await (const chunk of this.streamPrdText(
+        budgetedMessages,
         organizationId,
-      );
-
-      for await (const chunk of result.textStream) {
+        abortController.signal,
+      )) {
         fullText += chunk;
         this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
       }
