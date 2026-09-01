@@ -82,6 +82,9 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
       findActiveRun: jest.fn().mockResolvedValue(null),
       cleanupStaleRuns: jest.fn().mockResolvedValue(0),
     } as any
+    // Note: pre-existing gap in this fixture — aiFeasibilityService (12th ctor param) was
+    // already omitted before ticket #91; not touched here since this spec never exercises
+    // sendUserMessage (the only caller of aiFeasibilityService/generationEngineClient).
   );
 
   return { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository };

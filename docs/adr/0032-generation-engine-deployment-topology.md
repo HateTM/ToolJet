@@ -21,3 +21,7 @@ No explicit CPU/memory limits are set, following the precedent of the live EE co
 - The engine is not reachable from outside the shared docker network — no external attack surface beyond what `tooljet-ce:local` itself already exposes.
 - Adding `GENERATION_ENGINE_URL` is the only server-side deployment change; no other TrueNAS app config changes.
 - Unbounded resource limits are a deliberate bet on the engine staying thin; if it grows heavier (e.g. local embedding/inference), this ADR's limits stance should be revisited alongside that change, not silently inherited.
+
+## Amendment (2026-09-01, ticket #114): shared-secret auth on top of network isolation
+
+Network isolation alone proved insufficient: any container attached to the shared `external: true` network could invoke unauthenticated LLM generation at the operator's token expense. The engine now requires a static bearer token (`ENGINE_API_KEY`, sent by the ToolJet server as `Authorization: Bearer ...` from the same env var) on every endpoint except `/health` (kept open for credential-less container healthchecks), and fails closed — 503 on all protected requests — when the env var is unset on the engine. This refines, not replaces, the "no host-published port" stance above; both layers are now required.

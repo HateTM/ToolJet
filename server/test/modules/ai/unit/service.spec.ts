@@ -58,6 +58,14 @@ const buildMockAiFeasibilityService = () => ({
   assess: jest.fn().mockReturnValue({ type: 'feasible' }),
 });
 
+// Defaults to "engine not configured" (GENERATION_ENGINE_URL unset) — every pre-#91 test's
+// world, and the flag-guarded fallback path (ADR-0036): sendUserMessage keeps using
+// aiUtilService.AIGateway unless a test explicitly opts into the engine.
+const buildMockGenerationEngineClient = () => ({
+  isConfigured: jest.fn().mockReturnValue(false),
+  streamPrd: jest.fn(),
+});
+
 // Defaults to "nothing external connected", which is every pre-ADR-0019 test's world: the
 // plan targets ToolJet DB and no data-source block reaches any prompt.
 const buildMockDataSourceInventoryService = () => ({
@@ -142,6 +150,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const dataSourceInventoryService = overrides.dataSourceInventoryService ?? buildMockDataSourceInventoryService();
   const aiActiveRunService = overrides.aiActiveRunService ?? buildMockAiActiveRunService();
   const aiFeasibilityService = overrides.aiFeasibilityService ?? buildMockAiFeasibilityService();
+  const generationEngineClient = overrides.generationEngineClient ?? buildMockGenerationEngineClient();
 
   const service = new AiService(
     aiUtilService as any,
@@ -155,7 +164,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     appInventoryService as any,
     dataSourceInventoryService as any,
     aiActiveRunService as any,
-    aiFeasibilityService as any
+    aiFeasibilityService as any,
+    generationEngineClient as any
   );
 
   return {
@@ -172,6 +182,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     dataSourceInventoryService,
     aiActiveRunService,
     aiFeasibilityService,
+    generationEngineClient,
   };
 };
 
@@ -398,6 +409,89 @@ describe('AiService.sendUserMessage', () => {
 
     expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'error', { message: 'LLM gateway timed out' });
     expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  // Ticket #91: when GENERATION_ENGINE_URL is configured, sendUserMessage proxies the
+  // Generation engine's SSE stream instead of calling AIGateway in-process (ADR-0027).
+  describe('proxying the Generation engine (ticket #91)', () => {
+    it('forwards engine chunk events over SSE and never calls AIGateway', async () => {
+      const { service, aiUtilService, conversationRepo, messageRepo, generationEngineClient } = buildService();
+      generationEngineClient.isConfigured.mockReturnValue(true);
+      conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+      messageRepo.findLatestByConversationId.mockResolvedValue([]);
+      messageRepo.createOne
+        .mockResolvedValueOnce({ id: 'user-msg-1' })
+        .mockResolvedValueOnce({ id: 'ai-msg-1', content: 'Hello world' });
+
+      async function* events() {
+        yield { type: 'chunk', content: 'Hello ' };
+        yield { type: 'chunk', content: 'world' };
+        yield { type: 'done' };
+      }
+      generationEngineClient.streamPrd.mockReturnValue(events());
+
+      const response = buildMockResponse();
+      await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+      expect(aiUtilService.AIGateway).not.toHaveBeenCalled();
+      expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'chunk', { content: 'Hello ' });
+      expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'chunk', { content: 'world' });
+
+      // The server, not the engine, owns persistence and the browser-facing `done` — a
+      // GenerationEngineClient 'done' event must never pass through verbatim, since it
+      // carries no persisted message.
+      expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'done', {
+        message: { id: 'ai-msg-1', content: 'Hello world' },
+      });
+      expect(messageRepo.createOne).toHaveBeenNthCalledWith(2, expect.objectContaining({ content: 'Hello world' }));
+    });
+
+    it('maps a GenerationEngineClient error event onto the existing error SSE contract', async () => {
+      const { service, aiUtilService, conversationRepo, messageRepo, generationEngineClient } = buildService();
+      generationEngineClient.isConfigured.mockReturnValue(true);
+      conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+      messageRepo.findLatestByConversationId.mockResolvedValue([]);
+      messageRepo.createOne.mockResolvedValue({ id: 'user-msg-1' });
+
+      async function* events() {
+        yield { type: 'chunk', content: 'partial' };
+        yield { type: 'error', message: 'Generation engine stream ended unexpectedly' };
+      }
+      generationEngineClient.streamPrd.mockReturnValue(events());
+
+      const response = buildMockResponse();
+      await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+      expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'error', {
+        message: 'Generation engine stream ended unexpectedly',
+      });
+      // A truncated stream must not be persisted as a successful reply (AC#3).
+      expect(messageRepo.createOne).toHaveBeenCalledTimes(1);
+      expect(response.end).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes an AbortSignal to the engine client (wired to the response close handler)', async () => {
+      const { service, conversationRepo, messageRepo, generationEngineClient } = buildService();
+      generationEngineClient.isConfigured.mockReturnValue(true);
+      conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+      messageRepo.findLatestByConversationId.mockResolvedValue([]);
+      messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+
+      async function* events() {
+        yield { type: 'chunk', content: 'x' };
+        yield { type: 'done' };
+      }
+      generationEngineClient.streamPrd.mockReturnValue(events());
+
+      await service.sendUserMessage(
+        { conversationId: 'conv-1', content: 'Hi' },
+        buildMockResponse() as any,
+        'user-1',
+        'org-1'
+      );
+
+      expect(generationEngineClient.streamPrd).toHaveBeenCalledWith(expect.any(Array), expect.any(AbortSignal));
+    });
   });
 
   // IDOR regression (CRITICAL): a conversation must belong to the acting user even when its

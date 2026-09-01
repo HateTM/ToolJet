@@ -39,6 +39,7 @@ export class AiModule extends SubModule {
     const { AiActiveRunService } = await import(`${importPath}/ai/services/ai-active-run.service`);
     const { AiActiveRunScheduler } = await import(`${importPath}/ai/services/ai-active-run-scheduler.service`);
     const { AiFeasibilityService } = await import(`${importPath}/ai/services/ai-feasibility.service`);
+    const { GenerationEngineClient } = await import(`${importPath}/ai/services/generation-engine-client`);
     const { ComponentsService } = await import(`${importPath}/apps/services/component.service`);
     const { EventsService } = await import(`${importPath}/apps/services/event.service`);
     const { PageService } = await import(`${importPath}/apps/services/page.service`);
@@ -72,6 +73,7 @@ export class AiModule extends SubModule {
         AiActiveRunRepository,
         AiActiveRunScheduler,
         AiFeasibilityService,
+        GenerationEngineClient,
         ComponentsService,
         // ImportExportResourcesService,
         AiConversationRepository,
