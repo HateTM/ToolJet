@@ -1,4 +1,4 @@
-# ADR-0037: Evaluate stage's pass/fail contract is fail-closed, non-throwing
+# ADR-0039: Evaluate stage's pass/fail contract is fail-closed, non-throwing
 
 Date: 2026-09-01
 Ticket: #95 (Generation engine pipeline stages)

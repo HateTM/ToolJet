@@ -91,7 +91,7 @@ export interface PipelineArtifacts {
 export interface StageContext {
   organizationId: string;
   // TODO(#94): once the LLM-provider-resolution seam (generation-engine/src/config/
-  // provider.ts, ADR-0035/0036) lands, an EffectiveLlmConfig belongs here so stages can
+  // provider.ts, ADR-0035/0038) lands, an EffectiveLlmConfig belongs here so stages can
   // resolve a model without reaching into env vars themselves.
 }
 
