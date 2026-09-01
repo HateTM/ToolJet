@@ -13,6 +13,8 @@ const buildMockPageService = () => ({
 const buildMockComponentsService = () => ({
   create: jest.fn(),
   delete: jest.fn(),
+  getAllComponents: jest.fn().mockResolvedValue({}),
+  componentLayoutChange: jest.fn(),
 });
 
 const buildMockEventsService = () => ({
@@ -154,9 +156,51 @@ describe('AgentsService.CreateComponent', () => {
     expect(definition.properties.dataSourceSelector.value).toBe('rawJson');
     expect(definition.properties.data.value).toBe('{{queries.list_orders.data}}');
     expect(definition.properties.autogenerateColumns.value).toBe(true);
-    expect(definition.layouts.desktop).toEqual({ top: 0, left: 0, width: 25, height: 460 });
+    expect(definition.layouts.desktop).toEqual({ top: 5, left: 1, width: 25, height: 460 });
 
     expect(result).toMatchObject({ pageId: 'page-1', type: 'Table', queryName: 'list_orders' });
+  });
+
+  it('places the new component below existing root-level siblings without overlap (ticket #63)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    componentsService.getAllComponents.mockResolvedValue({
+      'existing-1': {
+        component: { name: 'Header', component: 'Text', parent: null },
+        layouts: { desktop: { left: 1, top: 5, width: 6, height: 40 } },
+      },
+      'child-in-container': {
+        component: { name: 'Field', component: 'TextInput', parent: 'container-1' },
+        layouts: { desktop: { left: 1, top: 5, width: 10, height: 40 } },
+      },
+    });
+
+    await service.CreateComponent('version-1', 'org-1', 'Button', { pageId: 'page-1', text: 'Save' });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    // bottom of the sibling (45) + 10 gap; the container child (overlapping in page
+    // coordinates) must not influence placement — it lives in its parent's space
+    expect(definition.layouts.desktop).toEqual({ left: 1, top: 55, width: 4, height: 40 });
+    expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
+  });
+
+  it('fails the creation instead of overlapping when sibling compaction is rejected (ticket #63)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    // A page-end-to-end full sibling leaves no free slot, forcing compaction
+    componentsService.getAllComponents.mockResolvedValue({
+      'full-1': {
+        component: { name: 'Big', component: 'Container', parent: null },
+        layouts: { desktop: { left: 1, top: 5, width: 40, height: 990 } },
+      },
+    });
+    componentsService.componentLayoutChange.mockResolvedValue({ error: { message: 'Component not found' } });
+
+    await expect(
+      service.CreateComponent('version-1', 'org-1', 'Button', { pageId: 'page-1', text: 'Save' })
+    ).rejects.toThrow(/Sibling layout compaction failed/);
+    expect(componentsService.create).not.toHaveBeenCalled();
   });
 
   it('throws for an unrecognized component type without calling PageService/ComponentsService', async () => {
@@ -179,7 +223,12 @@ describe('AgentsService.CreateComponent', () => {
     ['Chart', { pageId: 'page-1', title: 'Revenue' }, { width: 20, height: 400 }, 'Chart'],
     ['Image', { pageId: 'page-1', source: 'https://example.com/logo.png' }, { width: 10, height: 240 }, 'Image'],
     ['Checkbox', { pageId: 'page-1', label: 'Subscribe' }, { width: 6, height: 30 }, 'Checkbox'],
-    ['Dropdown', { pageId: 'page-1', label: 'Status', options: ['Open', 'Closed'] }, { width: 10, height: 40 }, 'DropdownV2'],
+    [
+      'Dropdown',
+      { pageId: 'page-1', label: 'Status', options: ['Open', 'Closed'] },
+      { width: 10, height: 40 },
+      'DropdownV2',
+    ],
     ['Modal', { pageId: 'page-1', title: 'Confirm' }, { width: 10, height: 34 }, 'Modal'],
   ])('creates a %s component on the given page with its real defaultSize', async (type, props, size, persistedType) => {
     const { service, componentsService } = buildAgentsService();
@@ -195,7 +244,7 @@ describe('AgentsService.CreateComponent', () => {
     // resolves componentTypeDefinitionMap by) — same as the requested type for most
     // widgets, 'DropdownV2' for Dropdown.
     expect(definition.type).toBe(persistedType ?? type);
-    expect(definition.layouts.desktop).toEqual({ top: 0, left: 0, ...size });
+    expect(definition.layouts.desktop).toEqual({ top: 5, left: 1, ...size });
     expect(result).toMatchObject({ pageId: 'page-1', type: persistedType ?? type });
   });
 
@@ -802,7 +851,12 @@ describe('AgentsService.SeedTable (ticket #48, per-query report #62)', () => {
   it('reports a failed row and keeps seeding the remaining rows (partial success, ticket #62)', async () => {
     const { service, tooljetDbBulkUploadService } = buildAgentsService();
     tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey
-      .mockResolvedValueOnce({ status: 'failed', error: 'invalid input syntax for type boolean', inserted: 0, updated: 0 })
+      .mockResolvedValueOnce({
+        status: 'failed',
+        error: 'invalid input syntax for type boolean',
+        inserted: 0,
+        updated: 0,
+      })
       .mockResolvedValueOnce({ status: 'ok', inserted: 1, updated: 0 });
 
     const result = await service.SeedTable('org-1', 'tjdb-uuid', ['id'], rows);

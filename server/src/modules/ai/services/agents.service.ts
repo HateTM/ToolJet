@@ -13,6 +13,7 @@ import { Target } from '@entities/event_handler.entity';
 import { StepType } from '@entities/step.entity';
 import { sanitizeComponentSection } from '../helpers/component-type-validator';
 import { normalizeMalformedOptionsProperty } from '../helpers/component-options.utils';
+import { generateComponentLayout, SiblingRect } from '../helpers/layout/generate-layout';
 
 // Maps a ToolJet DB column data type to the Form field type the widget's JSON schema
 // understands. Every TJDB type from service.ts gets a deliberate choice; the fallback
@@ -229,6 +230,14 @@ export class AgentsService implements IAgentsService {
     return { properties: sanitizedProperties, styles: sanitizedStyles, warnings };
   }
 
+  /**
+   * Ticket #63: the layout footprint passed by each builder is the widget's desired
+   * size only — top/left are computed deterministically here (never by the LLM) from
+   * the ToolJet grid rules and the page's existing root-level components, so new
+   * widgets never overlap their siblings. Tabs gets its fixed full-page layout
+   * (one per page), and when the page is too full the existing siblings are
+   * compacted and their recomputed tops written back.
+   */
   private async createWidgetComponent(
     appVersionId: string,
     pageId: string,
@@ -240,6 +249,49 @@ export class AgentsService implements IAgentsService {
   ): Promise<{ id: string; pageId: string; type: string; warnings?: string[] }> {
     const componentId = uuidv4();
     const sanitized = this.sanitizeWidgetDefinition(type, properties, styles);
+
+    const existingComponents = await this.componentsService.getAllComponents(pageId);
+    const siblings: SiblingRect[] = Object.entries(existingComponents ?? {})
+      .map(([id, entry]) => ({
+        id,
+        type: entry?.component?.component,
+        parent: entry?.component?.parent,
+        left: entry?.layouts?.desktop?.left,
+        top: entry?.layouts?.desktop?.top,
+        width: entry?.layouts?.desktop?.width,
+        height: entry?.layouts?.desktop?.height,
+      }))
+      .filter(
+        (rect) =>
+          !rect.parent &&
+          [rect.left, rect.top, rect.width, rect.height].every(
+            (value) => typeof value === 'number' && Number.isFinite(value)
+          )
+      )
+      .map(({ id, type: siblingType, left, top, width, height }) => ({
+        id,
+        type: siblingType,
+        left,
+        top,
+        width,
+        height,
+      }));
+
+    const { layout: placedLayout, siblingUpdates } = generateComponentLayout(type, siblings, layout);
+
+    if (siblingUpdates) {
+      const layoutDiff = Object.fromEntries(
+        Object.entries(siblingUpdates).map(([id, update]) => [id, { layouts: { desktop: update } }])
+      );
+      // componentLayoutChange reports failures (e.g. a vanished component) as a
+      // resolved { error } instead of throwing — creating the new component at
+      // coordinates that assume compaction happened would guarantee overlap.
+      const result = await this.componentsService.componentLayoutChange(layoutDiff, appVersionId);
+      if (result?.error) {
+        throw new Error(`Sibling layout compaction failed: ${result.error.message}`);
+      }
+    }
+
     const componentDiff = {
       [componentId]: {
         name,
@@ -248,7 +300,7 @@ export class AgentsService implements IAgentsService {
         properties: sanitized.properties,
         styles: sanitized.styles,
         layouts: {
-          desktop: { top: 0, left: 0, width: layout.width, height: layout.height },
+          desktop: placedLayout,
         },
       },
     };
