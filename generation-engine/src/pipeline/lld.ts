@@ -22,22 +22,32 @@ export class LldValidationError extends Error {
  */
 export function validateLldSchema(schema: LldSchema): string[] {
   const issues: string[] = [];
-  const seenTableNames = new Set<string>();
 
   if (!schema.tables || schema.tables.length === 0) {
     issues.push('schema has no tables');
     return issues;
   }
 
+  // First pass collects declared table names so foreign keys can be checked against the
+  // full set (#115): an FK referencing a table absent from the schema must be rejected,
+  // otherwise it is silently skipped by topologicallyOrderTables and FeaturePlanItem
+  // dependencies would name an entity that is never generated.
+  const tableCounts = new Map<string, number>();
   for (const table of schema.tables) {
     if (!table.table_name) {
       issues.push('a table is missing table_name');
       continue;
     }
-    if (seenTableNames.has(table.table_name)) {
+    tableCounts.set(table.table_name, (tableCounts.get(table.table_name) ?? 0) + 1);
+  }
+
+  for (const table of schema.tables) {
+    if (!table.table_name) {
+      continue;
+    }
+    if ((tableCounts.get(table.table_name) ?? 0) > 1) {
       issues.push(`duplicate table_name "${table.table_name}"`);
     }
-    seenTableNames.add(table.table_name);
 
     const seedKeys = ['seed_data', 'rows', 'data'].filter(
       (key) => key in (table as unknown as Record<string, unknown>)
@@ -59,6 +69,8 @@ export function validateLldSchema(schema: LldSchema): string[] {
     for (const fk of table.foreign_keys ?? []) {
       if (!fk.references_table) {
         issues.push(`table "${table.table_name}" has a foreign key with no references_table`);
+      } else if (!tableCounts.has(fk.references_table)) {
+        issues.push(`table "${table.table_name}" has a foreign key referencing unknown table "${fk.references_table}"`);
       }
     }
   }
@@ -86,7 +98,8 @@ export function parseLldSchema(raw: unknown): LldSchema {
  * another comes after it), for the feature-planner stage to consume. Exported here
  * (rather than duplicated in feature-planner.ts) since it's a property of the schema
  * itself, not of planning. Throws on a foreign-key cycle — that's an invalid schema, not
- * a planning decision.
+ * a planning decision — and on a foreign key referencing a table absent from the schema
+ * (mirrors validateLldSchema's fail-closed check, for direct callers that skip parsing).
  */
 export function topologicallyOrderTables(schema: LldSchema): LldTable[] {
   const byName = new Map(schema.tables.map((table) => [table.table_name, table]));
@@ -103,7 +116,12 @@ export function topologicallyOrderTables(schema: LldSchema): LldTable[] {
 
     for (const fk of table.foreign_keys ?? []) {
       const dependency = byName.get(fk.references_table);
-      if (dependency) visit(dependency);
+      if (!dependency) {
+        throw new LldValidationError([
+          `table "${table.table_name}" has a foreign key referencing unknown table "${fk.references_table}"`,
+        ]);
+      }
+      visit(dependency);
     }
 
     inProgress.delete(table.table_name);
@@ -134,7 +152,10 @@ export function buildLldStage(deps: LldStageDeps): PipelineStage {
   return {
     name: 'lld',
     async run(artifacts: PipelineArtifacts, ctx: StageContext): Promise<PipelineArtifacts> {
-      const raw = await deps.generateLld(artifacts.prd ?? artifacts.prompt, ctx);
+      if (!artifacts.prd) {
+        throw new Error('lld stage requires artifacts.prd (PRD stage must run first)');
+      }
+      const raw = await deps.generateLld(artifacts.prd, ctx);
       const lld = parseLldSchema(raw);
       return { ...artifacts, lld };
     },

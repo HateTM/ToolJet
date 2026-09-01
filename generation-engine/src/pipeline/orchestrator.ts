@@ -25,7 +25,19 @@ export class PipelineStageError extends Error {
  *
  * A failing stage short-circuits the run — no later stage sees partial/inconsistent
  * artifacts from a failed one.
+ *
+ * Routing short-circuit (#115): once a stage has produced an `unsupported`
+ * classification on the artifact bag, the remaining stages are skipped and the
+ * artifacts are returned as-is. Classification is ADR-0028's routing stage — an
+ * unsupported intent must not flow into PRD -> LLD -> generation, and returning
+ * (rather than throwing) lets the caller present the classification to the user as a
+ * normal outcome. The check re-runs before every stage, so it also covers callers
+ * composing their own stage lists or pre-seeding `classification` on `initial`.
  */
+export function isUnsupported(artifacts: PipelineArtifacts): boolean {
+  return artifacts.classification?.intent === 'unsupported';
+}
+
 export async function runPipeline(
   stages: PipelineStage[],
   initial: PipelineArtifacts,
@@ -34,6 +46,9 @@ export async function runPipeline(
   let artifacts = initial;
 
   for (const stage of stages) {
+    if (isUnsupported(artifacts)) {
+      break;
+    }
     try {
       artifacts = await stage.run(artifacts, ctx);
     } catch (err) {

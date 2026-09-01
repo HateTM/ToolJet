@@ -40,4 +40,27 @@ describe('buildDefaultPipeline', () => {
     expect(result.entityToolCalls).toEqual([{ entityName: 'users', action: 'create', toolName: 'create_table' }]);
     expect(result.evaluation).toEqual({ pass: true, reasons: [] });
   });
+
+  it('short-circuits after classify when the classification is unsupported', async () => {
+    const ctx: StageContext = { organizationId: 'org-1' };
+    const generatePrd = jest.fn();
+    const generateLld = jest.fn();
+    const judge = jest.fn();
+    const stages = buildDefaultPipeline({
+      classify: { classify: jest.fn().mockResolvedValue({ intent: 'unsupported', confidence: 0 }) },
+      prd: { generatePrd },
+      lld: { generateLld },
+      evaluate: { judge },
+    });
+
+    const result = await runPipeline(stages, { prompt: 'write me a poem' }, ctx);
+
+    expect(result.classification).toEqual({ intent: 'unsupported', confidence: 0 });
+    expect(result.prd).toBeUndefined();
+    expect(result.lld).toBeUndefined();
+    expect(result.evaluation).toBeUndefined();
+    expect(generatePrd).not.toHaveBeenCalled();
+    expect(generateLld).not.toHaveBeenCalled();
+    expect(judge).not.toHaveBeenCalled();
+  });
 });

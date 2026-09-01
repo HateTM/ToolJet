@@ -58,6 +58,14 @@ describe('validateLldSchema', () => {
     };
     expect(validateLldSchema(schema)).toContain('table "posts" has a foreign key with no references_table');
   });
+
+  it('flags a foreign key referencing a table absent from the schema', () => {
+    const schema: LldSchema = {
+      tables: [{ ...postsTable, foreign_keys: [{ ...postsTable.foreign_keys![0], references_table: 'ghosts' }] }],
+    };
+    expect(validateLldSchema(schema)).toContain('table "posts" has a foreign key referencing unknown table "ghosts"');
+    expect(() => parseLldSchema(schema)).toThrow(LldValidationError);
+  });
 });
 
 describe('parseLldSchema', () => {
@@ -95,6 +103,13 @@ describe('topologicallyOrderTables', () => {
     };
     expect(() => topologicallyOrderTables({ tables: [a, b] })).toThrow(/cycle/);
   });
+
+  it('throws on a foreign key referencing a table absent from the schema', () => {
+    const schema: LldSchema = {
+      tables: [{ ...postsTable, foreign_keys: [{ ...postsTable.foreign_keys![0], references_table: 'ghosts' }] }],
+    };
+    expect(() => topologicallyOrderTables(schema)).toThrow(/unknown table "ghosts"/);
+  });
 });
 
 describe('buildLldStage', () => {
@@ -114,6 +129,14 @@ describe('buildLldStage', () => {
     const generateLld = jest.fn().mockResolvedValue({ tables: [] });
     const stage = buildLldStage({ generateLld });
 
-    await expect(stage.run({ prompt: 'build a CRM' }, ctx)).rejects.toThrow(LldValidationError);
+    await expect(stage.run({ prompt: 'build a CRM', prd: '# PRD' }, ctx)).rejects.toThrow(LldValidationError);
+  });
+
+  it('throws when artifacts.prd is missing instead of falling back to the raw prompt', async () => {
+    const generateLld = jest.fn();
+    const stage = buildLldStage({ generateLld });
+
+    await expect(stage.run({ prompt: 'build a CRM' }, ctx)).rejects.toThrow('lld stage requires artifacts.prd');
+    expect(generateLld).not.toHaveBeenCalled();
   });
 });
