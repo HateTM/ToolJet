@@ -10,4 +10,5 @@ export * from './create-table';
 export * from './create-component';
 export * from './create-query';
 export * from './update-query';
+export * from './update-table';
 export * from './evaluate';
