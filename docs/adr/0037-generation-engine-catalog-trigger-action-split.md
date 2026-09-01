@@ -1,4 +1,4 @@
-# ADR-0036: Component triggers and event actions are two separate vocabularies
+# ADR-0037: Component triggers and event actions are two separate vocabularies
 
 Date: 2026-09-01
 Ticket: #92 (Generation engine: component and event catalogs)
