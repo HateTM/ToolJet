@@ -14,3 +14,15 @@ app
     app.log.error(err);
     process.exit(1);
   });
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => {
+    app.close().then(
+      () => process.exit(0),
+      (err) => {
+        app.log.error(err);
+        process.exit(1);
+      }
+    );
+  });
+}

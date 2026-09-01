@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "dev": "ts-node -r tsconfig-paths/register src/server.ts",
+    "dev": "ts-node src/server.ts",
     "test": "jest",
     "lint": "eslint ."
   },
@@ -31,7 +31,6 @@
     "prettier": "^3.4.2",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.3"
   }
 }

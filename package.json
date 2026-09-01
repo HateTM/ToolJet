@@ -33,7 +33,7 @@
     "prebuild:server": "npm --prefix server install --production=false",
     "build:server": "NODE_ENV=production npm --prefix server run build",
     "postbuild:server": "npm --prefix server prune --production",
-    "build": "npm run build:plugins:prod && npm run build:frontend && npm run build:server",
+    "build": "npm run build:plugins:prod && npm run build:frontend && npm run build:server && npm run build:generation-engine",
     "start:prod": "npm --prefix server run start:prod",
     "install:generation-engine": "npm --prefix generation-engine install",
     "build:generation-engine": "npm --prefix generation-engine run build",
