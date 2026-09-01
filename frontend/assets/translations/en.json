@@ -1126,5 +1126,26 @@
         "technicalDetails": "Technical details",
         "copy": "Copy",
         "copied": "Copied"
+    },
+    "workspaceSettings": {
+        "aiProvider": {
+            "title": "AI provider",
+            "sourceEnv": "Using environment configuration",
+            "sourceOrg": "Using organization key",
+            "sourceNone": "No key configured",
+            "useEnvironmentConfig": "Use environment configuration (OPENAI_BASE_URL / OPENAI_API_KEY / AI_MODEL)",
+            "useEnvironmentConfigHelp": "When enabled, generation uses the server-configured LLM regardless of the organization key below.",
+            "provider": "Provider",
+            "model": "Model",
+            "modelPlaceholder": "e.g. gpt-4o",
+            "apiKey": "API key",
+            "apiKeyPlaceholder": "Enter an API key",
+            "apiKeyHelp": "Stored encrypted; never shown again after saving.",
+            "apiKeyHelpConfigured": "A key is already configured. Leave blank to keep it, or enter a new one to replace it.",
+            "switchProviderNeedsKey": "Enter an API key for the new provider to switch — the previous key cannot be reused.",
+            "apiKeyRequiredFirstTime": "Enter an API key to configure an organization key for the first time.",
+            "noKeyEnvOnly": "Already using the environment configuration — nothing to save.",
+            "saved": "AI provider settings saved"
+        }
     }
 }

@@ -2,7 +2,7 @@ import React from 'react';
 import { Route, Routes, Navigate } from 'react-router-dom';
 import { AdminRoute } from '@/Routes';
 import WorkspaceSettingsPage from './WorkspaceSettingsPage';
-import { WorkspaceLoginSettings, ManageOrgUsers, ManageGroupPermissionsV2 } from './pages';
+import { WorkspaceLoginSettings, ManageOrgUsers, ManageGroupPermissionsV2, AiProviderSettings } from './pages';
 
 export const getCEWorkspaceSettingsRoutes = (props) => [
   <Route index key="index" element={<Navigate to="users" replace />} />,
@@ -21,6 +21,7 @@ export const getCEWorkspaceSettingsRoutes = (props) => [
     path="workspace-login"
     element={<WorkspaceLoginSettings switchDarkMode={props.switchDarkMode} darkMode={props.darkMode} />}
   />,
+  <Route key="ai-provider" path="ai-provider" element={<AiProviderSettings />} />,
 ];
 
 const CEWorkspaceSettingsRoutes = (props) => (

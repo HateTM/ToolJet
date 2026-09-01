@@ -194,6 +194,8 @@ function constructWorkspaceSettingsLinks(extraLinks) {
       route: 'workspace-login',
       conditions: ['admin', 'wsLoginEnabled'],
     },
+    // Ticket #65: admin-only page for the AI Builder's LLM provider/key (ticket #59 backend).
+    { id: 'ai-provider', name: 'AI provider', route: 'ai-provider', conditions: ['admin'] },
     ...(extraLinks ? extraLinks : []),
   ];
   return commonLinks;
