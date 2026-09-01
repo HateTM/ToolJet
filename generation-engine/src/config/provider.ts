@@ -7,7 +7,7 @@ import { LlmProvider } from './llm';
  * The resolved provider config the server hands to the engine per request —
  * either the org's decrypted BYOK settings or the env fallback, already
  * resolved before it crosses the wire. The engine never reads
- * `organization_ai_keys` or decrypts anything itself (ADR-0036).
+ * `organization_ai_keys` or decrypts anything itself (ADR-0038).
  */
 export interface EffectiveLlmConfig {
   provider: LlmProvider;

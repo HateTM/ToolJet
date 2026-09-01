@@ -1,4 +1,4 @@
-# ADR-0036: Generation engine receives resolved LLM credentials per request; it does not read org-key storage itself
+# ADR-0038: Generation engine receives resolved LLM credentials per request; it does not read org-key storage itself
 
 Date: 2026-09-01
 Ticket: #94 (Generation engine: LLM provider config, including multi-provider/BYOK)
