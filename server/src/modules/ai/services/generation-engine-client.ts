@@ -63,7 +63,13 @@ export class GenerationEngineClient {
     try {
       response = await fetch(`${baseUrl.replace(/\/$/, '')}/generate/prd`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Shared secret required by the engine's auth middleware (ticket
+          // #114, ADR-0032). Same env var the engine checks; unset here means
+          // the engine rejects with 401/503 — surfaced as an engine error.
+          ...(process.env.ENGINE_API_KEY && { Authorization: `Bearer ${process.env.ENGINE_API_KEY}` }),
+        },
         body: JSON.stringify({ messages }),
         signal: idleController.signal,
       });

@@ -6,7 +6,17 @@ import type { StreamPrdFn } from '../src/routes/generate-prd';
  * and sequence (SSE wire format, terminal-event contract) — not incrementality.
  * That's covered server-side, on the proxy client, not here.
  */
+const AUTH = { authorization: 'Bearer test-engine-key' };
+
 describe('POST /generate/prd', () => {
+  beforeAll(() => {
+    process.env.ENGINE_API_KEY = 'test-engine-key';
+  });
+
+  afterAll(() => {
+    delete process.env.ENGINE_API_KEY;
+  });
+
   it('streams chunk events followed by a terminal engine-done event', async () => {
     const streamPrd: StreamPrdFn = async function* () {
       yield { type: 'chunk', content: 'Hello' };
@@ -17,6 +27,7 @@ describe('POST /generate/prd', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/generate/prd',
+      headers: AUTH,
       payload: { messages: [{ role: 'user', content: 'build me a CRM' }] },
     });
 
@@ -40,6 +51,7 @@ describe('POST /generate/prd', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/generate/prd',
+      headers: AUTH,
       payload: {},
     });
 
@@ -59,6 +71,7 @@ describe('POST /generate/prd', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/generate/prd',
+      headers: AUTH,
       payload: { messages: [{ role: 'user', content: 'x' }] },
     });
 

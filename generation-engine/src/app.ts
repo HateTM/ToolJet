@@ -1,5 +1,6 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import { registerGeneratePrdRoute, defaultStreamPrd, StreamPrdFn } from './routes/generate-prd';
+import { requireEngineApiKey } from './auth';
 
 export type BuildAppOptions = {
   /**
@@ -25,6 +26,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get('/health', async () => {
     return { status: 'ok' };
+  });
+
+  // Bearer-token auth (ticket #114): applies to every endpoint except
+  // /health, which Docker healthchecks probe without credentials and which
+  // exposes no LLM capability worth guarding.
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.url.startsWith('/health')) {
+      return;
+    }
+    await requireEngineApiKey(request, reply);
   });
 
   registerGeneratePrdRoute(app, options.streamPrd ?? defaultStreamPrd);
