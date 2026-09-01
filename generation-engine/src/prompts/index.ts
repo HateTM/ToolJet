@@ -9,4 +9,5 @@ export * from './step-plan';
 export * from './create-table';
 export * from './create-component';
 export * from './create-query';
+export * from './update-query';
 export * from './evaluate';

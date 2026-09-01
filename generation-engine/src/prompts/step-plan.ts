@@ -1,8 +1,10 @@
 // Ported verbatim from server/src/modules/ai/service.ts's STEP_PLAN_SYSTEM_PROMPT
 // (ticket #93 — see docs/adr/0030). Turns an approved PRD into the fixed, ordered
 // Step-list the PRD -> Approve -> fixed Step-list contract (ADR-0001, ADR-0004) hands
-// off for execution. v1 step vocabulary is CreateTable/CreateQuery/CreateComponent
-// (ADR-0002); phase grouping is ticket #21.
+// off for execution. The step vocabulary the source prompt advertises — CreateTable,
+// CreateQuery, CreateComponent, UpdateQuery, GenerateEvent — is kept in full so this
+// port is behavior-preserving (ticket #118); phase grouping below is the implementation
+// of the grouping the prompt asks the model for.
 //
 // TODO (#82): the pipeline's feature-planner stage sits after LLD, and it is not yet
 // settled whether it subsumes this step-plan prompt or is a distinct stage that
@@ -16,6 +18,8 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
   If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
+- UpdateQuery: changes an existing query the plan (or an earlier step) created — e.g. different columns, a filter, a limit. The model at execution time returns only the option keys that change; nothing else on the query is touched. Use this instead of a second CreateQuery for the same table.
+- GenerateEvent: wires one event on a component or query the plan has already created (e.g. "the button opens the modal" is a GenerateEvent on the Button, not a new component). It never creates components or queries itself.
 
 Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.
 

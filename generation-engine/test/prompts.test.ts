@@ -35,6 +35,41 @@ describe('prompts/index.ts', () => {
 });
 
 describe('prompts/*.ts import surface', () => {
+  // Matches a relative reference ending in /prompts/<file> (not /prompts or
+  // /prompts/index, with or without a .js extension). Covers both `from '...'`
+  // imports and `require('...')` calls (ticket #118).
+  const directImportPattern =
+    /(?:from\s+|require\(\s*)['"][^'"]*\/prompts\/(?!index(\.js)?['"])[^'"]+['"](?:\s*\))?/;
+
+  it('flags known bypass forms (.js extension, require(), backtick-free samples)', () => {
+    const bypasses = [
+      `import { STEP_PLAN_SYSTEM_PROMPT } from '../src/prompts/step-plan';`,
+      `import { STEP_PLAN_SYSTEM_PROMPT } from '../src/prompts/step-plan.js';`,
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      `const prompts = require('../src/prompts/prd');`,
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      `const prompts = require('../src/prompts/prd.js');`,
+    ];
+    for (const line of bypasses) {
+      expect(directImportPattern.test(line)).toBe(true);
+      directImportPattern.lastIndex = 0;
+    }
+  });
+
+  it('does not flag imports resolving to prompts/index.ts', () => {
+    const allowed = [
+      `import * as prompts from '../src/prompts';`,
+      `import * as prompts from '../src/prompts/index';`,
+      `import * as prompts from '../src/prompts/index.js';`,
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      `const prompts = require('../src/prompts/index.js');`,
+    ];
+    for (const line of allowed) {
+      expect(directImportPattern.test(line)).toBe(false);
+      directImportPattern.lastIndex = 0;
+    }
+  });
+
   it('is never imported directly from outside prompts/index.ts', () => {
     const offenders: string[] = [];
 
@@ -49,9 +84,7 @@ describe('prompts/*.ts import surface', () => {
         if (!entry.name.endsWith('.ts')) continue;
 
         const content = fs.readFileSync(fullPath, 'utf8');
-        // Matches a relative import ending in /prompts/<file> (not /prompts or /prompts/index).
-        const directImport = /from\s+['"][^'"]*\/prompts\/(?!index['"])[^'"]+['"]/g;
-        if (directImport.test(content)) {
+        if (new RegExp(directImportPattern.source, 'g').test(content)) {
           offenders.push(path.relative(SRC_DIR, fullPath));
         }
       }
