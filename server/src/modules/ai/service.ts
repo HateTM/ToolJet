@@ -11,6 +11,18 @@ import { IAiService } from "./interfaces/IService";
 import { AiUtilService } from "./util.service";
 import { AgentsService } from "./services/agents.service";
 import { SeedTableReport } from "./interfaces/IAgentsService";
+import {
+  UPDATE_QUERY_SYSTEM_PROMPT,
+  updateQueryTool,
+  mergeQueryUpdate,
+  validateMergedQueryOptions,
+} from "./services/query-update";
+import { isSingleReadOnlyStatement } from "./services/query-security";
+import {
+  renderEventCatalogForPrompt,
+  normalizeEventId,
+  validateEventBody,
+} from "./services/event-catalog";
 import { AiConversationRepository } from "./repositories/ai-conversation.repository";
 import { AiConversationMessageRepository } from "./repositories/ai-conversation-message.repository";
 import { ArtifactRepository } from "./repositories/artifact.repository";
@@ -58,8 +70,16 @@ Answer strictly from the app inventory below — the app's pages, the components
 You cannot change this app in this conversation — you have no ability to create, edit, or delete pages, components, queries, or tables here. If the user asks you to build or change something, do not attempt it and do not claim you have: tell them to use the "Start building" action on your answer, which opens a new build conversation carrying this question and answer over as context.`;
 
 // v1 step vocabulary (ADR-0002). The planner is free to propose any of these — see
-// ADR-0006 — even though only CreateTable has a real handler in this ticket.
-const STEP_TYPES = ["CreateTable", "CreateQuery", "CreateComponent"] as const;
+// ADR-0006 — even though only CreateTable has a real handler in this ticket. Ticket #67
+// extends the vocabulary with the two edit steps: a diff-merge into an existing query's
+// options and event wiring on components/queries the plan has created.
+const STEP_TYPES = [
+  "CreateTable",
+  "CreateQuery",
+  "CreateComponent",
+  "UpdateQuery",
+  "GenerateEvent",
+] as const;
 
 export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
@@ -68,6 +88,8 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
   If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
+- UpdateQuery: changes an existing query the plan (or an earlier step) created — e.g. different columns, a filter, a limit. The model at execution time returns only the option keys that change; nothing else on the query is touched. Use this instead of a second CreateQuery for the same table.
+- GenerateEvent: wires one event on a component or query the plan has already created (e.g. "the button opens the modal" is a GenerateEvent on the Button, not a new component). It never creates components or queries itself.
 
 Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.
 
@@ -563,32 +585,11 @@ const withConnectedDataSources = (
   ].join("\n\n");
 };
 
-// SQL keywords that must not appear in a generated query. The tool schema and the prompt both
-// ask for one SELECT, and nothing in this flow runs the statement to find out what it really
-// is — a stored DELETE or DROP would sit in the app until a user pressed Run, and then it
-// would be their data. ADR-0019 declines to validate what a statement *means*; this only
-// checks what kind of statement it is, which is cheap and does not require running anything.
-//
-// `SELECT ... FOR UPDATE` is caught by this too. That is the intended reading: a query the
-// AI wrote to feed a Table widget has no business taking row locks.
-const WRITE_STATEMENT_KEYWORDS =
-  /\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|merge|call|do|copy|vacuum|comment)\b/i;
-
-const isSingleReadOnlyStatement = (sql: string): boolean => {
-  const stripped = (sql || "")
-    .replace(/--[^\n]*/g, " ")
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .trim()
-    .replace(/;\s*$/, "")
-    .trim();
-
-  if (!stripped) return false;
-  // A second statement after the first is how a read turns into a write without the opening
-  // keyword ever changing.
-  if (stripped.includes(";")) return false;
-  if (!/^(select|with)\b/i.test(stripped)) return false;
-  return !WRITE_STATEMENT_KEYWORDS.test(stripped);
-};
+// SQL keywords that must not appear in a generated query, and the single-statement
+// read-only check, moved to ./services/query-security (ticket #67) so the UpdateQuery
+// path validates the merged statement with exactly the same rules. `SELECT ... FOR UPDATE`
+// is caught by this too — the intended reading: a query the AI wrote to feed a Table
+// widget has no business taking row locks.
 
 // Grounds a `Fix with AI` request (CONTEXT.md). The binding-syntax primer is the part that
 // does the work: the model is being handed one expression with no surrounding app context
@@ -707,6 +708,41 @@ const summarizeFallbackValue = (value: any): string => {
     : serialized;
 };
 
+// The machine event catalog (ticket #67) is injected into this prompt verbatim, appended
+// in executeEventStep — the model may only pick eventIds/actionIds/keys from it, never
+// invent strings.
+const GENERATE_EVENT_SYSTEM_PROMPT = `You wire one event handler onto a component or a data query of this ToolJet app, based on the PRD and the specific step you've been asked to build.
+
+Call generateEvent exactly once. You are given the catalog of valid eventIds per component type and valid actionIds with the exact keys each accepts — pick only from it. Never invent an event id or an action key: "rowClick" is not an event id, the Table's event is "onRowClicked".
+
+Rules:
+- targetName is the exact name of a component or query that appears in the context below — never invent one.
+- params carries only the keys the chosen actionId lists in the catalog. Omit a key rather than set it to null/undefined. Values may be literals or {{ }} bindings to other components/queries that exist in this app.
+- For control-component, componentSpecificActionParams must be an array (empty if the component action takes no arguments) and componentId is the target component's id from the context.
+- One GenerateEvent attaches exactly one handler. If the PRD needs several events on the same target, that is several GenerateEvent steps.`;
+
+const generateEventTool = tool({
+  description:
+    "Attach one event handler to a component or query that already exists in this plan.",
+  parameters: z.object({
+    targetName: z
+      .string()
+      .describe("Exact name of the component or query to attach the event to"),
+    eventId: z
+      .string()
+      .describe("The event to react to, from the catalog (e.g. onClick)"),
+    actionId: z
+      .string()
+      .describe("The action to run, from the catalog (e.g. show-modal)"),
+    params: z
+      .record(z.any())
+      .optional()
+      .describe(
+        "Action-specific keys exactly as the catalog lists them for this actionId",
+      ),
+  }),
+});
+
 type StepExecutionContext = {
   prd: string;
   organizationId: string;
@@ -725,6 +761,8 @@ export class AiService implements IAiService {
     "CreateTable",
     "CreateComponent",
     "CreateQuery",
+    "UpdateQuery",
+    "GenerateEvent",
   ];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
 
@@ -1538,6 +1576,10 @@ export class AiService implements IAiService {
         return this.executeComponentStep(step, context, previousError);
       case "CreateQuery":
         return this.executeQueryStep(step, context, previousError);
+      case "UpdateQuery":
+        return this.executeUpdateQueryStep(step, context, previousError);
+      case "GenerateEvent":
+        return this.executeEventStep(step, context, previousError);
       default:
         throw new Error(`Unsupported step type "${step.type}"`);
     }
@@ -1959,6 +2001,243 @@ export class AiService implements IAiService {
     );
 
     return { content: created, identifier: created.name, props };
+  }
+
+  /**
+   * Ticket #67: attaches one event to a component/query this plan created, validated
+   * against the machine event catalog. An existing handler on the same target with the
+   * same eventId is updated in place rather than duplicated (the acceptance criterion
+   * "changes/adds an event without duplicates"). The artifact records the previous body
+   * of updated events and the ids of created ones, so rewind (undoGenerateEvent) can
+   * restore both.
+   */
+  private async executeEventStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const components = context.priorResults.filter(
+      (result) =>
+        result.type === "CreateComponent" &&
+        result.artifact.content?.pageId !== undefined,
+    );
+    const queries = context.priorResults.filter(
+      (result) => result.type === "CreateQuery",
+    );
+
+    const targets = [
+      ...components.map((result) => ({
+        name: result.artifact.content.name,
+        id: result.artifact.content.id,
+        componentType: result.artifact.content.type,
+      })),
+      ...queries.map((result) => ({
+        name: result.artifact.content.name,
+        id: result.artifact.content.id,
+        componentType: null,
+      })),
+    ];
+    if (!targets.length) {
+      throw new Error(
+        "There is no component or query to attach an event to — a GenerateEvent step needs a CreateComponent or CreateQuery step before it",
+      );
+    }
+
+    const stepContext = [
+      this.buildStepContextLines(step, context, previousError),
+      `Attachable targets (use the exact name):\n${targets
+        .map(
+          (target) =>
+            `- ${target.name} (${target.componentType ? `${target.componentType}, id ${target.id}` : `data query, id ${target.id}`})`,
+        )
+        .join("\n")}`,
+    ].join("\n\n");
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: `${GENERATE_EVENT_SYSTEM_PROMPT}\n\n${renderEventCatalogForPrompt()}`,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeEventStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-generate-event",
+      {
+        ...prompt,
+        tools: { generateEvent: generateEventTool },
+        toolChoice: { type: "tool", toolName: "generateEvent" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "generateEvent") {
+      throw new Error("The assistant did not produce an event definition");
+    }
+
+    const args = call.args as {
+      targetName: string;
+      eventId: string;
+      actionId: string;
+      params?: Record<string, any>;
+    };
+    const target = targets.find((entry) => entry.name === args.targetName);
+    if (!target) {
+      throw new Error(
+        `targetName "${args.targetName}" does not match any component or query in this plan. Available: ${targets
+          .map((entry) => entry.name)
+          .join(", ")}`,
+      );
+    }
+    const targetType = target.componentType ? "component" : "data_query";
+
+    const body = validateEventBody(
+      {
+        eventId: normalizeEventId(args.eventId),
+        actionId: args.actionId,
+        ...(args.params || {}),
+      },
+      targetType,
+      target.componentType ?? undefined,
+    );
+
+    const existingEvents = await this.agentsService.FindEventsBySource(
+      target.id,
+    );
+    const sameEvent = existingEvents.find(
+      (event) => event?.event?.eventId === body.eventId,
+    );
+
+    if (sameEvent) {
+      await this.agentsService.UpdateEventBody(
+        context.appVersionId,
+        sameEvent.id,
+        body,
+      );
+      return {
+        content: {
+          updated: [
+            { id: sameEvent.id, name: sameEvent.name, previousEvent: sameEvent.event },
+          ],
+          targetName: target.name,
+          eventId: body.eventId,
+        },
+        identifier: `${target.name}.${body.eventId}`,
+        props: { targetName: target.name, ...body },
+      };
+    }
+
+    const created = await this.agentsService.CreateEvent(
+      context.appVersionId,
+      {
+        name: body.eventId,
+        event: body,
+        eventType: targetType,
+        attachedTo: target.id,
+        index: existingEvents.length,
+      },
+    );
+    return {
+      content: {
+        created: [{ id: created.id, name: created.name, sourceId: target.id }],
+        targetName: target.name,
+        eventId: body.eventId,
+      },
+      identifier: `${target.name}.${body.eventId}`,
+      props: { targetName: target.name, ...body },
+    };
+  }
+
+  /**
+   * Ticket #67: a diff-update of a query this plan created. The LLM returns only the
+   * changed option keys; mergeQueryUpdate merges them over the query's current options
+   * (untouched settings survive verbatim) and validateMergedQueryOptions re-runs the
+   * read-only SQL check on the merged result. name/dataSourceId are not part of the tool
+   * schema at all — a rename or data-source switch is out of this step's contract. The
+   * artifact carries previousOptions so rewind (undoUpdateQuery) restores the original.
+   */
+  private async executeUpdateQueryStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const existingQueries = context.priorResults.filter(
+      (result) => result.type === "CreateQuery",
+    );
+    if (!existingQueries.length) {
+      throw new Error(
+        "There is no query to update — an UpdateQuery step needs a CreateQuery step before it",
+      );
+    }
+
+    const stepContext = [
+      this.buildStepContextLines(step, context, previousError),
+      `Existing queries (update exactly one of these, by name):\n${existingQueries
+        .map(
+          (result) =>
+            `- ${result.artifact.content.name} (id ${result.artifact.content.id}), current options: ${JSON.stringify(result.artifact.content.options)}`,
+        )
+        .join("\n")}`,
+    ].join("\n\n");
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: UPDATE_QUERY_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeUpdateQueryStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-update-query",
+      {
+        ...prompt,
+        tools: { updateQuery: updateQueryTool },
+        toolChoice: { type: "tool", toolName: "updateQuery" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "updateQuery") {
+      throw new Error("The assistant did not produce a query update");
+    }
+
+    const args = call.args as { queryName: string; options: Record<string, any> };
+    const existing = existingQueries.find(
+      (entry) => entry.artifact.content?.name === args.queryName,
+    );
+    if (!existing) {
+      throw new Error(
+        `queryName "${args.queryName}" does not match any query created earlier in this plan. Available: ${existingQueries
+          .map((entry) => entry.artifact.content?.name)
+          .join(", ")}`,
+      );
+    }
+
+    const previousOptions = existing.artifact.content.options ?? {};
+    const mergedOptions = validateMergedQueryOptions(
+      mergeQueryUpdate(previousOptions, args.options),
+    );
+
+    await this.agentsService.UpdateQuery(
+      existing.artifact.content.id,
+      mergedOptions,
+    );
+
+    return {
+      content: {
+        queryId: existing.artifact.content.id,
+        name: existing.artifact.content.name,
+        previousOptions,
+        options: mergedOptions,
+      },
+      identifier: existing.artifact.content.name,
+      props: { queryName: args.queryName, options: args.options },
+    };
   }
 
   /**

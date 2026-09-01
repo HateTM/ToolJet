@@ -30,6 +30,22 @@ export interface IAgentsService {
 
   CreateQuery(appVersionId: string, organizationId: string, props: any): Promise<any>;
 
+  // Diff-merges an LLM-proposed options patch into an existing data query's options
+  // (ticket #67). The merge itself lives in service.ts's executeUpdateQueryStep (which
+  // validates the result); this only persists it.
+  UpdateQuery(queryId: string, options: any): Promise<any>;
+
+  // The component inventory of a version, grouped by page id — the grounding an event step
+  // needs to resolve target component names to ids (ticket #67).
+  ListComponents(appVersionId: string): Promise<Record<string, Record<string, any>>>;
+
+  // Thin persistence wrappers over EventsService for the GenerateEvent step (ticket #67);
+  // no policy of their own.
+  FindEventsBySource(sourceId: string): Promise<any[]>;
+  CreateEvent(appVersionId: string, eventHandler: any): Promise<any>;
+  UpdateEventBody(appVersionId: string, eventId: string, event: any): Promise<any>;
+  DeleteEvent(appVersionId: string, eventId: string): Promise<any>;
+
   // Reverts a Step's Artifact (ADR-0008): the inverse of CreateTable/CreateComponent/
   // CreateQuery, dispatched on the same StepType the Artifact was created under.
   undoArtifact(stepType: StepType, appVersionId: string, organizationId: string, content: any): Promise<void>;
