@@ -728,6 +728,54 @@ export class AgentsService implements IAgentsService {
   }
 
   /**
+   * Persists a merged options patch for an existing query (ticket #67). The patch has
+   * already been merged into the query's full options and security-validated by the
+   * caller (executeUpdateQueryStep); name/dataSourceId are structurally untouchable here
+   * — only options is written.
+   */
+  async UpdateQuery(queryId: string, options: any): Promise<any> {
+    return this.dataQueryRepository.updateOne(queryId, { options });
+  }
+
+  /**
+   * The version's component inventory, keyed page id → component id → { name, type },
+   * for event steps to resolve LLM-named target components (ticket #67). PageService's
+   * page ids are the keys ComponentsService returns components for.
+   */
+  async ListComponents(appVersionId: string): Promise<Record<string, Record<string, any>>> {
+    const pages = await this.pageService.findPagesForVersion(appVersionId);
+    const componentsByPage = await this.componentsService.getAllComponentsForPages(pages.map((page) => page.id));
+    // getAllComponentsForPages returns id → { component, layouts }; project down to what
+    // event grounding needs (name + type), not the full widget definition.
+    const inventory: Record<string, Record<string, any>> = {};
+    for (const [componentId, entry] of Object.entries(componentsByPage ?? {})) {
+      const component = (entry as any)?.component;
+      if (!component) continue;
+      inventory[component.page_id] ??= {};
+      inventory[component.page_id][componentId] = { name: component.name, type: component.component };
+    }
+    return inventory;
+  }
+
+  async FindEventsBySource(sourceId: string): Promise<any[]> {
+    return this.eventsService.findAllEventsWithSourceId(sourceId);
+  }
+
+  async CreateEvent(appVersionId: string, eventHandler: any): Promise<any> {
+    // skipHistoryCapture: the AI step's own change is already recorded as the Step's
+    // Artifact (and is rewound through it) — an EE app-history entry on top would double-count.
+    return this.eventsService.createEvent(eventHandler, appVersionId, true);
+  }
+
+  async UpdateEventBody(appVersionId: string, eventId: string, event: any): Promise<any> {
+    return this.eventsService.updateEvent([{ event_id: eventId, diff: { event } } as any], 'update', appVersionId);
+  }
+
+  async DeleteEvent(appVersionId: string, eventId: string): Promise<any> {
+    return this.eventsService.deleteEvent(eventId, appVersionId);
+  }
+
+  /**
    * Reverts the real App/DB change a Step's Artifact made (ADR-0008) — the inverse of
    * CreateTable/CreateComponent/CreateQuery, dispatched on the same StepType the Artifact
    * was created under. Used by rewind: undo every step after the rewind target, back to
@@ -742,6 +790,10 @@ export class AgentsService implements IAgentsService {
         return this.undoQuery(content.id);
       case 'CreateComponent':
         return this.undoCreateComponent(appVersionId, organizationId, content);
+      case 'UpdateQuery':
+        return this.undoUpdateQuery(content);
+      case 'GenerateEvent':
+        return this.undoGenerateEvent(appVersionId, content);
       default:
         throw new Error(`Cannot undo unsupported step type "${stepType}"`);
     }
@@ -756,6 +808,30 @@ export class AgentsService implements IAgentsService {
   private async undoQuery(queryId: string): Promise<void> {
     await this.dataQueryRepository.deleteDataQueryEvents(queryId);
     await this.dataQueryRepository.deleteOne(queryId);
+  }
+
+  // Ticket #67: an UpdateQuery artifact carries the query's full previous options, so the
+  // undo is a plain write-back — the patch never touched name/dataSourceId, and rewinding
+  // the merged options restores exactly what was there before.
+  private async undoUpdateQuery(content: any): Promise<void> {
+    if (!content?.queryId || content?.previousOptions === undefined) {
+      throw new Error('UpdateQuery artifact is missing queryId/previousOptions — cannot undo');
+    }
+    await this.UpdateQuery(content.queryId, content.previousOptions);
+  }
+
+  // Ticket #67: undo for events goes in reverse creation order — first restore the bodies
+  // of events the step updated (previousEvent), then delete the ones it created. If a
+  // restored event has since vanished the update is a no-op result, not an error.
+  private async undoGenerateEvent(appVersionId: string, content: any): Promise<void> {
+    const updated: any[] = content?.updated ?? [];
+    for (const entry of [...updated].reverse()) {
+      await this.UpdateEventBody(appVersionId, entry.id, entry.previousEvent);
+    }
+    const created: any[] = content?.created ?? [];
+    for (const entry of [...created].reverse()) {
+      await this.DeleteEvent(appVersionId, entry.id);
+    }
   }
 
   /**
