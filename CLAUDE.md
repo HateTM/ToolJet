@@ -55,3 +55,20 @@ Example: AI Builder bug → search `server/src/modules/ai/` + `frontend/src/modu
 - Branch prefixes: `feature/<issue-id>-<name>`, `fix/<issue-id>-<name>`, `docs/<name>`, `chore/<name>`; short imperative commit subjects; `Closes #<id>` when applicable. Issues tracked via `gh issue` against `HateTM/ToolJet` (origin, not upstream), not upstream.
 - Full frontend/backend convention list: `.github/copilot-instructions.md`.
 
+
+## Deployment Context
+
+Working copy of **ToolJet** (CE, OSS) forked to `HateTM/ToolJet`, used to build a custom ToolJet with:
+- **Full Russian localization** — `frontend/assets/translations/ru.json` is complete (all `t()` keys present, deep-synced with `en.json`)
+- **AI Builder** (EE-like) — implemented in the CE branch, backed by an OpenAI-compatible endpoint (LocalAI on TrueNAS, `OPENAI_BASE_URL`, port 30286; models in `/mnt/NaS/Apps/Localai/Models`)
+- **Production build** — `docker/ce-production.Dockerfile` → custom image `tooljet-ce:local`, replacing `tooljet/tooljet:ee-lts-latest` in the TrueNAS custom app (port 8083, `LANGUAGE=ru` already in env)
+
+Upstream sync: `upstream` remote = `https://github.com/ToolJet/ToolJet.git`, `origin` = fork. Codegraph index at `/home/hatetm/tooljet/.codegraph`.
+
+Issues: `gh issue` against `HateTM/ToolJet` (origin). Triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix` (see `docs/agents/triage-labels.md`, `docs/agents/issue-tracker.md`, `docs/agents/domain.md`).
+
+## Codex-Only Subagent Rule
+
+Codex only: when the user explicitly asks to launch or use subagents, run them with `gpt-5.6-luna` and `max` reasoning effort. Do not apply this rule outside Codex.
+
+Example: “parallel reviewers” → LUNA/`max` in Codex; other harnesses use their own settings.
