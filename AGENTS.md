@@ -4,6 +4,7 @@ Working copy of **ToolJet** (CE, OSS) forked to `HateTM/ToolJet`, used to build 
 - **Full Russian localization** — `frontend/assets/translations/ru.json` is complete (all `t()` keys present, deep-synced with `en.json`)
 - **AI Builder** (EE-like) — implemented in the CE branch, backed by an OpenAI-compatible endpoint (LocalAI on TrueNAS, `OPENAI_BASE_URL`, port 30286; models in `/mnt/NaS/Apps/Localai/Models`)
 - **Production build** — `docker/ce-production.Dockerfile` → custom image `tooljet-ce:local`, replacing `tooljet/tooljet:ee-lts-latest` in the TrueNAS custom app (port 8083, `LANGUAGE=ru` already in env)
+- **Generation engine** — separate TrueNAS custom app (`generation-engine/`, ADR-0029), reachable from `tooljet-ce:local` only over a shared `external: true` docker network, no host port published (ADR-0032, `deploy/truenas/generation-engine.compose.yaml`); `tooljet-ce:local` gets `GENERATION_ENGINE_URL` pointing at the engine's internal hostname, alongside the existing `OPENAI_BASE_URL`/`OPENAI_API_KEY`/`AI_MODEL` trio
 
 Upstream sync: `upstream` remote = `https://github.com/ToolJet/ToolJet.git`, `origin` = fork. Codegraph index lives at `/home/hatetm/tooljet/.codegraph` (use `codegraph_explore` before reading files).
 

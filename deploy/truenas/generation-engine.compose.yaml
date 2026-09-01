@@ -1,0 +1,63 @@
+# Reference compose fragment for the Generation engine's TrueNAS SCALE custom
+# app, per ADR-0032 (docs/adr/0032-generation-engine-deployment-topology.md,
+# accepted on the worktree-ee-extract-analysis branch — resolves once #90's
+# scaffold and this branch land on main).
+#
+# TrueNAS SCALE custom apps are each installed from their own compose file
+# through the SCALE UI, not orchestrated from this repo — this file is the
+# reviewable source of truth for that UI step, kept in git so the topology
+# decision has a diffable artifact instead of living only as TrueNAS click-ops.
+#
+# Companion: tooljet-ce:local's own custom app must join the same external
+# network and set GENERATION_ENGINE_URL=http://generation-engine:3100 (see
+# .env.example and CLAUDE.md's Deployment Context section).
+#
+# `docker compose -f deploy/truenas/generation-engine.compose.yaml config`
+# validates this file's syntax; it is not meant to be run with `docker
+# compose up` outside of TrueNAS SCALE.
+
+services:
+  generation-engine:
+    # Built on the host from generation-engine/Dockerfile — `docker build -t
+    # generation-engine:local generation-engine/` — then pushed/loaded onto
+    # the TrueNAS host, the same way tooljet-ce:local is produced today. No
+    # `build:` block here: SCALE installs an app from this compose text
+    # directly, without the repo checked out, so a build context wouldn't
+    # resolve.
+    image: generation-engine:local
+    container_name: generation-engine
+    restart: always
+    # No `ports:` — per ADR-0032 the engine is reachable only from
+    # tooljet-ce:local on the shared network below, never from the host.
+    networks:
+      tooljet-shared:
+        # TrueNAS SCALE installs each app as its own compose project, so
+        # cross-project resolution on the shared external network is by
+        # container name or explicit alias, not by service name — pin the
+        # alias explicitly rather than relying on `container_name` alone.
+        # This is the hostname tooljet-ce:local's GENERATION_ENGINE_URL
+        # (.env.example) points at: http://generation-engine:3100.
+        aliases:
+          - generation-engine
+    # No mem_limit / cpus — ADR-0032 follows the live EE container precedent
+    # (Memory=0, NanoCpus=0) given the engine's thin, stateless nature
+    # (ADR-0029). Revisit only if real resource contention shows up.
+    # environment:
+    #   Owned by the engine itself from here on (ADR-0031, amended by
+    #   ADR-0035 to also cover the #59 multi-provider/BYOK layer) — set
+    #   through the TrueNAS app's own env once #85/#95 land the engine's
+    #   config surface. Left commented out rather than declared empty:
+    #   OPENAI_BASE_URL=/OPENAI_API_KEY=/AI_MODEL= as empty strings would
+    #   shadow real values from any later env_file.
+    #   - OPENAI_BASE_URL=
+    #   - OPENAI_API_KEY=
+    #   - AI_MODEL=
+
+networks:
+  # Must already exist, created once with `docker network create
+  # --driver bridge tooljet-shared` on the TrueNAS host (the Plex/Tautulli
+  # pattern already used for other multi-app setups there) — external: true
+  # so this app never manages its lifecycle, mirroring tooljet-ce:local's own
+  # network stanza.
+  tooljet-shared:
+    external: true

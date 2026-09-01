@@ -1,7 +1,7 @@
 import { buildApp } from './app';
+import { resolveListenConfig } from './listen-config';
 
-const PORT = Number(process.env.PORT) || 3100;
-const HOST = process.env.HOST || '0.0.0.0';
+const { host: HOST, port: PORT } = resolveListenConfig(process.env);
 
 const app = buildApp();
 
