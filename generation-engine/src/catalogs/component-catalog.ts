@@ -2,6 +2,10 @@
 // only) and frontend/src/AppBuilder/WidgetManager/widgets/*.js (`events` blocks, for triggers).
 // Restructured per ADR-0033: not a port of componentsMeta.json's validation-schema shape, no
 // EE code/prompts reused -- see docs/adr/0033-generation-engine-component-event-catalogs.md.
+//
+// The `Modal` entry's properties and triggers both come from widgets/modal.js (the legacy
+// widget componentsMeta.json's `Modal` key describes -- useDefaultButton/triggerButtonLabel/
+// hideOnEsc are its shape, not modalV2.js's), confirmed events: { onOpen, onClose } match.
 import type { ComponentCatalogEntry } from './types';
 
 export const COMPONENT_CATALOG: Record<string, ComponentCatalogEntry> = {
