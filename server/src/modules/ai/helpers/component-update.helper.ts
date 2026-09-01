@@ -14,20 +14,36 @@
 
 export type ComponentPropertyPatch = Record<string, unknown>;
 
+// The event half of a patch (ticket #67): binds/updates one EventHandler on the target
+// component. `eventId` must be one of the component type's real event ids
+// (widget-meta.ts's getEventIds, sourced from componentsMeta.json's `events` list);
+// `actionId` one of the curated action ids AgentsService.UpdateComponent recognizes. Every
+// other key is an action-specific field carried verbatim onto the stored event JSON (e.g.
+// `modal` for show-modal, `queryId`/`queryName` for run-query) — never invented here, just
+// passed through.
+export interface ComponentEventPatch {
+  eventId: string;
+  actionId: string;
+  [key: string]: unknown;
+}
+
 export interface ComponentUpdatePatch {
   properties?: ComponentPropertyPatch;
   styles?: ComponentPropertyPatch;
+  event?: ComponentEventPatch;
 }
 
 function isEmptySection(section?: ComponentPropertyPatch): boolean {
   return !section || Object.keys(section).length === 0;
 }
 
-/** True when a patch touches neither properties nor styles — the "no changes" outcome the
- * UpdateComponent tool contract must accept without erroring. */
+/** True when a patch touches neither properties, styles, nor an event — the "no changes"
+ * outcome the UpdateComponent tool contract must accept without erroring. An event-only
+ * patch (binding a new event to an existing component with no property/style change) is
+ * therefore NOT empty — this is what keeps it from being silently dropped as a no-op. */
 export function isEmptyPatch(patch: ComponentUpdatePatch | undefined | null): boolean {
   if (!patch) return true;
-  return isEmptySection(patch.properties) && isEmptySection(patch.styles);
+  return isEmptySection(patch.properties) && isEmptySection(patch.styles) && !patch.event;
 }
 
 /** Wraps a flat `{ propName: value }` patch into the `{ propName: { value } }` shape

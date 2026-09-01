@@ -28,13 +28,22 @@ export interface IAgentsService {
   // props shape is type-specific (see AgentsService.CreateComponent's doc comment).
   CreateComponent(appVersionId: string, organizationId: string, type: string, props: any): Promise<any>;
 
-  // Merges a sparse { properties?, styles? } patch onto an existing component (ticket #66) —
-  // only the paths that changed, validated against componentsMeta the same way
-  // CreateComponent's widgets are. Throws when componentId doesn't resolve to a real
+  // Merges a sparse { properties?, styles?, event? } patch onto an existing component
+  // (ticket #66; the `event` arm added by ticket #67) — only the paths that changed,
+  // validated against componentsMeta the same way CreateComponent's widgets are. An `event`
+  // patch binds or updates ONE EventHandler on the component (deduped on eventId, never a
+  // second handler for the same event), validated against that component type's real event
+  // ids and a curated real action-id list. Throws when componentId doesn't resolve to a real
   // component rather than creating one.
   UpdateComponent(appVersionId: string, organizationId: string, componentId: string, patch: any): Promise<any>;
 
   CreateQuery(appVersionId: string, organizationId: string, props: any): Promise<any>;
+
+  // Merges a sparse `{ [optionKey]: newValue }` patch onto an existing query's stored
+  // options (ticket #67) — only the keys that changed, without clobbering the rest, and
+  // without touching the query's name or its data source. Throws when queryId doesn't
+  // resolve to a real query rather than creating one.
+  UpdateQuery(appVersionId: string, organizationId: string, queryId: string, optionsPatch: any): Promise<any>;
 
   // Reverts a Step's Artifact (ADR-0008): the inverse of CreateTable/CreateComponent/
   // CreateQuery, dispatched on the same StepType the Artifact was created under.

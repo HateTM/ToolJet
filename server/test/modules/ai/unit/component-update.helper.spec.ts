@@ -17,6 +17,10 @@ describe('isEmptyPatch (ticket #66)', () => {
     expect(isEmptyPatch({ properties: { text: 'New title' } })).toBe(false);
     expect(isEmptyPatch({ styles: { color: 'red' } })).toBe(false);
   });
+
+  it('is false for an event-only patch (ticket #67) — it must not be dropped as a no-op', () => {
+    expect(isEmptyPatch({ event: { eventId: 'onClick', actionId: 'show-modal', modal: 'comp-1' } })).toBe(false);
+  });
 });
 
 describe('wrapPatchSection', () => {

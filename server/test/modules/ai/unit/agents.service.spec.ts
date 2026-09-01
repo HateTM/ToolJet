@@ -21,12 +21,17 @@ const buildMockComponentsService = () => ({
 
 const buildMockEventsService = () => ({
   createEvent: jest.fn(),
+  findAllEventsWithSourceId: jest.fn().mockResolvedValue([]),
+  updateEvent: jest.fn(),
+  deleteEvent: jest.fn(),
 });
 
 const buildMockDataQueryRepository = () => ({
   createOne: jest.fn(),
   deleteDataQueryEvents: jest.fn(),
   deleteOne: jest.fn(),
+  getOneById: jest.fn(),
+  updateOne: jest.fn(),
 });
 
 const buildMockDataSourcesRepository = () => ({
@@ -816,9 +821,9 @@ describe('AgentsService.UpdateComponent (ticket #66)', () => {
     const { service, componentsService } = buildAgentsService();
     componentsService.findOneWithLayouts.mockRejectedValue(new Error('Component with id ghost not found'));
 
-    await expect(
-      service.UpdateComponent('version-1', 'org-1', 'ghost', { properties: { text: 'x' } })
-    ).rejects.toThrow('Component "ghost" does not exist');
+    await expect(service.UpdateComponent('version-1', 'org-1', 'ghost', { properties: { text: 'x' } })).rejects.toThrow(
+      'Component "ghost" does not exist'
+    );
     expect(componentsService.update).not.toHaveBeenCalled();
   });
 });
@@ -849,6 +854,209 @@ describe('AgentsService.undoArtifact — UpdateComponent (ticket #66)', () => {
     await service.undoArtifact('UpdateComponent', 'version-1', 'org-1', { id: 'component-1', noop: true });
 
     expect(componentsService.update).not.toHaveBeenCalled();
+  });
+});
+
+/** @group ai-builder */
+describe('AgentsService.UpdateComponent — event patch (ticket #67)', () => {
+  const buttonComponent = { id: 'component-1', type: 'Button', pageId: 'page-1', properties: {}, styles: {} };
+
+  it('is NOT a no-op for an event-only patch — no property/style change, but a real EventHandler still gets created', async () => {
+    const { service, componentsService, eventsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue(buttonComponent);
+    eventsService.createEvent.mockResolvedValue({ id: 'event-1' });
+
+    const result = await service.UpdateComponent('version-1', 'org-1', 'component-1', {
+      event: { eventId: 'onClick', actionId: 'show-modal', modal: 'modal-1' },
+    });
+
+    expect(componentsService.update).not.toHaveBeenCalled(); // no properties/styles touched
+    expect(eventsService.createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: { eventId: 'onClick', actionId: 'show-modal', modal: 'modal-1' },
+        attachedTo: 'component-1',
+      }),
+      'version-1'
+    );
+    expect(result.noop).toBeUndefined();
+    expect(result.event).toEqual({ eventHandlerId: 'event-1', created: true });
+  });
+
+  it('updates the existing EventHandler in place instead of creating a duplicate, when one already binds this eventId', async () => {
+    const { service, componentsService, eventsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue(buttonComponent);
+    eventsService.findAllEventsWithSourceId.mockResolvedValue([
+      {
+        id: 'event-1',
+        name: 'onClick',
+        index: 0,
+        event: { eventId: 'onClick', actionId: 'show-modal', modal: 'old-modal' },
+      },
+    ]);
+
+    const result = await service.UpdateComponent('version-1', 'org-1', 'component-1', {
+      event: { eventId: 'onClick', actionId: 'show-modal', modal: 'new-modal' },
+    });
+
+    expect(eventsService.createEvent).not.toHaveBeenCalled();
+    expect(eventsService.updateEvent).toHaveBeenCalledWith(
+      [
+        {
+          event_id: 'event-1',
+          diff: {
+            name: 'onClick',
+            index: 0,
+            event: { eventId: 'onClick', actionId: 'show-modal', modal: 'new-modal' },
+          },
+        },
+      ],
+      'update',
+      'version-1'
+    );
+    expect(result.event).toEqual({
+      eventHandlerId: 'event-1',
+      created: false,
+      previousName: 'onClick',
+      previousEvent: { eventId: 'onClick', actionId: 'show-modal', modal: 'old-modal' },
+    });
+  });
+
+  it('rejects a hallucinated eventId that is not real for the component type — never silently accepted', async () => {
+    const { service, componentsService, eventsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue(buttonComponent);
+
+    await expect(
+      service.UpdateComponent('version-1', 'org-1', 'component-1', {
+        event: { eventId: 'onRowClick', actionId: 'show-modal', modal: 'modal-1' },
+      })
+    ).rejects.toThrow(/onRowClick/);
+    expect(eventsService.createEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invented actionId', async () => {
+    const { service, componentsService, eventsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue(buttonComponent);
+
+    await expect(
+      service.UpdateComponent('version-1', 'org-1', 'component-1', {
+        event: { eventId: 'onClick', actionId: 'delete-everything' },
+      })
+    ).rejects.toThrow(/delete-everything/);
+    expect(eventsService.createEvent).not.toHaveBeenCalled();
+  });
+});
+
+/** @group ai-builder */
+describe('AgentsService.undoArtifact — UpdateComponent event undo (ticket #67)', () => {
+  it('deletes the EventHandler when the original patch created it', async () => {
+    const { service, eventsService } = buildAgentsService();
+
+    await service.undoArtifact('UpdateComponent', 'version-1', 'org-1', {
+      id: 'component-1',
+      previous: {},
+      event: { eventHandlerId: 'event-1', created: true },
+    });
+
+    expect(eventsService.deleteEvent).toHaveBeenCalledWith('event-1', 'version-1');
+    expect(eventsService.updateEvent).not.toHaveBeenCalled();
+  });
+
+  it('restores the previous name/event when the original patch updated an existing EventHandler', async () => {
+    const { service, eventsService } = buildAgentsService();
+
+    await service.undoArtifact('UpdateComponent', 'version-1', 'org-1', {
+      id: 'component-1',
+      previous: {},
+      event: {
+        eventHandlerId: 'event-1',
+        created: false,
+        previousName: 'onClick',
+        previousEvent: { eventId: 'onClick', actionId: 'show-modal', modal: 'old-modal' },
+      },
+    });
+
+    expect(eventsService.deleteEvent).not.toHaveBeenCalled();
+    expect(eventsService.updateEvent).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          event_id: 'event-1',
+          diff: expect.objectContaining({
+            name: 'onClick',
+            event: { eventId: 'onClick', actionId: 'show-modal', modal: 'old-modal' },
+          }),
+        }),
+      ],
+      'update',
+      'version-1'
+    );
+  });
+});
+
+/** @group ai-builder */
+describe('AgentsService.UpdateQuery (ticket #67)', () => {
+  it('merges only the patched options onto the query via a read-merge-write, without touching name/dataSourceId', async () => {
+    const { service, dataQueryRepository } = buildAgentsService();
+    dataQueryRepository.getOneById.mockResolvedValue({
+      id: 'query-1',
+      name: 'list_orders',
+      options: { operation: 'list_rows', table_id: 'orders', list_rows: { limit: 10 } },
+    });
+
+    const result = await service.UpdateQuery('version-1', 'org-1', 'query-1', { list_rows: { limit: 25 } });
+
+    expect(dataQueryRepository.updateOne).toHaveBeenCalledWith('query-1', {
+      options: { operation: 'list_rows', table_id: 'orders', list_rows: { limit: 25 } },
+    });
+    expect(result.previous).toEqual({ list_rows: { limit: 10 } });
+  });
+
+  it('is a no-op — no updateOne call — when the patch is {} ("no changes")', async () => {
+    const { service, dataQueryRepository } = buildAgentsService();
+    dataQueryRepository.getOneById.mockResolvedValue({ id: 'query-1', name: 'list_orders', options: {} });
+
+    const result = await service.UpdateQuery('version-1', 'org-1', 'query-1', {});
+
+    expect(dataQueryRepository.updateOne).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: 'query-1', name: 'list_orders', options: {}, previous: {}, noop: true });
+  });
+
+  it('throws a meaningful error for a nonexistent query instead of creating one', async () => {
+    const { service, dataQueryRepository } = buildAgentsService();
+    dataQueryRepository.getOneById.mockResolvedValue(null);
+
+    await expect(service.UpdateQuery('version-1', 'org-1', 'ghost', { table_id: 'orders' })).rejects.toThrow(
+      'Query "ghost" does not exist'
+    );
+    expect(dataQueryRepository.updateOne).not.toHaveBeenCalled();
+  });
+});
+
+/** @group ai-builder */
+describe('AgentsService.undoArtifact — UpdateQuery (ticket #67)', () => {
+  it('restores the pre-patch snapshot through the same read-merge-write path', async () => {
+    const { service, dataQueryRepository } = buildAgentsService();
+    dataQueryRepository.getOneById.mockResolvedValue({
+      id: 'query-1',
+      options: { operation: 'list_rows', table_id: 'orders', list_rows: { limit: 25 } },
+    });
+
+    await service.undoArtifact('UpdateQuery', 'version-1', 'org-1', {
+      id: 'query-1',
+      previous: { list_rows: { limit: 10 } },
+    });
+
+    expect(dataQueryRepository.updateOne).toHaveBeenCalledWith('query-1', {
+      options: { operation: 'list_rows', table_id: 'orders', list_rows: { limit: 10 } },
+    });
+  });
+
+  it('does nothing for a no-op UpdateQuery artifact', async () => {
+    const { service, dataQueryRepository } = buildAgentsService();
+
+    await service.undoArtifact('UpdateQuery', 'version-1', 'org-1', { id: 'query-1', noop: true });
+
+    expect(dataQueryRepository.updateOne).not.toHaveBeenCalled();
+    expect(dataQueryRepository.getOneById).not.toHaveBeenCalled();
   });
 });
 

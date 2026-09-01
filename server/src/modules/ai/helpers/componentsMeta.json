@@ -695,7 +695,65 @@
           }
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onRowHovered",
+        "displayName": "Row hovered"
+      },
+      {
+        "id": "onRowClicked",
+        "displayName": "Row clicked"
+      },
+      {
+        "id": "onExpand",
+        "displayName": "Row expanded"
+      },
+      {
+        "id": "onBulkUpdate",
+        "displayName": "Save changes"
+      },
+      {
+        "id": "onPageChanged",
+        "displayName": "Page changed"
+      },
+      {
+        "id": "onSearch",
+        "displayName": "Search"
+      },
+      {
+        "id": "onCancelChanges",
+        "displayName": "Cancel changes"
+      },
+      {
+        "id": "onSort",
+        "displayName": "Sort applied"
+      },
+      {
+        "id": "onCellValueChanged",
+        "displayName": "Cell value changed"
+      },
+      {
+        "id": "onFilterChanged",
+        "displayName": "Filter changed"
+      },
+      {
+        "id": "onNewRowsAdded",
+        "displayName": "Add new rows"
+      },
+      {
+        "id": "onTableDataDownload",
+        "displayName": "Download data"
+      },
+      {
+        "id": "onRefresh",
+        "displayName": "Refresh"
+      },
+      {
+        "id": "onHeaderClick",
+        "displayName": "Header clicked"
+      }
+    ]
   },
   "Button": {
     "definition": {
@@ -935,7 +993,17 @@
           }
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onClick",
+        "displayName": "On click"
+      },
+      {
+        "id": "onHover",
+        "displayName": "On hover"
+      }
+    ]
   },
   "Text": {
     "definition": {
@@ -1165,7 +1233,17 @@
           "validation": null
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onClick",
+        "displayName": "On click"
+      },
+      {
+        "id": "onHover",
+        "displayName": "On hover"
+      }
+    ]
   },
   "TextInput": {
     "definition": {
@@ -1475,7 +1553,25 @@
           "validation": null
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onChange",
+        "displayName": "On change"
+      },
+      {
+        "id": "onEnterPressed",
+        "displayName": "On enter pressed"
+      },
+      {
+        "id": "onFocus",
+        "displayName": "On focus"
+      },
+      {
+        "id": "onBlur",
+        "displayName": "On blur"
+      }
+    ]
   },
   "Container": {
     "definition": {
@@ -1632,7 +1728,8 @@
           }
         }
       }
-    }
+    },
+    "events": []
   },
   "Form": {
     "definition": {
@@ -1908,7 +2005,17 @@
           }
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onSubmit",
+        "displayName": "On submit"
+      },
+      {
+        "id": "onInvalid",
+        "displayName": "On invalid"
+      }
+    ]
   },
   "Chart": {
     "definition": {
@@ -2107,7 +2214,17 @@
           }
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onClick",
+        "displayName": "On data point click"
+      },
+      {
+        "id": "onDoubleClick",
+        "displayName": "On double click"
+      }
+    ]
   },
   "Image": {
     "definition": {
@@ -2328,7 +2445,13 @@
           }
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onClick",
+        "displayName": "On click"
+      }
+    ]
   },
   "Checkbox": {
     "definition": {
@@ -2502,7 +2625,21 @@
           "validation": null
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onChange",
+        "displayName": "On change"
+      },
+      {
+        "id": "onCheck",
+        "displayName": "On check (Deprecated)"
+      },
+      {
+        "id": "onUnCheck",
+        "displayName": "On uncheck (Deprecated)"
+      }
+    ]
   },
   "DropdownV2": {
     "definition": {
@@ -2910,7 +3047,25 @@
           "validation": null
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onSelect",
+        "displayName": "On select"
+      },
+      {
+        "id": "onSearchTextChanged",
+        "displayName": "On search text changed"
+      },
+      {
+        "id": "onFocus",
+        "displayName": "On focus"
+      },
+      {
+        "id": "onBlur",
+        "displayName": "On blur"
+      }
+    ]
   },
   "Modal": {
     "definition": {
@@ -3065,6 +3220,16 @@
           }
         }
       }
-    }
+    },
+    "events": [
+      {
+        "id": "onOpen",
+        "displayName": "On open"
+      },
+      {
+        "id": "onClose",
+        "displayName": "On close"
+      }
+    ]
   }
 }

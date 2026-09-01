@@ -5,6 +5,7 @@ import { DataQueryRepository } from '@modules/data-queries/repository';
 import { AiConversationRepository } from '../repositories/ai-conversation.repository';
 import { AiConversationMessageRepository } from '../repositories/ai-conversation-message.repository';
 import { StepRepository } from '../repositories/step.repository';
+import { getEventIds } from '../helpers/widget-meta';
 
 // Bounds on the assembled text. The inventory goes into the model's context on *every*
 // Learn message (ADR-0011: assembled fresh, never indexed), so it has to stay small enough
@@ -81,11 +82,33 @@ export class AppInventoryService {
     const lines: string[] = [];
     for (const page of (pages as any[]) || []) {
       for (const [id, entry] of Object.entries(page.components || {}) as Array<[string, any]>) {
-        lines.push(`- ${entry?.type} "${entry?.name}" (id: ${id}, page: "${page.name}")`);
+        // Real event ids (ticket #67) so an UpdateComponent step's event patch is grounded
+        // in what the component actually exposes, the same "copied verbatim, never invented"
+        // contract the id itself already gets — e.g. Table components list "onRowClicked",
+        // which is what stops the model from guessing the plausible-but-wrong "onRowClick".
+        const eventIds = getEventIds(entry?.type);
+        const eventsSuffix = eventIds.length ? `, events: ${eventIds.join(', ')}` : '';
+        lines.push(`- ${entry?.type} "${entry?.name}" (id: ${id}, page: "${page.name}"${eventsSuffix})`);
       }
     }
     if (!lines.length) return 'Existing components already in this app: none yet.';
     return ['Existing components already in this app:', ...lines].join('\n');
+  }
+
+  /**
+   * The `Existing queries already in this app` block an UpdateQuery step (ticket #67)
+   * grounds itself in — mirrors renderComponentIndex's reasoning: UpdateQuery has to
+   * reference a real query id precisely, not just describe the app in prose.
+   */
+  async renderQueryIndex(appVersionId: string): Promise<string> {
+    const queries = await this.dataQueryRepository.getMany({ appVersionId }, ['dataSource']);
+    if (!queries?.length) return 'Existing queries already in this app: none yet.';
+    const lines = (queries as any[]).map((query) => {
+      const operation = query.options?.operation;
+      const source = query.dataSource?.name ? ` on ${query.dataSource.name}` : '';
+      return `- "${query.name}" (id: ${query.id}${source}${operation ? `, ${operation}` : ''})`;
+    });
+    return ['Existing queries already in this app:', ...lines].join('\n');
   }
 
   private renderPages(pages: any[]): string {

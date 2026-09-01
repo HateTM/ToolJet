@@ -40,6 +40,9 @@ const buildMockRepositories = () => ({
     // Ticket #66: UpdateComponent's own execution-time context — defaults to "nothing built
     // yet", overridden per test with the target component's real id.
     renderComponentIndex: jest.fn().mockResolvedValue('Existing components already in this app: none yet.'),
+    // Ticket #67: UpdateQuery's own execution-time context — same "nothing built yet" default,
+    // overridden per test with the target query's real id.
+    renderQueryIndex: jest.fn().mockResolvedValue('Existing queries already in this app: none yet.'),
   },
   dataSourceInventoryService: { findDataSourceByKind: jest.fn() },
 });

@@ -55,6 +55,8 @@ const buildMockAppInventoryService = () => ({
   // Ticket #66: the step planner and UpdateComponent's execution-time context both ground
   // themselves in this — default to "nothing built yet", overridden per test as needed.
   renderComponentIndex: jest.fn().mockResolvedValue('Existing components already in this app: none yet.'),
+  // Ticket #67: same grounding, for UpdateQuery targets.
+  renderQueryIndex: jest.fn().mockResolvedValue('Existing queries already in this app: none yet.'),
 });
 
 const buildMockAiFeasibilityService = () => ({

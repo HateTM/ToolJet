@@ -14,12 +14,21 @@ import { StepType } from '@entities/step.entity';
 import { sanitizeComponentSection } from '../helpers/component-type-validator';
 import { normalizeMalformedOptionsProperty } from '../helpers/component-options.utils';
 import {
+  ComponentEventPatch,
   ComponentUpdatePatch,
   isEmptyPatch,
   snapshotPreviousSection,
   wrapPatchSection,
 } from '../helpers/component-update.helper';
+import { validateEventPatch } from '../helpers/event-update.helper';
+import { getEventIds } from '../helpers/widget-meta';
 import { generateComponentLayout, SiblingRect } from '../helpers/layout/generate-layout';
+import {
+  isEmptyOptionsPatch,
+  mergeQueryOptions,
+  QueryOptionsPatch,
+  snapshotPreviousOptions,
+} from '../helpers/query-update.helper';
 
 // Maps a ToolJet DB column data type to the Form field type the widget's JSON schema
 // understands. Every TJDB type from service.ts gets a deliberate choice; the fallback
@@ -194,6 +203,10 @@ export class AgentsService implements IAgentsService {
    * to creating a clone), sanitize the patch against componentsMeta the same way
    * createWidgetComponent does (ticket #60), and snapshot exactly the touched keys' prior
    * values so `undoUpdateComponent` can restore them on rewind.
+   *
+   * `patch.event` (ticket #67) is a third, independent arm: binds/updates one EventHandler
+   * on the component (see `setComponentEvent`) rather than touching properties/styles, and
+   * can be present alone (an event-only patch is not a no-op — see `isEmptyPatch`).
    */
   async UpdateComponent(
     appVersionId: string,
@@ -234,7 +247,14 @@ export class AgentsService implements IAgentsService {
     if (sanitizedProperties) definition.properties = sanitizedProperties.result;
     if (sanitizedStyles) definition.styles = sanitizedStyles.result;
 
-    await this.componentsService.update({ [componentId]: { component: { definition } } }, appVersionId);
+    if (Object.keys(definition).length) {
+      await this.componentsService.update({ [componentId]: { component: { definition } } }, appVersionId);
+    }
+
+    let eventResult: Awaited<ReturnType<AgentsService['setComponentEvent']>> | undefined;
+    if (patch.event) {
+      eventResult = await this.setComponentEvent(appVersionId, current.type, componentId, patch.event);
+    }
 
     return {
       id: componentId,
@@ -242,8 +262,65 @@ export class AgentsService implements IAgentsService {
       pageId: current.pageId,
       patch: definition,
       previous,
+      ...(eventResult && { event: eventResult }),
       ...(warnings.length && { warnings }),
     };
+  }
+
+  /**
+   * Binds or updates ONE event on `componentId` (ticket #67, the "bind events to components,
+   * including updating existing events, without duplicates" half of UpdateComponent). Rides
+   * on the same StepType/Artifact as a property/style change — a new StepType per the EE
+   * `generateEvent`/`updateEvent` split was considered and rejected (see ADR-0026): the
+   * quality rule this ticket asks for ("rowClick → the component's own onRowClick, never a
+   * design-language guess") is a validation concern, not a build-step-taxonomy one, and an
+   * event patch already needs the exact same real-component-id grounding UpdateComponent's
+   * componentId already provides.
+   *
+   * "Without duplicates": an existing EventHandler already bound to this eventId on this
+   * component is updated in place (its id, `index`, and `name` are preserved) rather than a
+   * second one being created alongside it — `findAllEventsWithSourceId` + a match on
+   * `event.eventId` is the dedup check.
+   */
+  private async setComponentEvent(
+    appVersionId: string,
+    componentType: string,
+    componentId: string,
+    eventPatch: ComponentEventPatch
+  ): Promise<{ eventHandlerId: string; created: boolean; previousName?: string; previousEvent?: any }> {
+    const validation = validateEventPatch(componentType, eventPatch, getEventIds(componentType));
+    if (!validation.valid) {
+      throw new Error(`[UpdateComponent] invalid event patch: ${validation.error}`);
+    }
+
+    const existingEvents = await this.eventsService.findAllEventsWithSourceId(componentId);
+    const existing = existingEvents.find((event) => event?.event?.eventId === eventPatch.eventId);
+
+    if (existing) {
+      await this.eventsService.updateEvent(
+        [{ event_id: existing.id, diff: { name: existing.name, index: existing.index, event: eventPatch } }],
+        'update',
+        appVersionId
+      );
+      return {
+        eventHandlerId: existing.id,
+        created: false,
+        previousName: existing.name,
+        previousEvent: existing.event,
+      };
+    }
+
+    const created = await this.eventsService.createEvent(
+      {
+        name: eventPatch.eventId,
+        event: eventPatch,
+        eventType: Target.component,
+        attachedTo: componentId,
+        index: existingEvents.length,
+      } as any,
+      appVersionId
+    );
+    return { eventHandlerId: created.id, created: true };
   }
 
   private async createPageComponent(appVersionId: string, organizationId: string, props: any) {
@@ -796,10 +873,10 @@ export class AgentsService implements IAgentsService {
 
   /**
    * Reverts the real App/DB change a Step's Artifact made (ADR-0008) — the inverse of
-   * CreateTable/CreateComponent/CreateQuery, dispatched on the same StepType the Artifact
-   * was created under. Used by rewind: undo every step after the rewind target, back to
-   * front, so a later step's dependency (a Form's table, a Table widget's query) is always
-   * gone before the step that depends on it.
+   * CreateTable/CreateComponent/CreateQuery/UpdateComponent/UpdateQuery, dispatched on the
+   * same StepType the Artifact was created under. Used by rewind: undo every step after the
+   * rewind target, back to front, so a later step's dependency (a Form's table, a Table
+   * widget's query) is always gone before the step that depends on it.
    */
   async undoArtifact(stepType: StepType, appVersionId: string, organizationId: string, content: any): Promise<void> {
     switch (stepType) {
@@ -811,6 +888,8 @@ export class AgentsService implements IAgentsService {
         return this.undoCreateComponent(appVersionId, organizationId, content);
       case 'UpdateComponent':
         return this.undoUpdateComponent(appVersionId, content);
+      case 'UpdateQuery':
+        return this.undoUpdateQuery(content.id, content);
       default:
         throw new Error(`Cannot undo unsupported step type "${stepType}"`);
     }
@@ -866,9 +945,90 @@ export class AgentsService implements IAgentsService {
     if (content?.previous?.styles && Object.keys(content.previous.styles).length) {
       definition.styles = content.previous.styles;
     }
-    if (!Object.keys(definition).length) return;
+    if (Object.keys(definition).length) {
+      await this.componentsService.update({ [content.id]: { component: { definition } } }, appVersionId);
+    }
 
-    await this.componentsService.update({ [content.id]: { component: { definition } } }, appVersionId);
+    if (content?.event) {
+      await this.undoComponentEvent(appVersionId, content.event);
+    }
+  }
+
+  /**
+   * Compensating undo for setComponentEvent (ticket #67): a step that created a new
+   * EventHandler has it deleted outright; a step that updated an existing one has its prior
+   * `name`/`event` JSON re-merged back through `updateEvent`, exactly mirroring
+   * undoUpdateComponent's own restore-the-snapshot shape. `index` is untouched either way —
+   * this ticket's patches never reorder events, only bind/change one.
+   */
+  private async undoComponentEvent(
+    appVersionId: string,
+    eventResult: { eventHandlerId: string; created: boolean; previousName?: string; previousEvent?: any }
+  ): Promise<void> {
+    if (eventResult.created) {
+      await this.eventsService.deleteEvent(eventResult.eventHandlerId, appVersionId);
+      return;
+    }
+    await this.eventsService.updateEvent(
+      [
+        {
+          event_id: eventResult.eventHandlerId,
+          diff: { name: eventResult.previousName, index: undefined, event: eventResult.previousEvent } as any,
+        },
+      ],
+      'update',
+      appVersionId
+    );
+  }
+
+  /**
+   * UpdateQuery (ticket #67, port of the EE `updateQuery` idea): merges a sparse `options`
+   * patch onto an existing query's stored options — only the keys that actually changed,
+   * `{}` meaning "no changes" — via query-update.helper.ts's read-merge-write (there is no
+   * partial-jsonb-update path; DataQueryRepository.updateOne replaces the whole `options`
+   * column). `name` and `dataSourceId` are not patchable at all (see query-update.helper.ts's
+   * doc comment) — the query's identity and target data source stay exactly what CreateQuery
+   * set them to.
+   */
+  async UpdateQuery(
+    appVersionId: string,
+    organizationId: string,
+    queryId: string,
+    optionsPatch: QueryOptionsPatch
+  ): Promise<any> {
+    const current = await this.dataQueryRepository.getOneById(queryId);
+    if (!current) {
+      throw new Error(`Query "${queryId}" does not exist`);
+    }
+
+    if (isEmptyOptionsPatch(optionsPatch)) {
+      return { id: queryId, name: current.name, options: current.options, previous: {}, noop: true };
+    }
+
+    const previous = snapshotPreviousOptions(current.options as Record<string, unknown>, optionsPatch);
+    const mergedOptions = mergeQueryOptions(current.options as Record<string, unknown>, optionsPatch);
+
+    await this.dataQueryRepository.updateOne(queryId, { options: mergedOptions } as any);
+
+    return { id: queryId, name: current.name, options: mergedOptions, previous };
+  }
+
+  /**
+   * Compensating undo for UpdateQuery: re-merges the pre-patch snapshot back onto the
+   * query's options through the same read-merge-write path the original patch used —
+   * mirroring undoUpdateComponent. Same documented gap as UpdateComponent's: an options key
+   * the patch *introduced* (the query had no prior value for it) can't be fully un-introduced,
+   * only left at its patched value.
+   */
+  private async undoUpdateQuery(queryId: string, content: any): Promise<void> {
+    if (content?.noop) return;
+    if (!content?.previous || !Object.keys(content.previous).length) return;
+
+    const current = await this.dataQueryRepository.getOneById(queryId);
+    if (!current) return; // Query itself was removed by a later undo step already — nothing to restore.
+
+    const restoredOptions = mergeQueryOptions(current.options as Record<string, unknown>, content.previous);
+    await this.dataQueryRepository.updateOne(queryId, { options: restoredOptions } as any);
   }
 
   async docs(prompt: string, organizationId: string, previousMessages?: any[]): Promise<any> {

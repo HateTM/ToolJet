@@ -64,6 +64,7 @@ const STEP_TYPES = [
   "CreateQuery",
   "CreateComponent",
   "UpdateComponent",
+  "UpdateQuery",
 ] as const;
 
 export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
@@ -73,7 +74,8 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
   If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
-- UpdateComponent: changes a component that already exists in this app (its text, a property, or a style) — never a component this same plan is about to create with CreateComponent (give that component its final properties directly instead). Reference the target by the id/name given in "Existing components already in this app" below; never invent one. Use this only when the PRD is asking to edit something that's already there.
+- UpdateComponent: changes a component that already exists in this app (its text, a property, a style, or one of its events — e.g. wiring a Button's onClick to open a Modal) — never a component this same plan is about to create with CreateComponent (give that component its final properties/events directly instead). Reference the target by the id/name given in "Existing components already in this app" below; never invent one. Use this only when the PRD is asking to edit something that's already there.
+- UpdateQuery: changes an existing query's options (e.g. a filter, a limit, a column mapping) without recreating it — never a query this same plan is about to create with CreateQuery. Reference the target by the name given in "Existing queries already in this app" below; never invent one.
 
 Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.
 
@@ -506,16 +508,25 @@ const createComponentTool = tool({
 // the merge step (AgentsService.UpdateComponent) treats every key it's given as an intentional
 // change, and a full re-emission would happily "restore" everything else to whatever the model
 // guessed instead of leaving it untouched.
+// ticket #67 (port of the EE generateEvent/updateEvent idea, scoped down per the issue's own
+// risk-flag comment): a curated, real subset of frontend/.../ActionTypes.js action ids —
+// never invented — for the actions an AI-authored event plausibly needs. Kept in service.ts
+// (not event-update.helper.ts) purely because it only needs to shape the tool schema/prompt
+// here; helpers/event-update.helper.ts is the source of truth AgentsService validates
+// against, this list is just its zod-enum mirror.
+const EVENT_ACTION_IDS = ["run-query", "reset-query", "abort-query", "show-modal", "close-modal", "show-alert"] as const;
+
 const UPDATE_COMPONENT_SYSTEM_PROMPT = `You change ONE existing component for this step, based on the PRD and the "Existing components already in this app" list below.
 
 Call updateComponent exactly once:
 - componentId: the real id of the target component, copied verbatim from the list below. Never invent one, and never target a component this same plan is about to create with CreateComponent.
 - properties / styles: include ONLY the paths that actually need to change, as flat { propName: newValue } pairs — e.g. to change a Text widget's text, return { properties: { text: "New title" } } and nothing else. Do not re-list properties/styles that are not changing.
-- If the step's instruction doesn't actually require any change, call updateComponent with empty properties and styles ({}) rather than guessing at a change.`;
+- event: only when the step is about wiring up an interaction (e.g. "make the button open a modal"). Use the component's OWN real event id from the list below — e.g. a Table's row-click event is literally named "onRowClicked", not a guessed "onRowClick"; never invent one. actionId must be one of: ${EVENT_ACTION_IDS.join(", ")}. For "show-modal"/"close-modal" set "modal" to the target Modal's real componentId (from the list below). For "run-query"/"reset-query"/"abort-query" set "queryId" to the target query's real id. For "show-alert" set "message".
+- If the step's instruction doesn't actually require any change, call updateComponent with empty properties and styles ({}) and no event, rather than guessing at a change.`;
 
 const updateComponentTool = tool({
   description:
-    "Change one or more properties/styles of an existing component, leaving everything else untouched. Return only the paths that changed.",
+    "Change one or more properties/styles of an existing component and/or bind one event on it, leaving everything else untouched. Return only the paths that changed.",
   parameters: z.object({
     componentId: z
       .string()
@@ -534,6 +545,18 @@ const updateComponentTool = tool({
       .describe(
         "Only the styles that changed, as { styleName: newValue }. Omit or leave empty when nothing here changes.",
       ),
+    event: z
+      .object({
+        eventId: z
+          .string()
+          .describe("the component's OWN real event id, copied from the events list — never invented"),
+        actionId: z.enum(EVENT_ACTION_IDS),
+        modal: z.string().optional().describe("target Modal's real componentId, for show-modal/close-modal"),
+        queryId: z.string().optional().describe("target query's real id, for run-query/reset-query/abort-query"),
+        message: z.string().optional().describe("alert text, for show-alert"),
+      })
+      .optional()
+      .describe("Binds or updates ONE event on this component. Omit when this step doesn't touch events."),
   }),
 });
 
@@ -580,6 +603,30 @@ const createQueryTool = tool({
         ),
     }),
   ]),
+});
+
+// ticket #67 (port of the EE updateQuery idea): the model returns ONLY the options paths it
+// is actually changing, for the identical reason UPDATE_COMPONENT_SYSTEM_PROMPT does — the
+// merge (AgentsService.UpdateQuery) treats every key it's given as an intentional change.
+const UPDATE_QUERY_SYSTEM_PROMPT = `You change ONE existing query for this step, based on the PRD and the "Existing queries already in this app" list below.
+
+Call updateQuery exactly once:
+- queryId: the real id of the target query, copied verbatim from the list below. Never invent one, and never target a query this same plan is about to create with CreateQuery.
+- options: include ONLY the option paths that actually need to change, matching that query's own options shape (e.g. { list_rows: { limit: 25 } } to change just the row limit) — do not re-list options that are not changing.
+- If the step's instruction doesn't actually require any change, call updateQuery with an empty options object ({}) rather than guessing at a change.`;
+
+const updateQueryTool = tool({
+  description: "Change one or more options of an existing query, leaving everything else untouched. Return only the option paths that changed.",
+  parameters: z.object({
+    queryId: z
+      .string()
+      .describe("id of the existing query to change, copied from the 'Existing queries already in this app' list"),
+    options: z
+      .record(z.string(), z.unknown())
+      .describe(
+        "Only the option paths that changed, matching this query's own options shape. Use {} when nothing changes.",
+      ),
+  }),
 });
 
 // Planning-time only. It is the *plan* that must not contain a CreateTable against an
@@ -768,6 +815,7 @@ export class AiService implements IAiService {
     "CreateComponent",
     "CreateQuery",
     "UpdateComponent",
+    "UpdateQuery",
   ];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
 
@@ -1376,9 +1424,11 @@ export class AiService implements IAiService {
   ): Promise<Step[]> {
     // Ticket #66: the planner needs to know an UpdateComponent target actually exists before
     // it can propose one — same "never invent an id" contract as the connected-sources block
-    // below.
-    const componentIndex =
-      await this.appInventoryService.renderComponentIndex(appVersionId);
+    // below. Ticket #67 adds the same grounding for UpdateQuery targets.
+    const [componentIndex, queryIndex] = await Promise.all([
+      this.appInventoryService.renderComponentIndex(appVersionId),
+      this.appInventoryService.renderQueryIndex(appVersionId),
+    ]);
     const prompt = await this.budgetPromptForOrg(
       organizationId,
       {
@@ -1387,7 +1437,7 @@ export class AiService implements IAiService {
           {
             role: "user",
             content: withConnectedDataSources(
-              `${prd}\n\n${componentIndex}`,
+              `${prd}\n\n${componentIndex}\n\n${queryIndex}`,
               dataSources,
               { forPlanning: true },
             ),
@@ -1600,6 +1650,8 @@ export class AiService implements IAiService {
         return this.executeUpdateComponentStep(step, context, previousError);
       case "CreateQuery":
         return this.executeQueryStep(step, context, previousError);
+      case "UpdateQuery":
+        return this.executeUpdateQueryStep(step, context, previousError);
       default:
         throw new Error(`Unsupported step type "${step.type}"`);
     }
@@ -2002,10 +2054,11 @@ export class AiService implements IAiService {
       throw new Error("The assistant did not produce a component update");
     }
 
-    const { componentId, properties, styles } = call.args as {
+    const { componentId, properties, styles, event } = call.args as {
       componentId: string;
       properties?: Record<string, unknown>;
       styles?: Record<string, unknown>;
+      event?: { eventId: string; actionId: string; [key: string]: unknown };
     };
 
     // Retryable: componentId is a free-form string the tool schema can't constrain, so a
@@ -2020,13 +2073,72 @@ export class AiService implements IAiService {
       context.appVersionId,
       context.organizationId,
       componentId,
-      { properties, styles },
+      { properties, styles, event },
     );
 
     return {
       content: updated,
       identifier: updated.id,
-      props: { componentId, properties, styles },
+      props: { componentId, properties, styles, event },
+    };
+  }
+
+  /**
+   * UpdateQuery (ticket #67): the target `queryId` the model returns is checked against the
+   * real query index before anything is merged, the identical "hallucinated id fails loud
+   * and retryable" contract executeUpdateComponentStep's componentId check already uses.
+   */
+  async executeUpdateQueryStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const queryIndex = await this.appInventoryService.renderQueryIndex(context.appVersionId);
+    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${queryIndex}`;
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: UPDATE_QUERY_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeUpdateQueryStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-update-query",
+      {
+        ...prompt,
+        tools: { updateQuery: updateQueryTool },
+        toolChoice: { type: "tool", toolName: "updateQuery" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "updateQuery") {
+      throw new Error("The assistant did not produce a query update");
+    }
+
+    const { queryId, options } = call.args as { queryId: string; options?: Record<string, unknown> };
+
+    // Retryable: queryId is a free-form string the tool schema can't constrain, so a
+    // hallucinated one is fed back for the next attempt exactly like componentId above.
+    if (!queryIndex.includes(`(id: ${queryId}`)) {
+      throw new Error(`queryId "${queryId}" does not match any existing query in this app`);
+    }
+
+    const updated = await this.agentsService.UpdateQuery(
+      context.appVersionId,
+      context.organizationId,
+      queryId,
+      options ?? {},
+    );
+
+    return {
+      content: updated,
+      identifier: updated.id,
+      props: { queryId, options },
     };
   }
 
