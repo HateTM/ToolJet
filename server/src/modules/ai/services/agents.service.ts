@@ -8,6 +8,9 @@ import { ComponentsService } from '@modules/apps/services/component.service';
 import { EventsService } from '@modules/apps/services/event.service';
 import { DataQueryRepository } from '@modules/data-queries/repository';
 import { DataSourcesRepository } from '@modules/data-sources/repository';
+import { DataSourcesUtilService } from '@modules/data-sources/util.service';
+import { PluginsServiceSelector } from '@modules/data-sources/services/plugin-selector.service';
+import { AppEnvironmentUtilService } from '@modules/app-environments/util.service';
 import { VersionRepository } from '@modules/versions/repository';
 import { Target } from '@entities/event_handler.entity';
 import { StepType } from '@entities/step.entity';
@@ -45,8 +48,139 @@ export class AgentsService implements IAgentsService {
     private readonly dataQueryRepository: DataQueryRepository,
     private readonly dataSourcesRepository: DataSourcesRepository,
     private readonly versionRepository: VersionRepository,
-    private readonly tooljetDbBulkUploadService: TooljetDbBulkUploadService
+    private readonly tooljetDbBulkUploadService: TooljetDbBulkUploadService,
+    private readonly dataSourcesUtilService: DataSourcesUtilService,
+    private readonly pluginsServiceSelector: PluginsServiceSelector,
+    private readonly appEnvironmentUtilService: AppEnvironmentUtilService
   ) {}
+
+  // Bare identifier only — no quoting escape needed since embedded double quotes are
+  // rejected outright, and no other character can break out of the quoted form.
+  private static readonly PG_IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+  private quotePgIdentifier(name: string): string {
+    if (typeof name !== 'string' || !AgentsService.PG_IDENTIFIER_PATTERN.test(name)) {
+      throw new Error(`"${name}" is not a valid PostgreSQL identifier`);
+    }
+    return `"${name}"`;
+  }
+
+  /**
+   * Builds a `CREATE TABLE` DDL statement for an external PostgreSQL target (ticket #77 /
+   * ADR-0025) from the same `tableParams` shape `buildTableParams` (service.ts) already
+   * produces for ToolJet DB. `data_type` values come from TJDB_DATA_TYPES, which are already
+   * valid PostgreSQL type names (ToolJet DB is Postgres) — no dialect translation needed.
+   *
+   * TODO(#77 follow-up): foreign_keys/indexes are not yet forwarded to the external DDL path
+   * (ToolJet DB's `CreateTable` gets them via TooljetDbTableOperationsService; this path only
+   * builds columns + a composite primary key so far). Out of this ticket's confirmed scope —
+   * flagged rather than silently dropped.
+   */
+  private buildExternalCreateTableDdl(tableParams: any): string {
+    const columnDefs: string[] = tableParams.columns.map((column: any) => {
+      const parts = [this.quotePgIdentifier(column.column_name), column.data_type];
+      if (column.constraints_type?.is_not_null) parts.push('NOT NULL');
+      if (column.constraints_type?.is_unique) parts.push('UNIQUE');
+      return parts.join(' ');
+    });
+    const primaryKeyColumns = tableParams.columns
+      .filter((column: any) => column.constraints_type?.is_primary_key)
+      .map((column: any) => this.quotePgIdentifier(column.column_name));
+    if (primaryKeyColumns.length) {
+      columnDefs.push(`PRIMARY KEY (${primaryKeyColumns.join(', ')})`);
+    }
+    return `CREATE TABLE ${this.quotePgIdentifier(tableParams.table_name)} (${columnDefs.join(', ')})`;
+  }
+
+  /**
+   * Resolves a connected data source's live QueryService + parsed sourceOptions (the same
+   * pair `DataQueriesUtilService.runQuery` assembles to run a query), so a raw SQL string can
+   * be issued against it. Used only for the external `CreateTable` path (ticket #77) — every
+   * other write in this system stays inside ToolJet DB.
+   */
+  private async runExternalSql(organizationId: string, dataSource: any, query: string): Promise<any> {
+    const dsvOptions = await this.appEnvironmentUtilService.getOptions(dataSource.id, organizationId);
+    const sourceOptions = await this.dataSourcesUtilService.parseSourceOptions(
+      dsvOptions.options,
+      organizationId,
+      dsvOptions.environmentId
+    );
+    const service = await this.pluginsServiceSelector.getService(dataSource.pluginId, dataSource.kind);
+    const result = await service.run(sourceOptions, { mode: 'sql', query } as any);
+    if (result?.status === 'failed') {
+      throw new Error(result?.errorMessage || 'External SQL execution against the connected data source failed');
+    }
+    return result;
+  }
+
+  /**
+   * Ticket #77 / ADR-0042: creates a table in a connected PostgreSQL data source instead of
+   * ToolJet DB — the DDL analogue of `CreateTable` above. `tableParams` is the same shape
+   * `buildTableParams` builds; the caller (executeCreateTableStep) has already run the
+   * ADR-0025 confirmation gate and the plan-time collision check before this is ever called,
+   * so no DDL is issued here without both.
+   */
+  async CreateExternalTable(
+    organizationId: string,
+    dataSourceId: string,
+    tableParams: any
+  ): Promise<{ id: string; table_name: string }> {
+    const dataSource = await this.dataSourcesRepository.findById(dataSourceId, organizationId);
+    if (!dataSource || dataSource.kind !== 'postgresql') {
+      throw new Error(`Data source ${dataSourceId} is not a connected PostgreSQL source`);
+    }
+    const ddl = this.buildExternalCreateTableDdl(tableParams);
+    await this.runExternalSql(organizationId, dataSource, ddl);
+    return { id: dataSource.id, table_name: tableParams.table_name };
+  }
+
+  /**
+   * Ticket #77 / ADR-0042: inserts planner-proposed seed rows (ADR-0024's mechanism, reused
+   * verbatim) into a table just created by CreateExternalTable. One INSERT per row, same
+   * per-row reporting shape as SeedTable, so the run UI shows the same thing for either
+   * target. A row's values are inlined as SQL literals (parameterized placeholders aren't
+   * available through the plugin's ad-hoc `run` path) — every value is a JSON-safe primitive
+   * (isWellFormedSeedRows already enforces this), so each is quoted as a literal rather than
+   * concatenated as trusted SQL.
+   */
+  async SeedExternalTable(
+    organizationId: string,
+    dataSourceId: string,
+    tableName: string,
+    rows: Record<string, any>[]
+  ): Promise<SeedTableReport> {
+    const dataSource = await this.dataSourcesRepository.findById(dataSourceId, organizationId);
+    if (!dataSource || dataSource.kind !== 'postgresql') {
+      throw new Error(`Data source ${dataSourceId} is not a connected PostgreSQL source`);
+    }
+    const report: SeedTableReport = { total: rows.length, inserted: 0, updated: 0, failed: 0, failures: [] };
+
+    for (const [index, row] of rows.entries()) {
+      try {
+        const columns = Object.keys(row);
+        const columnList = columns.map((column) => this.quotePgIdentifier(column)).join(', ');
+        const valueList = columns.map((column) => this.pgLiteral(row[column])).join(', ');
+        const insertSql = `INSERT INTO ${this.quotePgIdentifier(tableName)} (${columnList}) VALUES (${valueList})`;
+        await this.runExternalSql(organizationId, dataSource, insertSql);
+        report.inserted += 1;
+      } catch (error) {
+        report.failed += 1;
+        report.failures.push({ row: index + 1, error: error?.message || 'Unknown seed error' });
+      }
+    }
+
+    if (report.total > 0 && report.failed === report.total) {
+      throw new Error(`Seeding the external table failed: ${report.failures[0].error}`);
+    }
+    return report;
+  }
+
+  private pgLiteral(value: string | number | boolean | null): string {
+    if (value === null) return 'NULL';
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'NULL';
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    return `'${String(value).replace(/'/g, "''")}'`;
+  }
 
   /**
    * `tables` is the single-table creation payload for TooljetDbTableOperationsService's
@@ -888,7 +1022,22 @@ export class AgentsService implements IAgentsService {
     }
   }
 
+  // Ticket #77 / ADR-0042: Rewind needs no special-casing for the external-target case —
+  // undoArtifact dispatches the same way it always has, on StepType alone. The Artifact
+  // content of an external CreateTable step (set by executeCreateTableStep) carries
+  // `targetDataSourceId`; its presence is what routes the drop to the external connection
+  // instead of ToolJet DB, mirroring the create path's own dispatch.
   private async undoCreateTable(organizationId: string, content: any): Promise<void> {
+    if (content?.targetDataSourceId) {
+      const dataSource = await this.dataSourcesRepository.findById(content.targetDataSourceId, organizationId);
+      if (!dataSource) return; // Source disconnected since — nothing left to drop through it.
+      await this.runExternalSql(
+        organizationId,
+        dataSource,
+        `DROP TABLE IF EXISTS ${this.quotePgIdentifier(content.table_name)}`
+      );
+      return;
+    }
     await this.tooljetDbTableOperationsService.perform(organizationId, 'drop_table', {
       table_name: content.table_name,
     });

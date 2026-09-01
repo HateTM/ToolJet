@@ -41,6 +41,20 @@ const buildMockTooljetDbBulkUploadService = () => ({
   bulkUpsertRowsWithPrimaryKey: jest.fn(),
 });
 
+// Ticket #77 / ADR-0042: the three deps CreateExternalTable/SeedExternalTable/the external
+// branch of undoCreateTable need to reach a connected PostgreSQL source's live QueryService.
+const buildMockDataSourcesUtilService = () => ({
+  parseSourceOptions: jest.fn(),
+});
+
+const buildMockPluginsServiceSelector = () => ({
+  getService: jest.fn(),
+});
+
+const buildMockAppEnvironmentUtilService = () => ({
+  getOptions: jest.fn(),
+});
+
 const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
   const tooljetDbTableOperationsService =
     overrides.tooljetDbTableOperationsService ?? buildMockTooljetDbTableOperationsService();
@@ -51,6 +65,9 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
   const dataSourcesRepository = overrides.dataSourcesRepository ?? buildMockDataSourcesRepository();
   const versionRepository = overrides.versionRepository ?? buildMockVersionRepository();
   const tooljetDbBulkUploadService = overrides.tooljetDbBulkUploadService ?? buildMockTooljetDbBulkUploadService();
+  const dataSourcesUtilService = overrides.dataSourcesUtilService ?? buildMockDataSourcesUtilService();
+  const pluginsServiceSelector = overrides.pluginsServiceSelector ?? buildMockPluginsServiceSelector();
+  const appEnvironmentUtilService = overrides.appEnvironmentUtilService ?? buildMockAppEnvironmentUtilService();
 
   const service = new AgentsService(
     tooljetDbTableOperationsService as any,
@@ -60,7 +77,10 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     dataQueryRepository as any,
     dataSourcesRepository as any,
     versionRepository as any,
-    tooljetDbBulkUploadService as any
+    tooljetDbBulkUploadService as any,
+    dataSourcesUtilService as any,
+    pluginsServiceSelector as any,
+    appEnvironmentUtilService as any
   );
 
   return {
@@ -73,6 +93,9 @@ const buildAgentsService = (overrides: Partial<Record<string, any>> = {}) => {
     dataSourcesRepository,
     versionRepository,
     tooljetDbBulkUploadService,
+    dataSourcesUtilService,
+    pluginsServiceSelector,
+    appEnvironmentUtilService,
   };
 };
 
