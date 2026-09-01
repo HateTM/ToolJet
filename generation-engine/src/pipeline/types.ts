@@ -1,10 +1,11 @@
 /**
- * Stage contract for the Generation engine's pipeline (ADR-0028): classify -> PRD -> LLD
- * -> feature-planner -> per-entity generation -> evaluate. Every stage reads and returns
- * the same accumulating `PipelineArtifacts` bag so the orchestrator (`./orchestrator.ts`)
- * can sequence an arbitrary stage list without knowing each stage's internal shape.
+ * Stage contract for the Generation engine's pipeline (ADR-0028 as refined by ADR-0040):
+ * classify -> PRD -> LLD -> feature-planner -> per-entity -> step-plan -> evaluate. Every
+ * stage reads and returns the same accumulating `PipelineArtifacts` bag so the
+ * orchestrator (`./orchestrator.ts`) can sequence an arbitrary stage list without knowing
+ * each stage's internal shape.
  *
- * This file intentionally has zero LLM/network code — it is the seam the six stage
+ * This file intentionally has zero LLM/network code — it is the seam the seven stage
  * modules and their (still-external, see per-file TODOs) prompt/catalog/provider
  * dependencies plug into.
  */
@@ -74,6 +75,61 @@ export interface EvaluationVerdict {
 }
 
 /**
+ * The fork's v1 Step vocabulary (ADR-0002), exactly `StepType` in
+ * `server/src/entities/step.entity.ts` / the `STEP_TYPES` const in
+ * `server/src/modules/ai/service.ts`. Step-plan (ADR-0040) proposes from this list and
+ * nothing else.
+ */
+export const STEP_TYPES = ['CreateTable', 'CreateQuery', 'CreateComponent', 'UpdateQuery', 'GenerateEvent'] as const;
+
+export type StepType = (typeof STEP_TYPES)[number];
+
+/**
+ * The planner-proposed table definition riding a `CreateTable` step — the fork's
+ * `tableDefinitionObject` shape (`server/src/modules/ai/service.ts`), which is what the
+ * schema Preview renders and `executeCreateTableStep` creates verbatim (ADR-0020). Note
+ * this is the planner's own shape (is_primary_key/is_not_null/is_unique), not the LLD
+ * stage's `LldColumn` (constraints_type) — they are different contracts on purpose.
+ */
+export interface PlannedTableColumn {
+  column_name: string;
+  data_type: string;
+  is_primary_key: boolean;
+  is_not_null: boolean;
+  is_unique: boolean;
+}
+
+export interface PlannedTableDefinition {
+  table_name: string;
+  columns: PlannedTableColumn[];
+  /** Shape owned by the fork's planner contract; validated loosely here (see step-plan.ts). */
+  foreign_keys?: Array<Record<string, unknown>>;
+  indexes?: Array<Record<string, unknown>>;
+}
+
+/** One proposed row of planner-proposed seed data (ADR-0024): column name -> primitive value. */
+export type PlannedSeedRow = Record<string, unknown>;
+
+/**
+ * One proposed build step — a member of the fork's Step-list contract
+ * (ADR-0001/ADR-0004), matching `proposeStepPlanTool`'s per-step shape.
+ */
+export interface ProposedStep {
+  type: StepType;
+  description: string;
+  /** Planner-proposed table definition for `CreateTable` steps (ADR-0020); optional. */
+  table?: PlannedTableDefinition;
+  /** Planner-proposed seed rows for `CreateTable` steps (ADR-0024); optional. */
+  seed_rows?: PlannedSeedRow[];
+  /** Planner-assigned phase name (ADR-0021); optional, falls back to one unnamed group. */
+  phase?: string;
+}
+
+export interface StepPlan {
+  steps: ProposedStep[];
+}
+
+/**
  * The accumulating artifact bag every stage reads and extends. Optional fields are the
  * ones a given stage produces — populated in pipeline order, never read before their
  * producing stage has run.
@@ -85,6 +141,8 @@ export interface PipelineArtifacts {
   lld?: LldSchema;
   featurePlan?: FeaturePlan;
   entityToolCalls?: EntityToolCall[];
+  /** The fork's Step-list contract (ADR-0001/ADR-0004), produced by the step-plan stage. */
+  stepPlan?: StepPlan;
   evaluation?: EvaluationVerdict;
 }
 

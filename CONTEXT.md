@@ -33,6 +33,10 @@ _Avoid_: Seed query, seed SQL, bulk insert step
 **Step**:
 One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container), creates a ToolJet DB table, or creates a Query — against a ToolJet DB table, or against a `Queryable data source` — see [ADR-0002](docs/adr/0002-generic-component-tool.md) and [ADR-0019](docs/adr/0019-createquery-targets-connected-sql-sources-from-a-schema-it-was-shown.md).
 
+**Feature plan**:
+The Generation engine's internal, topological ordering of the tables an LLD proposes — produced by the engine's feature-planner stage so per-entity generation creates dependencies before their dependents (see [ADR-0028](docs/adr/0028-generation-engine-pipeline-stages.md)). Distinct from the `Step` list (see [ADR-0040](docs/adr/0040-feature-planner-and-step-plan-are-distinct-stages.md)): the feature plan orders engine-internal generation only and is never shown to the user; the Step list is the user-facing, previewable plan generated once at `Approve`/`Preview`.
+_Avoid_: Plan (unqualified), build plan, step plan
+
 **Artifact**:
 The concrete output of one `Step` — the generated/changed piece of the `App` (e.g. a component, a table). Persisted as `Artifact`, linked to the `Conversation` and to the specific AI `Message` that produced it.
 _Avoid_: Output, result, generation

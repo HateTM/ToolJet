@@ -31,14 +31,13 @@ export interface FeaturePlannerStageDeps {
 }
 
 /**
- * Feature-planner stage (ADR-0028's fourth stage), new with no fork precedent.
- *
- * OPEN QUESTION (per #93's known gap #2, unresolved by that ticket and not settled
- * here): whether this stage subsumes the fork's existing PRD -> Step-list planner
- * (`prompts/step-plan.ts`, ported verbatim from `server/src/modules/ai/service.ts`) or
- * is a separate stage that runs before it. This implementation treats feature-planner as
- * LLD -> FeaturePlan only and does NOT call `step-plan` — left for whichever ticket
- * settles that question, flagged again here rather than guessed.
+ * Feature-planner stage (ADR-0028's fourth stage). Settled by ADR-0040 (#112): this
+ * stage is engine-internal only — LLD -> FeaturePlan, the topological grouping/ordering
+ * per-entity generation routes against. It does not subsume the fork's PRD -> Step-list
+ * planner and does not call `step-plan`; that contract is produced by the separate
+ * terminal `step-plan` stage (./step-plan.ts), which consumes this stage's ordering as a
+ * hint. The two stay distinct so the internal routing concern and the user-facing,
+ * previewable Step-list contract (ADR-0001/ADR-0004) can evolve independently.
  */
 export function buildFeaturePlannerStage(deps: FeaturePlannerStageDeps = {}): PipelineStage {
   return {

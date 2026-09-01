@@ -2,15 +2,24 @@ import { buildDefaultPipeline, runPipeline } from '../../src/pipeline/index';
 import { StageContext } from '../../src/pipeline/types';
 
 describe('buildDefaultPipeline', () => {
-  it('assembles the six ADR-0028 stages in order', () => {
+  it('assembles the seven ADR-0028/ADR-0040 stages in order', () => {
     const stages = buildDefaultPipeline({
       classify: { classify: jest.fn() },
       prd: { generatePrd: jest.fn() },
       lld: { generateLld: jest.fn() },
+      stepPlan: { generateStepPlan: jest.fn() },
       evaluate: { judge: jest.fn() },
     });
 
-    expect(stages.map((s) => s.name)).toEqual(['classify', 'prd', 'lld', 'feature-planner', 'per-entity', 'evaluate']);
+    expect(stages.map((s) => s.name)).toEqual([
+      'classify',
+      'prd',
+      'lld',
+      'feature-planner',
+      'per-entity',
+      'step-plan',
+      'evaluate',
+    ]);
   });
 
   it('runs end-to-end through runPipeline with fully faked LLM dependencies', async () => {
@@ -28,6 +37,11 @@ describe('buildDefaultPipeline', () => {
           ],
         }),
       },
+      stepPlan: {
+        generateStepPlan: jest.fn().mockResolvedValue({
+          steps: [{ type: 'CreateTable', description: 'create users', phase: 'Tables' }],
+        }),
+      },
       evaluate: { judge: jest.fn().mockResolvedValue({ pass: true, reasons: [] }) },
     });
 
@@ -38,6 +52,12 @@ describe('buildDefaultPipeline', () => {
     expect(result.lld?.tables).toHaveLength(1);
     expect(result.featurePlan?.items.map((i) => i.entityName)).toEqual(['users']);
     expect(result.entityToolCalls).toEqual([{ entityName: 'users', action: 'create', toolName: 'create_table' }]);
+    expect(result.stepPlan?.steps).toHaveLength(1);
+    expect(result.stepPlan?.steps[0]).toMatchObject({
+      type: 'CreateTable',
+      description: 'create users',
+      phase: 'Tables',
+    });
     expect(result.evaluation).toEqual({ pass: true, reasons: [] });
   });
 
@@ -45,11 +65,13 @@ describe('buildDefaultPipeline', () => {
     const ctx: StageContext = { organizationId: 'org-1' };
     const generatePrd = jest.fn();
     const generateLld = jest.fn();
+    const generateStepPlan = jest.fn();
     const judge = jest.fn();
     const stages = buildDefaultPipeline({
       classify: { classify: jest.fn().mockResolvedValue({ intent: 'unsupported', confidence: 0 }) },
       prd: { generatePrd },
       lld: { generateLld },
+      stepPlan: { generateStepPlan },
       evaluate: { judge },
     });
 
@@ -61,6 +83,7 @@ describe('buildDefaultPipeline', () => {
     expect(result.evaluation).toBeUndefined();
     expect(generatePrd).not.toHaveBeenCalled();
     expect(generateLld).not.toHaveBeenCalled();
+    expect(generateStepPlan).not.toHaveBeenCalled();
     expect(judge).not.toHaveBeenCalled();
   });
 });
