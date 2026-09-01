@@ -31,7 +31,11 @@ The sample-data rows (1–50 plain records of column → primitive value) the pl
 _Avoid_: Seed query, seed SQL, bulk insert step
 
 **Step**:
-One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container), creates a ToolJet DB table, or creates a Query — against a ToolJet DB table, or against a `Queryable data source` — see [ADR-0002](docs/adr/0002-generic-component-tool.md) and [ADR-0019](docs/adr/0019-createquery-targets-connected-sql-sources-from-a-schema-it-was-shown.md).
+One unit of execution against the `App`, run after a PRD is approved. Each `Step` produces exactly one `Artifact`. A Step either creates a Component (v1 target types: Page, Table, Form, Button, Text, TextInput, Container), updates an existing Component (see **UpdateComponent** below), creates a ToolJet DB table, or creates a Query — against a ToolJet DB table, or against a `Queryable data source` — see [ADR-0002](docs/adr/0002-generic-component-tool.md) and [ADR-0019](docs/adr/0019-createquery-targets-connected-sql-sources-from-a-schema-it-was-shown.md).
+
+**UpdateComponent** (a Step type):
+Changes an existing Component already in the App — its properties and/or styles — without recreating it (ticket #66). The model returns a sparse patch (only the paths that actually changed; `{}` means no change needed), which is validated against `componentsMeta` the same way a newly created widget's properties are (ticket #60), then merged onto the Component's stored definition by `ComponentsService.update`'s own deep merge — never a hand-rolled one (see [ADR-0025](docs/adr/0025-updatecomponent-merges-through-componentsservice-update.md)). Its `Artifact` carries a snapshot of the pre-patch value of every key the patch touched, so `Rewind` can restore them; a patch that introduces a property/style the Component had no prior value for is a documented gap — rewind cannot fully un-introduce it. Targeting a Component that doesn't exist is a retryable error, never a silent clone.
+_Avoid_: Edit component, patch component, diff-merge step
 
 **Artifact**:
 The concrete output of one `Step` — the generated/changed piece of the `App` (e.g. a component, a table). Persisted as `Artifact`, linked to the `Conversation` and to the specific AI `Message` that produced it.

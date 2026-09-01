@@ -12,9 +12,11 @@ const buildMockPageService = () => ({
 
 const buildMockComponentsService = () => ({
   create: jest.fn(),
+  update: jest.fn(),
   delete: jest.fn(),
   getAllComponents: jest.fn().mockResolvedValue({}),
   componentLayoutChange: jest.fn(),
+  findOneWithLayouts: jest.fn(),
 });
 
 const buildMockEventsService = () => ({
@@ -734,6 +736,119 @@ describe('AgentsService.CreateQuery', () => {
       })
     );
     expect(result.name).toBe('list_customers');
+  });
+});
+
+/** @group ai-builder */
+describe('AgentsService.UpdateComponent (ticket #66)', () => {
+  it('merges only the patched properties/styles onto the component via ComponentsService.update', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue({
+      id: 'component-1',
+      type: 'Text',
+      pageId: 'page-1',
+      properties: { text: { value: 'Old title' }, visible: { value: true } },
+      styles: { color: { value: 'blue' } },
+    });
+
+    const result = await service.UpdateComponent('version-1', 'org-1', 'component-1', {
+      properties: { text: 'New title' },
+    });
+
+    expect(componentsService.update).toHaveBeenCalledWith(
+      {
+        'component-1': {
+          component: {
+            definition: { properties: { text: { value: 'New title' } } },
+          },
+        },
+      },
+      'version-1'
+    );
+    // The sibling property never appears anywhere in the diff sent downstream — the merge
+    // itself (ComponentsService.update's _.mergeWith) is what leaves it untouched in storage.
+    expect(result.patch).not.toHaveProperty('styles');
+    expect(result.previous).toEqual({ properties: { text: { value: 'Old title' } }, styles: {} });
+  });
+
+  it('drops an unknown property and warns, same as CreateComponent (componentsMeta, ticket #60)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue({
+      id: 'component-1',
+      type: 'Text',
+      pageId: 'page-1',
+      properties: {},
+      styles: {},
+    });
+
+    const result = await service.UpdateComponent('version-1', 'org-1', 'component-1', {
+      properties: { totallyMadeUpProp: 'x' },
+    });
+
+    expect(result.patch.properties).toEqual({});
+    expect(result.warnings?.[0]).toMatch(/unknown property dropped/);
+  });
+
+  it('is a no-op — no ComponentsService.update call — when the patch is {} ("no changes")', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue({
+      id: 'component-1',
+      type: 'Text',
+      pageId: 'page-1',
+      properties: {},
+      styles: {},
+    });
+
+    const result = await service.UpdateComponent('version-1', 'org-1', 'component-1', {});
+
+    expect(componentsService.update).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: 'component-1',
+      type: 'Text',
+      pageId: 'page-1',
+      patch: {},
+      previous: {},
+      noop: true,
+    });
+  });
+
+  it('throws a meaningful error for a nonexistent component instead of creating a clone', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockRejectedValue(new Error('Component with id ghost not found'));
+
+    await expect(
+      service.UpdateComponent('version-1', 'org-1', 'ghost', { properties: { text: 'x' } })
+    ).rejects.toThrow('Component "ghost" does not exist');
+    expect(componentsService.update).not.toHaveBeenCalled();
+  });
+});
+
+/** @group ai-builder */
+describe('AgentsService.undoArtifact — UpdateComponent (ticket #66)', () => {
+  it('restores the pre-patch snapshot through the same ComponentsService.update merge path', async () => {
+    const { service, componentsService } = buildAgentsService();
+
+    await service.undoArtifact('UpdateComponent', 'version-1', 'org-1', {
+      id: 'component-1',
+      previous: { properties: { text: { value: 'Old title' } }, styles: {} },
+    });
+
+    expect(componentsService.update).toHaveBeenCalledWith(
+      {
+        'component-1': {
+          component: { definition: { properties: { text: { value: 'Old title' } } } },
+        },
+      },
+      'version-1'
+    );
+  });
+
+  it('does nothing for a no-op UpdateComponent artifact', async () => {
+    const { service, componentsService } = buildAgentsService();
+
+    await service.undoArtifact('UpdateComponent', 'version-1', 'org-1', { id: 'component-1', noop: true });
+
+    expect(componentsService.update).not.toHaveBeenCalled();
   });
 });
 

@@ -13,6 +13,12 @@ import { Target } from '@entities/event_handler.entity';
 import { StepType } from '@entities/step.entity';
 import { sanitizeComponentSection } from '../helpers/component-type-validator';
 import { normalizeMalformedOptionsProperty } from '../helpers/component-options.utils';
+import {
+  ComponentUpdatePatch,
+  isEmptyPatch,
+  snapshotPreviousSection,
+  wrapPatchSection,
+} from '../helpers/component-update.helper';
 import { generateComponentLayout, SiblingRect } from '../helpers/layout/generate-layout';
 
 // Maps a ToolJet DB column data type to the Form field type the widget's JSON schema
@@ -177,6 +183,67 @@ export class AgentsService implements IAgentsService {
       return this.createModalComponent(appVersionId, props);
     }
     throw new Error(`Unsupported component type "${type}"`);
+  }
+
+  /**
+   * UpdateComponent (ticket #66, port of the EE `updateComponent`/`updateSingleComponent`
+   * idea): merges a sparse patch — only the properties/styles paths that actually changed,
+   * `{}` meaning "no changes" — onto an existing component already in this app. The merge
+   * itself happens in ComponentsService.update's own `_.mergeWith`; this method's job is to
+   * resolve the real target (a nonexistent componentId must fail loudly, never fall through
+   * to creating a clone), sanitize the patch against componentsMeta the same way
+   * createWidgetComponent does (ticket #60), and snapshot exactly the touched keys' prior
+   * values so `undoUpdateComponent` can restore them on rewind.
+   */
+  async UpdateComponent(
+    appVersionId: string,
+    organizationId: string,
+    componentId: string,
+    patch: ComponentUpdatePatch
+  ): Promise<any> {
+    let current: any;
+    try {
+      current = await this.componentsService.findOneWithLayouts(componentId);
+    } catch {
+      throw new Error(`Component "${componentId}" does not exist`);
+    }
+
+    if (isEmptyPatch(patch)) {
+      return { id: componentId, type: current.type, pageId: current.pageId, patch: {}, previous: {}, noop: true };
+    }
+
+    const wrappedProperties = wrapPatchSection(patch.properties);
+    const wrappedStyles = wrapPatchSection(patch.styles);
+
+    const previous = {
+      properties: snapshotPreviousSection(current.properties, patch.properties),
+      styles: snapshotPreviousSection(current.styles, patch.styles),
+    };
+
+    const sanitizedProperties = wrappedProperties
+      ? sanitizeComponentSection(current.type, 'properties', wrappedProperties)
+      : undefined;
+    const sanitizedStyles = wrappedStyles ? sanitizeComponentSection(current.type, 'styles', wrappedStyles) : undefined;
+
+    const warnings = [...(sanitizedProperties?.warnings ?? []), ...(sanitizedStyles?.warnings ?? [])];
+    if (warnings.length) {
+      this.logger.warn(`[UpdateComponent] ${current.type} sanitized: ${JSON.stringify(warnings)}`);
+    }
+
+    const definition: Record<string, any> = {};
+    if (sanitizedProperties) definition.properties = sanitizedProperties.result;
+    if (sanitizedStyles) definition.styles = sanitizedStyles.result;
+
+    await this.componentsService.update({ [componentId]: { component: { definition } } }, appVersionId);
+
+    return {
+      id: componentId,
+      type: current.type,
+      pageId: current.pageId,
+      patch: definition,
+      previous,
+      ...(warnings.length && { warnings }),
+    };
   }
 
   private async createPageComponent(appVersionId: string, organizationId: string, props: any) {
@@ -742,6 +809,8 @@ export class AgentsService implements IAgentsService {
         return this.undoQuery(content.id);
       case 'CreateComponent':
         return this.undoCreateComponent(appVersionId, organizationId, content);
+      case 'UpdateComponent':
+        return this.undoUpdateComponent(appVersionId, content);
       default:
         throw new Error(`Cannot undo unsupported step type "${stepType}"`);
     }
@@ -776,6 +845,30 @@ export class AgentsService implements IAgentsService {
       await this.undoQuery(content.queryId);
     }
     await this.componentsService.delete([content.id], appVersionId);
+  }
+
+  /**
+   * Compensating undo for UpdateComponent (ticket #66): re-merges the pre-patch snapshot
+   * `UpdateComponent` captured back onto the component, through the same
+   * ComponentsService.update merge path the original patch used. A no-op patch ({}) left
+   * nothing to restore. Known gap: a patch that introduced a property/style the component
+   * had no prior value for is snapshotted as absent (see component-update.helper.ts), so
+   * undo cannot fully un-introduce it — it restores every value that changed, not
+   * necessarily the component's exact prior shape in that one edge case.
+   */
+  private async undoUpdateComponent(appVersionId: string, content: any): Promise<void> {
+    if (content?.noop) return;
+
+    const definition: Record<string, any> = {};
+    if (content?.previous?.properties && Object.keys(content.previous.properties).length) {
+      definition.properties = content.previous.properties;
+    }
+    if (content?.previous?.styles && Object.keys(content.previous.styles).length) {
+      definition.styles = content.previous.styles;
+    }
+    if (!Object.keys(definition).length) return;
+
+    await this.componentsService.update({ [content.id]: { component: { definition } } }, appVersionId);
   }
 
   async docs(prompt: string, organizationId: string, previousMessages?: any[]): Promise<any> {

@@ -52,6 +52,9 @@ const buildMockConversationRepository = () => ({
 
 const buildMockAppInventoryService = () => ({
   assemble: jest.fn().mockResolvedValue('App: Test app'),
+  // Ticket #66: the step planner and UpdateComponent's execution-time context both ground
+  // themselves in this — default to "nothing built yet", overridden per test as needed.
+  renderComponentIndex: jest.fn().mockResolvedValue('Existing components already in this app: none yet.'),
 });
 
 const buildMockAiFeasibilityService = () => ({

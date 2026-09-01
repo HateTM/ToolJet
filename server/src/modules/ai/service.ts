@@ -59,7 +59,12 @@ You cannot change this app in this conversation — you have no ability to creat
 
 // v1 step vocabulary (ADR-0002). The planner is free to propose any of these — see
 // ADR-0006 — even though only CreateTable has a real handler in this ticket.
-const STEP_TYPES = ["CreateTable", "CreateQuery", "CreateComponent"] as const;
+const STEP_TYPES = [
+  "CreateTable",
+  "CreateQuery",
+  "CreateComponent",
+  "UpdateComponent",
+] as const;
 
 export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
@@ -68,6 +73,7 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
   If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
+- UpdateComponent: changes a component that already exists in this app (its text, a property, or a style) — never a component this same plan is about to create with CreateComponent (give that component its final properties directly instead). Reference the target by the id/name given in "Existing components already in this app" below; never invent one. Use this only when the PRD is asking to edit something that's already there.
 
 Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.
 
@@ -495,6 +501,42 @@ const createComponentTool = tool({
   ]),
 });
 
+// ticket #66 (port of the EE updateComponent/updateSingleComponent idea): the LLM is told to
+// return ONLY the paths it is actually changing — never re-emit the whole component — because
+// the merge step (AgentsService.UpdateComponent) treats every key it's given as an intentional
+// change, and a full re-emission would happily "restore" everything else to whatever the model
+// guessed instead of leaving it untouched.
+const UPDATE_COMPONENT_SYSTEM_PROMPT = `You change ONE existing component for this step, based on the PRD and the "Existing components already in this app" list below.
+
+Call updateComponent exactly once:
+- componentId: the real id of the target component, copied verbatim from the list below. Never invent one, and never target a component this same plan is about to create with CreateComponent.
+- properties / styles: include ONLY the paths that actually need to change, as flat { propName: newValue } pairs — e.g. to change a Text widget's text, return { properties: { text: "New title" } } and nothing else. Do not re-list properties/styles that are not changing.
+- If the step's instruction doesn't actually require any change, call updateComponent with empty properties and styles ({}) rather than guessing at a change.`;
+
+const updateComponentTool = tool({
+  description:
+    "Change one or more properties/styles of an existing component, leaving everything else untouched. Return only the paths that changed.",
+  parameters: z.object({
+    componentId: z
+      .string()
+      .describe(
+        "id of the existing component to change, copied from the 'Existing components already in this app' list",
+      ),
+    properties: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "Only the properties that changed, as { propName: newValue }. Omit or leave empty when nothing here changes.",
+      ),
+    styles: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "Only the styles that changed, as { styleName: newValue }. Omit or leave empty when nothing here changes.",
+      ),
+  }),
+});
+
 const CREATE_QUERY_SYSTEM_PROMPT = `You create one data query for this step, based on the PRD, the table(s) already created earlier in this plan, and the connected data sources listed below (if any).
 
 Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the query itself:
@@ -725,6 +767,7 @@ export class AiService implements IAiService {
     "CreateTable",
     "CreateComponent",
     "CreateQuery",
+    "UpdateComponent",
   ];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
 
@@ -1000,6 +1043,7 @@ export class AiService implements IAiService {
         prdMessage,
         organizationId,
         dataSources,
+        appVersionId,
         prd,
       );
       // ADR-0018: when the user explicitly selects an external source, CreateTable steps
@@ -1148,9 +1192,14 @@ export class AiService implements IAiService {
       throw new BadRequestException("conversationId is required");
     }
     // Same rules as approvePrd: generate conversations only, caller-owned, PRD message required.
-    await this.loadConversationOfType(conversationId, "generate", user.id);
+    const conversation = await this.loadConversationOfType(
+      conversationId,
+      "generate",
+      user.id,
+    );
 
     const organizationId = user.organizationId;
+    const appVersionId = await this.resolveAppVersionId(conversation.appId);
     const conversationMessages =
       await this.aiConversationMessageRepository.findLatestByConversationId(
         conversationId,
@@ -1172,6 +1221,7 @@ export class AiService implements IAiService {
       prdMessage,
       organizationId,
       dataSources,
+      appVersionId,
     );
 
     // Same ADR-0018 safety net as approvePrd: with an external source selected, CreateTable
@@ -1215,6 +1265,7 @@ export class AiService implements IAiService {
     prdMessage: AiConversationMessage,
     organizationId: string,
     dataSources: QueryableDataSource[],
+    appVersionId: string,
     prd?: string,
   ): Promise<Step[]> {
     let steps = await this.stepRepository.findPendingForMessage(
@@ -1228,6 +1279,7 @@ export class AiService implements IAiService {
         prdMessage.id,
         organizationId,
         dataSources,
+        appVersionId,
       );
     }
     return steps;
@@ -1320,7 +1372,13 @@ export class AiService implements IAiService {
     messageId: string,
     organizationId: string,
     dataSources: QueryableDataSource[],
+    appVersionId: string,
   ): Promise<Step[]> {
+    // Ticket #66: the planner needs to know an UpdateComponent target actually exists before
+    // it can propose one — same "never invent an id" contract as the connected-sources block
+    // below.
+    const componentIndex =
+      await this.appInventoryService.renderComponentIndex(appVersionId);
     const prompt = await this.budgetPromptForOrg(
       organizationId,
       {
@@ -1328,9 +1386,11 @@ export class AiService implements IAiService {
         messages: [
           {
             role: "user",
-            content: withConnectedDataSources(prd, dataSources, {
-              forPlanning: true,
-            }),
+            content: withConnectedDataSources(
+              `${prd}\n\n${componentIndex}`,
+              dataSources,
+              { forPlanning: true },
+            ),
           },
         ],
       },
@@ -1536,6 +1596,8 @@ export class AiService implements IAiService {
         return this.executeCreateTableStep(step, context, previousError);
       case "CreateComponent":
         return this.executeComponentStep(step, context, previousError);
+      case "UpdateComponent":
+        return this.executeUpdateComponentStep(step, context, previousError);
       case "CreateQuery":
         return this.executeQueryStep(step, context, previousError);
       default:
@@ -1897,6 +1959,74 @@ export class AiService implements IAiService {
       content: created,
       identifier: created.id,
       props: { type, ...props },
+    };
+  }
+
+  /**
+   * UpdateComponent (ticket #66): the target `componentId` the model returns is checked
+   * against the real component index before anything is merged — a hallucinated id must
+   * fail loud and retryable (same reasoning as executeComponentStep's pageId check), never
+   * silently create a new component under that id.
+   */
+  async executeUpdateComponentStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const componentIndex = await this.appInventoryService.renderComponentIndex(
+      context.appVersionId,
+    );
+    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: UPDATE_COMPONENT_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeUpdateComponentStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-update-component",
+      {
+        ...prompt,
+        tools: { updateComponent: updateComponentTool },
+        toolChoice: { type: "tool", toolName: "updateComponent" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "updateComponent") {
+      throw new Error("The assistant did not produce a component update");
+    }
+
+    const { componentId, properties, styles } = call.args as {
+      componentId: string;
+      properties?: Record<string, unknown>;
+      styles?: Record<string, unknown>;
+    };
+
+    // Retryable: componentId is a free-form string the tool schema can't constrain, so a
+    // hallucinated one is fed back for the next attempt exactly like pageId/queryName above.
+    if (!componentIndex.includes(`(id: ${componentId},`)) {
+      throw new Error(
+        `componentId "${componentId}" does not match any existing component in this app`,
+      );
+    }
+
+    const updated = await this.agentsService.UpdateComponent(
+      context.appVersionId,
+      context.organizationId,
+      componentId,
+      { properties, styles },
+    );
+
+    return {
+      content: updated,
+      identifier: updated.id,
+      props: { componentId, properties, styles },
     };
   }
 
