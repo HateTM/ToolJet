@@ -136,6 +136,11 @@ export class AiUtilService implements IAiUtilService {
    * The `provider` argument remains the request-level default, used for
    * validation and env-fallback tagging.
    */
+  // Ticket #94 / ADR-0036: this resolution logic has a mirror in
+  // `generation-engine/src/config/provider.ts` (resolveLanguageModel/resolveFromEnv),
+  // which the server is expected to call over the wire once #91 (SSE proxy) lands.
+  // Left in place here deliberately — the proxy doesn't exist yet, so this is still
+  // the live path for AI Builder requests.
   private async resolveModel(provider: string, operation_id: string, organizationId: string) {
     this.logger.debug(`[AIGateway] provider=${provider} operation_id=${operation_id} organizationId=${organizationId}`);
 
