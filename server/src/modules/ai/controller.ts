@@ -162,6 +162,12 @@ export class AiController implements IAiController {
     return await this.aiService.getActiveRun(conversationId, user.id);
   }
 
+  @InitFeature(FEATURE_KEY.GET_THREAD_TOKEN_USAGE)
+  @Get('conversation/:conversationId/token-usage')
+  async getThreadTokenUsage(@User() user, @Param('conversationId') conversationId: string) {
+    return await this.aiService.getThreadTokenUsage(conversationId, user);
+  }
+
   // Ticket #59: org-scoped BYOK provider settings — admin-only (enforced in
   // AiKeySettingsService), the API key is never returned, only masked.
   @InitFeature(FEATURE_KEY.GET_KEY_SETTINGS)
