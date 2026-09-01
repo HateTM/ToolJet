@@ -62,11 +62,27 @@ export interface FeaturePlan {
 
 export type EntityToolCallAction = 'create' | 'update';
 
+/**
+ * The `update_table` tool-call payload (ADR-0041): a full-replace of the table's column
+ * definition. `columns` is the complete desired list, in the same shape the fork's
+ * `create_table` tool call already uses (the planner's `PlannedTableColumn` /
+ * `tableDefinitionObject` contract); `renames` is an optional explicit old->new
+ * column-name map so a rename moves data instead of inferring drop+add. Foreign keys
+ * and indexes are out of scope for v1 (ADR-0041, Consequences).
+ */
+export interface UpdateTableCallPayload {
+  table_name: string;
+  columns: PlannedTableColumn[];
+  renames?: Record<string, string>;
+}
+
 /** One dispatched tool-call for a single entity (AC #3: distinct create/update calls). */
 export interface EntityToolCall {
   entityName: string;
   action: EntityToolCallAction;
   toolName: string;
+  /** The full-replace payload for `update` calls (ADR-0041); validated by validateUpdateTableCall. */
+  payload?: UpdateTableCallPayload;
 }
 
 export interface EvaluationVerdict {
