@@ -10,6 +10,7 @@ import { AiService, createTableTool, proposeStepPlanTool, CREATE_TABLE_SYSTEM_PR
 const buildMockAiUtilService = () => ({
   AIGatewayGenerate: jest.fn(),
   sendSSE: jest.fn(),
+  fitMessagesToContextWindowForOrg: jest.fn().mockImplementation((orgId: string, msgs: any[]) => ({ messages: msgs, truncated: [] })),
 });
 
 const buildMockAgentsService = () => ({

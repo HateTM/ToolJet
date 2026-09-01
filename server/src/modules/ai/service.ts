@@ -1,34 +1,39 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Response } from 'express';
-import { tool } from 'ai';
-import { z } from 'zod';
-import { IAiService } from './interfaces/IService';
-import { AiUtilService } from './util.service';
-import { AgentsService } from './services/agents.service';
-import { SeedTableReport } from './interfaces/IAgentsService';
-import { AiConversationRepository } from './repositories/ai-conversation.repository';
-import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
-import { ArtifactRepository } from './repositories/artifact.repository';
-import { StepRepository } from './repositories/step.repository';
-import { AiResponseVoteRepository } from './repositories/ai-response-vote.repository';
-import { AppInventoryService } from './services/app-inventory.service';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { Response } from "express";
+import { tool } from "ai";
+import { z } from "zod";
+import { IAiService } from "./interfaces/IService";
+import { AiUtilService } from "./util.service";
+import { AgentsService } from "./services/agents.service";
+import { SeedTableReport } from "./interfaces/IAgentsService";
+import { AiConversationRepository } from "./repositories/ai-conversation.repository";
+import { AiConversationMessageRepository } from "./repositories/ai-conversation-message.repository";
+import { ArtifactRepository } from "./repositories/artifact.repository";
+import { StepRepository } from "./repositories/step.repository";
+import { AiResponseVoteRepository } from "./repositories/ai-response-vote.repository";
+import { AppInventoryService } from "./services/app-inventory.service";
 import {
   DataSourceInventoryService,
   QueryableDataSource,
   renderConnectedDataSources,
-} from './services/data-source-inventory.service';
-import { AiActiveRunService } from './services/ai-active-run.service';
-import { AiFeasibilityService } from './services/ai-feasibility.service';
-import { VersionRepository } from '@modules/versions/repository';
-import { Step, StepType } from '@entities/step.entity';
-import { Artifact } from '@entities/artifact.entity';
-import { AiConversation } from '@entities/ai_conversation.entity';
-import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
-import { Completion, CopilotContext, ErrorContext, Suggestion } from './types';
-import { User } from '@entities/user.entity';
-import { UserPermissions } from '@modules/ability/types';
+} from "./services/data-source-inventory.service";
+import { AiActiveRunService } from "./services/ai-active-run.service";
+import { AiFeasibilityService } from "./services/ai-feasibility.service";
+import { VersionRepository } from "@modules/versions/repository";
+import { Step, StepType } from "@entities/step.entity";
+import { Artifact } from "@entities/artifact.entity";
+import { AiConversation } from "@entities/ai_conversation.entity";
+import { AiConversationMessage } from "@entities/ai_conversation_message.entity";
+import { Completion, CopilotContext, ErrorContext, Suggestion } from "./types";
+import { User } from "@entities/user.entity";
+import { UserPermissions } from "@modules/ability/types";
 
-const CONVERSATION_TYPES = ['generate', 'learn'] as const;
+const CONVERSATION_TYPES = ["generate", "learn"] as const;
 type ConversationType = (typeof CONVERSATION_TYPES)[number];
 
 // Grounds the assistant in the Generate-conversation contract (see CONTEXT.md's
@@ -54,7 +59,7 @@ You cannot change this app in this conversation — you have no ability to creat
 
 // v1 step vocabulary (ADR-0002). The planner is free to propose any of these — see
 // ADR-0006 — even though only CreateTable has a real handler in this ticket.
-const STEP_TYPES = ['CreateTable', 'CreateQuery', 'CreateComponent'] as const;
+const STEP_TYPES = ["CreateTable", "CreateQuery", "CreateComponent"] as const;
 
 export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
@@ -70,23 +75,31 @@ Also group the steps into a small number of named phases (ticket #21) — e.g. "
 
 // ToolJet DB's supported column types (server/src/modules/tooljet-db/types.ts's TJDB map).
 const TJDB_DATA_TYPES = [
-  'character varying',
-  'integer',
-  'bigint',
-  'serial',
-  'double precision',
-  'boolean',
-  'timestamp with time zone',
-  'jsonb',
+  "character varying",
+  "integer",
+  "bigint",
+  "serial",
+  "double precision",
+  "boolean",
+  "timestamp with time zone",
+  "jsonb",
 ] as const;
 
-export const TJDB_FOREIGN_KEY_ACTIONS = ['RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'] as const;
+export const TJDB_FOREIGN_KEY_ACTIONS = [
+  "RESTRICT",
+  "NO ACTION",
+  "CASCADE",
+  "SET NULL",
+  "SET DEFAULT",
+] as const;
 
 // The full definition of one ToolJet DB table, shared by the planner (which proposes it at
 // plan time so it can be previewed before approval, ticket #20) and the per-step createTable
 // tool (which historically was the only place a table's schema existed, at execution time).
 const tableDefinitionObject = z.object({
-  table_name: z.string().describe('snake_case table name, unique within this app'),
+  table_name: z
+    .string()
+    .describe("snake_case table name, unique within this app"),
   columns: z
     .array(
       z.object({
@@ -95,52 +108,69 @@ const tableDefinitionObject = z.object({
         is_primary_key: z.boolean(),
         is_not_null: z.boolean(),
         is_unique: z.boolean(),
-      })
+      }),
     )
     .min(1)
-    .describe('Exactly one column must have is_primary_key: true'),
+    .describe("Exactly one column must have is_primary_key: true"),
   foreign_keys: z
     .array(
       z.object({
         // One or more columns in this table that must reference a column (or columns)
         // in another table in this app.
-        column_names: z.array(z.string()).min(1).describe('Column(s) in this table that are referenced'),
-        referenced_table_name: z.string().describe('Name of another table in this app that these columns reference'),
+        column_names: z
+          .array(z.string())
+          .min(1)
+          .describe("Column(s) in this table that are referenced"),
+        referenced_table_name: z
+          .string()
+          .describe(
+            "Name of another table in this app that these columns reference",
+          ),
         referenced_column_names: z
           .array(z.string())
           .min(1)
-          .describe('Column(s) in referenced_table_name that these columns reference'),
+          .describe(
+            "Column(s) in referenced_table_name that these columns reference",
+          ),
         on_delete: z
           .enum(TJDB_FOREIGN_KEY_ACTIONS)
           .describe(
-            "Action when a referenced row is deleted; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'"
+            "Action when a referenced row is deleted; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
           )
           .optional(),
         on_update: z
           .enum(TJDB_FOREIGN_KEY_ACTIONS)
           .describe(
-            "Action when a referenced row is updated; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'"
+            "Action when a referenced row is updated; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
           )
           .optional(),
-      })
+      }),
     )
     .optional()
     .describe(
-      'Relationships to other tables in this app. Omit this field to create a table with no foreign keys. ' +
-        'Referenced tables must already exist in this app.'
+      "Relationships to other tables in this app. Omit this field to create a table with no foreign keys. " +
+        "Referenced tables must already exist in this app.",
     ),
   indexes: z
     .array(
       z.object({
-        column_names: z.array(z.string()).min(1).describe('Column(s) in this table to index'),
-        is_unique: z.boolean().optional().describe('Set true only when uniqueness must be enforced by the index'),
-      })
+        column_names: z
+          .array(z.string())
+          .min(1)
+          .describe("Column(s) in this table to index"),
+        is_unique: z
+          .boolean()
+          .optional()
+          .describe(
+            "Set true only when uniqueness must be enforced by the index",
+          ),
+      }),
     )
     .optional()
     .describe(
-      'Indexes to create on this table for query performance (ticket #23). Omit when the table is small ' +
-        'or every column already benefits from an existing constraint. Index foreign-key columns and ' +
-        'columns frequently filtered or sorted on.'
+      "Indexes to create on this table for query performance (ticket #23). Omit when the table is small " +
+        "or every column already benefits from an existing constraint. Index foreign-key columns and " +
+        "columns frequently filtered or sorted on.",
     ),
 });
 
@@ -150,16 +180,18 @@ type TableDefinition = z.infer<typeof tableDefinitionObject>;
 // record of column name → primitive value. Structured rows, not SQL — the same principle
 // ADR-0020 set for the table definition itself, so the preview renders the data (not a
 // query) and execution inserts exactly what was previewed, with no SQL surface anywhere.
-const seedRowObject = z.record(z.union([z.string(), z.number(), z.boolean(), z.null()]));
+const seedRowObject = z.record(
+  z.union([z.string(), z.number(), z.boolean(), z.null()]),
+);
 
 const seedRowsObject = z
   .array(seedRowObject)
   .min(1)
   .max(50)
   .describe(
-    'Seed rows to insert after this table is created. Only when the PRD asks for sample/starting data. ' +
-      'Each row maps column names to values and must be consistent with the columns defined above; ' +
-      'omit auto-generated (serial) primary key columns.'
+    "Seed rows to insert after this table is created. Only when the PRD asks for sample/starting data. " +
+      "Each row maps column names to values and must be consistent with the columns defined above; " +
+      "omit auto-generated (serial) primary key columns.",
   );
 
 // A planned seed-rows array is trusted verbatim only when every row is a plain, non-empty
@@ -172,10 +204,14 @@ const isWellFormedSeedRows = (rows: any): rows is Record<string, any>[] =>
   rows.every(
     (row) =>
       row &&
-      typeof row === 'object' &&
+      typeof row === "object" &&
       !Array.isArray(row) &&
       Object.keys(row).length > 0 &&
-      Object.values(row).every((value) => value === null || ['string', 'number', 'boolean'].includes(typeof value))
+      Object.values(row).every(
+        (value) =>
+          value === null ||
+          ["string", "number", "boolean"].includes(typeof value),
+      ),
   );
 
 // A planned table is trusted verbatim only when it could actually create a table: a real
@@ -184,35 +220,44 @@ const isWellFormedSeedRows = (rows: any): rows is Record<string, any>[] =>
 // Seed rows are only as good as their fit to the table they seed: every key must be a real
 // column of the planned table (ticket #48). Column order and completeness are not required —
 // a serial primary key may be omitted — but an unknown column would fail at insert time.
-const areSeedRowsConsistentWithTable = (rows: Record<string, any>[], table: TableDefinition): boolean => {
-  const columnNames = new Set(table.columns.map((column) => column.column_name));
-  return rows.every((row) => Object.keys(row).every((key) => columnNames.has(key)));
+const areSeedRowsConsistentWithTable = (
+  rows: Record<string, any>[],
+  table: TableDefinition,
+): boolean => {
+  const columnNames = new Set(
+    table.columns.map((column) => column.column_name),
+  );
+  return rows.every((row) =>
+    Object.keys(row).every((key) => columnNames.has(key)),
+  );
 };
 
 const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
   Boolean(
     table &&
-    typeof table.table_name === 'string' &&
+    typeof table.table_name === "string" &&
     table.table_name.trim() &&
     Array.isArray(table.columns) &&
     table.columns.length > 0 &&
     table.columns.every(
       (column: any) =>
         column &&
-        typeof column.column_name === 'string' &&
+        typeof column.column_name === "string" &&
         column.column_name.trim() &&
-        typeof column.data_type === 'string'
-    )
+        typeof column.data_type === "string",
+    ),
   );
 
 export const proposeStepPlanTool = tool({
-  description: 'Propose the ordered list of build steps for this PRD.',
+  description: "Propose the ordered list of build steps for this PRD.",
   parameters: z.object({
     steps: z
       .array(
         z.object({
           type: z.enum(STEP_TYPES),
-          description: z.string().describe('Short, specific description of what this step builds'),
+          description: z
+            .string()
+            .describe("Short, specific description of what this step builds"),
           // Only meaningful on CreateTable steps: the concrete table definition this step
           // proposes, persisted as the Step's plannedTable and shown in the pre-approval
           // schema preview (ticket #20).
@@ -224,8 +269,11 @@ export const proposeStepPlanTool = tool({
           // The named phase this step belongs to (ticket #21). Optional so an older planner
           // response without one still validates — a missing phase falls back to a single
           // derived group on the client.
-          phase: z.string().optional().describe('Short human-readable phase name this step belongs to'),
-        })
+          phase: z
+            .string()
+            .optional()
+            .describe("Short human-readable phase name this step belongs to"),
+        }),
       )
       .min(1),
   }),
@@ -240,7 +288,7 @@ If this table's rows must always reference rows in another table in this app (fo
 Use the optional indexes field when a table will be filtered, sorted, or joined on columns beyond the primary key — most commonly the columns that foreign keys point from. Each index lists the column(s) to index; set is_unique only when uniqueness must be enforced. Don't index a column that is already the table's primary key, and omit indexes when they wouldn't help.`;
 
 export const createTableTool = tool({
-  description: 'Create a ToolJet DB table with the given name and columns.',
+  description: "Create a ToolJet DB table with the given name and columns.",
   parameters: tableDefinitionObject,
 });
 
@@ -250,23 +298,25 @@ export const createTableTool = tool({
 // succeed since no handler exists), an unsupported *component* type is retried: the model
 // picks it per attempt, so a later retry can self-correct to a supported one.
 const SUPPORTED_COMPONENT_TYPES = [
-  'Page',
-  'Table',
-  'Button',
-  'Text',
-  'TextInput',
-  'Container',
-  'Form',
-  'Chart',
-  'Image',
-  'Checkbox',
-  'Dropdown',
-  'Modal',
+  "Page",
+  "Table",
+  "Button",
+  "Text",
+  "TextInput",
+  "Container",
+  "Form",
+  "Chart",
+  "Image",
+  "Checkbox",
+  "Dropdown",
+  "Modal",
 ] as const;
 
 // Component types that place a widget on an existing Page — everything except 'Page'
 // itself (which creates one). Used to validate `pageId` uniformly across all of them.
-const PAGE_WIDGET_TYPES = SUPPORTED_COMPONENT_TYPES.filter((type) => type !== 'Page');
+const PAGE_WIDGET_TYPES = SUPPORTED_COMPONENT_TYPES.filter(
+  (type) => type !== "Page",
+);
 
 const CREATE_COMPONENT_SYSTEM_PROMPT = `You create one UI element for this step, based on the PRD and whatever earlier steps in this plan already created (listed below, if any).
 
@@ -287,95 +337,160 @@ Only reference pages/tables/queries that actually appear in the context below �
 
 const createComponentTool = tool({
   description:
-    'Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal) on an existing Page.',
-  parameters: z.discriminatedUnion('type', [
+    "Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal) on an existing Page.",
+  parameters: z.discriminatedUnion("type", [
     z.object({
-      type: z.literal('Page'),
+      type: z.literal("Page"),
       name: z.string().describe('Short page title, e.g. "Orders"'),
     }),
     z.object({
-      type: z.literal('Table'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this table on'),
-      title: z.string().describe('Table title shown in the UI'),
-      queryName: z.string().describe('name of an already-created query (from context) this table should display'),
+      type: z.literal("Table"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this table on",
+        ),
+      title: z.string().describe("Table title shown in the UI"),
+      queryName: z
+        .string()
+        .describe(
+          "name of an already-created query (from context) this table should display",
+        ),
     }),
     z.object({
-      type: z.literal('Button'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this button on'),
-      text: z.string().describe('Button label text'),
+      type: z.literal("Button"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this button on",
+        ),
+      text: z.string().describe("Button label text"),
     }),
     z.object({
-      type: z.literal('Text'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this text on'),
-      text: z.string().describe('Text content to display'),
+      type: z.literal("Text"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this text on",
+        ),
+      text: z.string().describe("Text content to display"),
     }),
     z.object({
-      type: z.literal('TextInput'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this input on'),
-      label: z.string().describe('Input label'),
-      placeholder: z.string().optional().describe('Placeholder text'),
+      type: z.literal("TextInput"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this input on",
+        ),
+      label: z.string().describe("Input label"),
+      placeholder: z.string().optional().describe("Placeholder text"),
     }),
     z.object({
-      type: z.literal('Container'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this container on'),
-      title: z.string().describe('Short container title'),
+      type: z.literal("Container"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this container on",
+        ),
+      title: z.string().describe("Short container title"),
     }),
     z.object({
-      type: z.literal('Form'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this form on'),
+      type: z.literal("Form"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this form on",
+        ),
       tableId: z
         .string()
         .describe(
-          'id of an already-created ToolJet DB table (from context) this form creates records in or edits records in'
+          "id of an already-created ToolJet DB table (from context) this form creates records in or edits records in",
         ),
-      title: z.string().describe('Form title'),
+      title: z.string().describe("Form title"),
       mode: z
-        .enum(['create', 'edit'])
-        .default('create')
+        .enum(["create", "edit"])
+        .default("create")
         .describe(
-          "'create' (default) wires a create_row query to submit; 'edit' wires an update_rows query keyed on the referenced Table's selectedRow and pre-fills the fields from it"
+          "'create' (default) wires a create_row query to submit; 'edit' wires an update_rows query keyed on the referenced Table's selectedRow and pre-fills the fields from it",
         ),
       tableName: z
         .string()
         .optional()
         .describe(
-          "name of an already-created Table widget (from context) whose selectedRow this form binds to — required when mode='edit'"
+          "name of an already-created Table widget (from context) whose selectedRow this form binds to — required when mode='edit'",
         ),
     }),
     z.object({
-      type: z.literal('Chart'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this chart on'),
-      title: z.string().describe('Chart title shown in the UI'),
+      type: z.literal("Chart"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this chart on",
+        ),
+      title: z.string().describe("Chart title shown in the UI"),
       queryName: z
         .string()
         .optional()
-        .describe('name of an already-created query (from context) whose data this chart should plot'),
-      chartType: z.enum(['line', 'bar', 'pie']).default('line').describe("Chart rendering style; default 'line'"),
+        .describe(
+          "name of an already-created query (from context) whose data this chart should plot",
+        ),
+      chartType: z
+        .enum(["line", "bar", "pie"])
+        .default("line")
+        .describe("Chart rendering style; default 'line'"),
     }),
     z.object({
-      type: z.literal('Image'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this image on'),
-      source: z.string().describe('Image source URL'),
-      alternativeText: z.string().optional().describe('Alt text for the image'),
+      type: z.literal("Image"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this image on",
+        ),
+      source: z.string().describe("Image source URL"),
+      alternativeText: z.string().optional().describe("Alt text for the image"),
     }),
     z.object({
-      type: z.literal('Checkbox'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this checkbox on'),
-      label: z.string().describe('Checkbox label'),
-      defaultChecked: z.boolean().optional().describe('Whether the checkbox starts checked (default false)'),
+      type: z.literal("Checkbox"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this checkbox on",
+        ),
+      label: z.string().describe("Checkbox label"),
+      defaultChecked: z
+        .boolean()
+        .optional()
+        .describe("Whether the checkbox starts checked (default false)"),
     }),
     z.object({
-      type: z.literal('Dropdown'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this dropdown on'),
-      label: z.string().describe('Dropdown label'),
-      options: z.array(z.string()).min(1).describe('The choices to offer, as short strings, in display order'),
-      placeholder: z.string().optional().describe('Placeholder shown before a choice is made'),
+      type: z.literal("Dropdown"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this dropdown on",
+        ),
+      label: z.string().describe("Dropdown label"),
+      options: z
+        .array(z.string())
+        .min(1)
+        .describe("The choices to offer, as short strings, in display order"),
+      placeholder: z
+        .string()
+        .optional()
+        .describe("Placeholder shown before a choice is made"),
     }),
     z.object({
-      type: z.literal('Modal'),
-      pageId: z.string().describe('id of an already-created Page (from context) to place this modal on'),
-      title: z.string().describe('Modal title shown in its title bar'),
-      triggerButtonLabel: z.string().optional().describe('Label of the default trigger button that opens the modal'),
+      type: z.literal("Modal"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this modal on",
+        ),
+      title: z.string().describe("Modal title shown in its title bar"),
+      triggerButtonLabel: z
+        .string()
+        .optional()
+        .describe("Label of the default trigger button that opens the modal"),
     }),
   ]),
 });
@@ -392,24 +507,35 @@ Every id must come from the context below, never invented. Prefer ToolJet DB unl
 // createComponentTool is: the two branches share only a name, and a single flat schema would
 // let the model return an SQL string with a ToolJet DB table id, which is unbuildable.
 const createQueryTool = tool({
-  description: 'Create a query against an existing ToolJet DB table, or against a connected SQL data source.',
-  parameters: z.discriminatedUnion('source', [
+  description:
+    "Create a query against an existing ToolJet DB table, or against a connected SQL data source.",
+  parameters: z.discriminatedUnion("source", [
     z.object({
-      source: z.literal('tooljetdb'),
+      source: z.literal("tooljetdb"),
       name: z
         .string()
-        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
-      table_id: z.string().describe('id of an already-created ToolJet DB table (from context)'),
+        .describe(
+          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
+        ),
+      table_id: z
+        .string()
+        .describe("id of an already-created ToolJet DB table (from context)"),
     }),
     z.object({
-      source: z.literal('sql'),
+      source: z.literal("sql"),
       name: z
         .string()
-        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
-      data_source_id: z.string().describe('id of a connected data source (from the list in context)'),
+        .describe(
+          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
+        ),
+      data_source_id: z
+        .string()
+        .describe("id of a connected data source (from the list in context)"),
       sql: z
         .string()
-        .describe('One SELECT statement against a table that data source has, e.g. SELECT * FROM orders LIMIT 100'),
+        .describe(
+          "One SELECT statement against a table that data source has, e.g. SELECT * FROM orders LIMIT 100",
+        ),
     }),
   ]),
 });
@@ -418,19 +544,23 @@ const createQueryTool = tool({
 // external source (ADR-0018); a CreateQuery step has no CreateTable to propose, so telling it
 // the same thing is noise in a prompt that already carries the whole PRD.
 const NO_TABLES_IN_EXTERNAL_SOURCES =
-  'Tables can only be created in ToolJet DB — never plan a CreateTable step against one of these sources; query the tables it already has instead.';
+  "Tables can only be created in ToolJet DB — never plan a CreateTable step against one of these sources; query the tables it already has instead.";
 
 // Both the planner and every CreateQuery step are grounded in the same connected-sources
 // block, appended the same way, and neither gains anything when nothing is connected.
 const withConnectedDataSources = (
   body: string,
   dataSources: QueryableDataSource[],
-  { forPlanning = false }: { forPlanning?: boolean } = {}
+  { forPlanning = false }: { forPlanning?: boolean } = {},
 ): string => {
   const connectedSources = renderConnectedDataSources(dataSources);
   if (!connectedSources) return body;
 
-  return [body, connectedSources, ...(forPlanning ? [NO_TABLES_IN_EXTERNAL_SOURCES] : [])].join('\n\n');
+  return [
+    body,
+    connectedSources,
+    ...(forPlanning ? [NO_TABLES_IN_EXTERNAL_SOURCES] : []),
+  ].join("\n\n");
 };
 
 // SQL keywords that must not appear in a generated query. The tool schema and the prompt both
@@ -445,17 +575,17 @@ const WRITE_STATEMENT_KEYWORDS =
   /\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|merge|call|do|copy|vacuum|comment)\b/i;
 
 const isSingleReadOnlyStatement = (sql: string): boolean => {
-  const stripped = (sql || '')
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  const stripped = (sql || "")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
     .trim()
-    .replace(/;\s*$/, '')
+    .replace(/;\s*$/, "")
     .trim();
 
   if (!stripped) return false;
   // A second statement after the first is how a read turns into a write without the opening
   // keyword ever changing.
-  if (stripped.includes(';')) return false;
+  if (stripped.includes(";")) return false;
   if (!/^(select|with)\b/i.test(stripped)) return false;
   return !WRITE_STATEMENT_KEYWORDS.test(stripped);
 };
@@ -484,10 +614,16 @@ Rules:
 - explanation is one short plain-language sentence, written for someone who does not know why their binding broke. Do not restate the raw error.`;
 
 const proposeFixTool = tool({
-  description: 'Propose a corrected value for the failing component property.',
+  description: "Propose a corrected value for the failing component property.",
   parameters: z.object({
-    fixedValue: z.string().describe('The complete replacement value for the property field, written verbatim into it'),
-    explanation: z.string().describe('One short plain-language sentence explaining what was wrong'),
+    fixedValue: z
+      .string()
+      .describe(
+        "The complete replacement value for the property field, written verbatim into it",
+      ),
+    explanation: z
+      .string()
+      .describe("One short plain-language sentence explaining what was wrong"),
   }),
 });
 
@@ -522,10 +658,16 @@ Rules:
 - explanation is one short plain-language sentence about what the code does, written for someone who is not going to read it line by line. Do not restate the code.`;
 
 const writeCodeTool = tool({
-  description: 'Return the complete query body the user described.',
+  description: "Return the complete query body the user described.",
   parameters: z.object({
-    code: z.string().describe("The complete replacement body for the editor, in the editor's language"),
-    explanation: z.string().describe('One short plain-language sentence about what the code does'),
+    code: z
+      .string()
+      .describe(
+        "The complete replacement body for the editor, in the editor's language",
+      ),
+    explanation: z
+      .string()
+      .describe("One short plain-language sentence about what the code does"),
   }),
 });
 
@@ -544,17 +686,19 @@ const CURRENT_CODE_PROMPT_LIMIT = 20000;
 // absent or unrecognised one defaults to javascript rather than being passed through: `runjs`
 // is the overwhelmingly common surface, and a body silently generated in the wrong language is
 // not a degraded answer, it is an unusable one.
-const SUPPORTED_COPILOT_LANGUAGES = ['javascript', 'python'];
-const DEFAULT_COPILOT_LANGUAGE = 'javascript';
+const SUPPORTED_COPILOT_LANGUAGES = ["javascript", "python"];
+const DEFAULT_COPILOT_LANGUAGE = "javascript";
 
 // The fallback value arrives as parsed JSON from the request body, so it can't be circular —
 // but it can be large (a whole query result standing in for a Table's `data`), and a fix
 // prompt has no reason to carry more than enough of it to show the expected shape.
 const FALLBACK_VALUE_PROMPT_LIMIT = 500;
 
-const isNonEmptyString = (value: any): value is string => typeof value === 'string' && value.trim().length > 0;
+const isNonEmptyString = (value: any): value is string =>
+  typeof value === "string" && value.trim().length > 0;
 
-const isCodeTooLongToShow = (code: string): boolean => code.length > CURRENT_CODE_PROMPT_LIMIT;
+const isCodeTooLongToShow = (code: string): boolean =>
+  code.length > CURRENT_CODE_PROMPT_LIMIT;
 
 const summarizeFallbackValue = (value: any): string => {
   const serialized = JSON.stringify(value) ?? String(value);
@@ -577,7 +721,11 @@ type StepExecutionContext = {
 export class AiService implements IAiService {
   private readonly logger = new Logger(AiService.name);
 
-  private readonly SUPPORTED_STEP_TYPES: StepType[] = ['CreateTable', 'CreateComponent', 'CreateQuery'];
+  private readonly SUPPORTED_STEP_TYPES: StepType[] = [
+    "CreateTable",
+    "CreateComponent",
+    "CreateQuery",
+  ];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
 
   constructor(
@@ -592,7 +740,7 @@ export class AiService implements IAiService {
     private readonly appInventoryService: AppInventoryService,
     private readonly dataSourceInventoryService: DataSourceInventoryService,
     private readonly aiActiveRunService: AiActiveRunService,
-    private readonly aiFeasibilityService: AiFeasibilityService
+    private readonly aiFeasibilityService: AiFeasibilityService,
   ) {}
 
   /**
@@ -604,25 +752,35 @@ export class AiService implements IAiService {
     conversationId: string,
     userId: string,
     organizationId: string,
-    response: Response
+    response: Response,
   ): Promise<() => void> {
-    await this.aiActiveRunService.beginRun(conversationId, userId, organizationId);
+    await this.aiActiveRunService.beginRun(
+      conversationId,
+      userId,
+      organizationId,
+    );
 
     const heartbeat = setInterval(() => {
       this.aiActiveRunService.touchRun(conversationId).catch((error) => {
-        this.logger.error(`[activeRun] heartbeat failed for conversationId=${conversationId}`, error?.message);
+        this.logger.error(
+          `[activeRun] heartbeat failed for conversationId=${conversationId}`,
+          error?.message,
+        );
       });
     }, 5000);
 
     const cleanup = () => {
       clearInterval(heartbeat);
       this.aiActiveRunService.endRun(conversationId).catch((error) => {
-        this.logger.error(`[activeRun] endRun failed for conversationId=${conversationId}`, error?.message);
+        this.logger.error(
+          `[activeRun] endRun failed for conversationId=${conversationId}`,
+          error?.message,
+        );
       });
     };
 
-    response.once('close', cleanup);
-    response.once('finish', cleanup);
+    response.once("close", cleanup);
+    response.once("finish", cleanup);
 
     return cleanup;
   }
@@ -654,15 +812,16 @@ export class AiService implements IAiService {
   private async loadConversationOfType(
     conversationId: string,
     expectedType: ConversationType,
-    userId: string
+    userId: string,
   ): Promise<AiConversation> {
-    const conversation = await this.aiConversationRepository.findById(conversationId);
+    const conversation =
+      await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException("Conversation not found");
     }
     if (conversation.conversationType !== expectedType) {
       throw new BadRequestException(
-        `This action is only available in a "${expectedType}" conversation, but this one is "${conversation.conversationType}"`
+        `This action is only available in a "${expectedType}" conversation, but this one is "${conversation.conversationType}"`,
       );
     }
     return conversation;
@@ -676,34 +835,38 @@ export class AiService implements IAiService {
     user: { name: string; greeting: string; description: string };
     suggestions: Array<{ icon: string; label: string; action: string }>;
   }> {
-    const name = firstName || 'there';
+    const name = firstName || "there";
 
     return {
       user: {
         name,
         greeting: `Hi ${name}, what would you like to build today?`,
-        description: 'Describe your app idea and I will help you turn it into a working ToolJet app.',
+        description:
+          "Describe your app idea and I will help you turn it into a working ToolJet app.",
       },
       suggestions: [
         {
-          icon: 'inventory',
-          label: 'Inventory tracker',
-          action: 'Build an inventory tracker for a small warehouse with low-stock alerts.',
+          icon: "inventory",
+          label: "Inventory tracker",
+          action:
+            "Build an inventory tracker for a small warehouse with low-stock alerts.",
         },
         {
-          icon: 'crm',
-          label: 'Customer CRM',
-          action: 'Build a simple CRM to track leads, contacts, and deal stages.',
+          icon: "crm",
+          label: "Customer CRM",
+          action:
+            "Build a simple CRM to track leads, contacts, and deal stages.",
         },
         {
-          icon: 'dashboard',
-          label: 'Support dashboard',
-          action: 'Build a support ticket dashboard for my team with status filters.',
+          icon: "dashboard",
+          label: "Support dashboard",
+          action:
+            "Build a support ticket dashboard for my team with status filters.",
         },
         {
-          icon: 'form',
-          label: 'Approval workflow',
-          action: 'Build an approval workflow for employee expense requests.',
+          icon: "form",
+          label: "Approval workflow",
+          action: "Build an approval workflow for employee expense requests.",
         },
       ],
     };
@@ -714,31 +877,42 @@ export class AiService implements IAiService {
    * off AiConversationMessage, one row per message — not per user, so a second vote just
    * overwrites the first rather than creating a duplicate).
    */
-  async voteAiMessage(messageId: string, voteType: string, userId: string): Promise<any> {
+  async voteAiMessage(
+    messageId: string,
+    voteType: string,
+    userId: string,
+  ): Promise<any> {
     if (!messageId || !voteType) {
-      throw new BadRequestException('messageId and voteType are required');
+      throw new BadRequestException("messageId and voteType are required");
     }
-    if (voteType !== 'up' && voteType !== 'down') {
+    if (voteType !== "up" && voteType !== "down") {
       throw new BadRequestException('voteType must be "up" or "down"');
     }
 
-    const message = await this.aiConversationMessageRepository.findMessageById(messageId);
+    const message =
+      await this.aiConversationMessageRepository.findMessageById(messageId);
     if (!message) {
-      throw new NotFoundException('Message not found');
+      throw new NotFoundException("Message not found");
     }
 
     // A vote is written against a conversation, so ownership is verified through it even though
     // the endpoint takes the message id directly (otherwise knowing a message UUID lets any user
     // attach a vote row to someone else's thread).
-    const conversation = await this.aiConversationRepository.findById(message.aiConversationId);
+    const conversation = await this.aiConversationRepository.findById(
+      message.aiConversationId,
+    );
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException('Message not found');
+      throw new NotFoundException("Message not found");
     }
 
-    const vote = voteType as 'up' | 'down';
-    const existingVote = await this.aiResponseVoteRepository.findByMessageId(messageId);
+    const vote = voteType as "up" | "down";
+    const existingVote =
+      await this.aiResponseVoteRepository.findByMessageId(messageId);
     if (existingVote) {
-      await this.aiResponseVoteRepository.updateOne(existingVote.id, { voteType: vote, userId });
+      await this.aiResponseVoteRepository.updateOne(existingVote.id, {
+        voteType: vote,
+        userId,
+      });
       return { ...existingVote, voteType: vote, userId };
     }
 
@@ -774,58 +948,99 @@ export class AiService implements IAiService {
     user: User,
     userPermissions: UserPermissions,
     response: Response,
-    dataSourceId?: string
+    dataSourceId?: string,
   ): Promise<any> {
     if (!conversationId || !prd) {
-      throw new BadRequestException('conversationId and prd are required');
+      throw new BadRequestException("conversationId and prd are required");
     }
     const organizationId = user.organizationId;
 
     // Raised before any SSE header is written, so a Learn conversation's caller gets a real
     // non-2xx + JSON body (which the client's `onopen` handler surfaces) rather than a stream
     // that opens and then immediately errors.
-    const conversation = await this.loadConversationOfType(conversationId, 'generate', user.id);
+    const conversation = await this.loadConversationOfType(
+      conversationId,
+      "generate",
+      user.id,
+    );
 
-    const conversationMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
-    const prdMessage = [...conversationMessages].reverse().find((message) => message.messageType === 'ai');
+    const conversationMessages =
+      await this.aiConversationMessageRepository.findLatestByConversationId(
+        conversationId,
+      );
+    const prdMessage = [...conversationMessages]
+      .reverse()
+      .find((message) => message.messageType === "ai");
     if (!prdMessage) {
-      throw new BadRequestException('No PRD message found to approve');
+      throw new BadRequestException("No PRD message found to approve");
     }
 
     this.aiUtilService.initSSE(response);
     this.aiUtilService.startHeartbeat(response);
-    const endActiveRun = await this.beginActiveRun(conversation.id, user.id, user.organizationId, response);
+    const endActiveRun = await this.beginActiveRun(
+      conversation.id,
+      user.id,
+      user.organizationId,
+      response,
+    );
 
     try {
       const appVersionId = await this.resolveAppVersionId(conversation.appId);
-      const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
+      const dataSources =
+        await this.dataSourceInventoryService.listQueryableSources(
+          user,
+          userPermissions,
+        );
       // Ticket #20: Steps persisted by an earlier previewPlan call for this same PRD message
       // are reused as-is — what the user previewed (including each CreateTable step's planned
       // table definition) is exactly what executes. A PRD refined after the preview produces a
       // new AI message, whose (empty) pending set falls through to a fresh plan.
-      const steps = await this.resolvePlanForPrdMessage(conversationId, prdMessage, organizationId, dataSources, prd);
+      const steps = await this.resolvePlanForPrdMessage(
+        conversationId,
+        prdMessage,
+        organizationId,
+        dataSources,
+        prd,
+      );
       // ADR-0018: when the user explicitly selects an external source, CreateTable steps
       // (which only make sense against ToolJet DB) are stripped from the plan before it is
       // persisted or executed. The planner is also told this constraint via the connected-
       // sources block, but the filter is the safety net — the planner can still propose one
       // in edge cases (e.g. when the prompt is long and the constraint is buried).
-      const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
+      const filteredSteps = dataSourceId
+        ? steps.filter((step) => step.type !== "CreateTable")
+        : steps;
 
-      this.aiUtilService.sendSSE(response, 'plan', { steps: this.mapStepsForWire(filteredSteps) });
+      this.aiUtilService.sendSSE(response, "plan", {
+        steps: this.mapStepsForWire(filteredSteps),
+      });
 
-      const context: StepExecutionContext = { prd, organizationId, appVersionId, priorResults: [], dataSources };
+      const context: StepExecutionContext = {
+        prd,
+        organizationId,
+        appVersionId,
+        priorResults: [],
+        dataSources,
+      };
 
       for (let index = 0; index < filteredSteps.length; index++) {
         const step = filteredSteps[index];
         // Ticket #21: skip is checkpoint-based — a step the user skipped (while it was
         // pending, e.g. during an earlier step's execution) is detected here and never
         // starts, so no Artifact is made for it.
-        if ((await this.stepRepository.findById(step.id))?.status === 'skipped') {
-          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
+        if (
+          (await this.stepRepository.findById(step.id))?.status === "skipped"
+        ) {
+          this.sendStepSkippedSSE(
+            response,
+            index,
+            filteredSteps.length,
+            step.description,
+          );
           continue;
         }
-        await this.stepRepository.updateOne(step.id, { status: 'running' });
-        this.aiUtilService.sendSSE(response, 'step-progress', {
+        await this.stepRepository.updateOne(step.id, { status: "running" });
+        this.aiUtilService.sendSSE(response, "step-progress", {
           step: index + 1,
           of: filteredSteps.length,
           description: step.description,
@@ -840,17 +1055,33 @@ export class AiService implements IAiService {
         // same calls rewindStep (ADR-0008) makes, so a skipped step never leaves anything
         // behind. Skip wins over retry (ticket #4): even a step that succeeded after all
         // MAX_STEP_ATTEMPTS is discarded here.
-        if (outcome.skipped || (await this.stepRepository.findById(step.id))?.status === 'skipped') {
+        if (
+          outcome.skipped ||
+          (await this.stepRepository.findById(step.id))?.status === "skipped"
+        ) {
           if (outcome.success && outcome.artifact) {
-            await this.discardStepArtifact(step, appVersionId, organizationId, outcome.artifact);
+            await this.discardStepArtifact(
+              step,
+              appVersionId,
+              organizationId,
+              outcome.artifact,
+            );
           }
-          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
+          this.sendStepSkippedSSE(
+            response,
+            index,
+            filteredSteps.length,
+            step.description,
+          );
           continue;
         }
 
         if (outcome.success) {
-          context.priorResults.push({ type: step.type, artifact: outcome.artifact });
-          this.aiUtilService.sendSSE(response, 'step-done', {
+          context.priorResults.push({
+            type: step.type,
+            artifact: outcome.artifact,
+          });
+          this.aiUtilService.sendSSE(response, "step-done", {
             step: index + 1,
             of: filteredSteps.length,
             artifact: outcome.artifact,
@@ -858,19 +1089,20 @@ export class AiService implements IAiService {
           continue;
         }
 
-        const failureMessage = await this.aiConversationMessageRepository.createOne({
-          aiConversationId: conversationId,
-          messageType: 'ai',
-          content: `The build stopped at step ${index + 1} of ${filteredSteps.length} ("${step.description}"): ${outcome.errorMessage}`,
-          parentId: prdMessage.id,
-          isLatest: true,
-        });
-        this.aiUtilService.sendSSE(response, 'step-failed', {
+        const failureMessage =
+          await this.aiConversationMessageRepository.createOne({
+            aiConversationId: conversationId,
+            messageType: "ai",
+            content: `The build stopped at step ${index + 1} of ${filteredSteps.length} ("${step.description}"): ${outcome.errorMessage}`,
+            parentId: prdMessage.id,
+            isLatest: true,
+          });
+        this.aiUtilService.sendSSE(response, "step-failed", {
           step: index + 1,
           of: filteredSteps.length,
           message: outcome.errorMessage,
         });
-        this.aiUtilService.sendSSE(response, 'done', {
+        this.aiUtilService.sendSSE(response, "done", {
           message: failureMessage,
           succeeded: context.priorResults.length,
           total: filteredSteps.length,
@@ -879,14 +1111,19 @@ export class AiService implements IAiService {
         return;
       }
 
-      this.aiUtilService.sendSSE(response, 'done', {
+      this.aiUtilService.sendSSE(response, "done", {
         succeeded: context.priorResults.length,
         total: filteredSteps.length,
       });
       response.end();
     } catch (error) {
-      this.logger.error(`[approvePrd] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
-      this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Failed to build the plan' });
+      this.logger.error(
+        `[approvePrd] conversationId=${conversationId} failed: ${error?.message}`,
+        error?.stack,
+      );
+      this.aiUtilService.sendSSE(response, "error", {
+        message: error?.message || "Failed to build the plan",
+      });
       response.end();
     } finally {
       endActiveRun();
@@ -901,26 +1138,47 @@ export class AiService implements IAiService {
    * re-running the planner, so the previewed plan is the executed plan. Previewing twice is
    * idempotent: the second call is served from the first call's pending Steps.
    */
-  async previewPlan(conversationId: string, user: User, userPermissions: UserPermissions, dataSourceId?: string) {
+  async previewPlan(
+    conversationId: string,
+    user: User,
+    userPermissions: UserPermissions,
+    dataSourceId?: string,
+  ) {
     if (!conversationId) {
-      throw new BadRequestException('conversationId is required');
+      throw new BadRequestException("conversationId is required");
     }
     // Same rules as approvePrd: generate conversations only, caller-owned, PRD message required.
-    await this.loadConversationOfType(conversationId, 'generate', user.id);
+    await this.loadConversationOfType(conversationId, "generate", user.id);
 
     const organizationId = user.organizationId;
-    const conversationMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
-    const prdMessage = [...conversationMessages].reverse().find((message) => message.messageType === 'ai');
+    const conversationMessages =
+      await this.aiConversationMessageRepository.findLatestByConversationId(
+        conversationId,
+      );
+    const prdMessage = [...conversationMessages]
+      .reverse()
+      .find((message) => message.messageType === "ai");
     if (!prdMessage) {
-      throw new BadRequestException('No PRD message found to plan from');
+      throw new BadRequestException("No PRD message found to plan from");
     }
 
-    const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
-    const steps = await this.resolvePlanForPrdMessage(conversationId, prdMessage, organizationId, dataSources);
+    const dataSources =
+      await this.dataSourceInventoryService.listQueryableSources(
+        user,
+        userPermissions,
+      );
+    const steps = await this.resolvePlanForPrdMessage(
+      conversationId,
+      prdMessage,
+      organizationId,
+      dataSources,
+    );
 
     // Same ADR-0018 safety net as approvePrd: with an external source selected, CreateTable
     // steps (and their planned tables) are stripped from what the preview shows.
-    const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
+    const filteredSteps = dataSourceId
+      ? steps.filter((step) => step.type !== "CreateTable")
+      : steps;
     return { steps: this.mapStepsForWire(filteredSteps) };
   }
 
@@ -928,10 +1186,14 @@ export class AiService implements IAiService {
    * Returns the active run for a conversation, or null if none. Ownership is enforced so a
    * caller cannot probe another user's conversations.
    */
-  async getActiveRun(conversationId: string, userId: string): Promise<{ active: boolean; startedAt?: Date }> {
-    const conversation = await this.aiConversationRepository.findById(conversationId);
+  async getActiveRun(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ active: boolean; startedAt?: Date }> {
+    const conversation =
+      await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException("Conversation not found");
     }
 
     const run = await this.aiActiveRunService.findActiveRun(conversationId);
@@ -953,16 +1215,19 @@ export class AiService implements IAiService {
     prdMessage: AiConversationMessage,
     organizationId: string,
     dataSources: QueryableDataSource[],
-    prd?: string
+    prd?: string,
   ): Promise<Step[]> {
-    let steps = await this.stepRepository.findPendingForMessage(conversationId, prdMessage.id);
+    let steps = await this.stepRepository.findPendingForMessage(
+      conversationId,
+      prdMessage.id,
+    );
     if (!steps.length) {
       steps = await this.generateStepPlan(
         prd ?? prdMessage.content,
         conversationId,
         prdMessage.id,
         organizationId,
-        dataSources
+        dataSources,
       );
     }
     return steps;
@@ -998,10 +1263,51 @@ export class AiService implements IAiService {
   private async resolveAppVersionId(appId: string): Promise<string> {
     const versions = await this.versionRepository.getAllVersions(appId);
     if (!versions?.length) {
-      throw new Error('This app has no version to work with');
+      throw new Error("This app has no version to work with");
     }
-    const sorted = [...versions].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const sorted = [...versions].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
     return sorted[0].id;
+  }
+
+  /**
+   * Ticket #58: fits a generate-path prompt (`system` + `messages`) into the context window
+   * of the provider the request will actually use. The chat streaming paths budget through
+   * `fitMessagesToContextWindowForOrg` directly; this wraps the same fitting for the
+   * tool-forced `AIGatewayGenerate` calls (step plan, step execution, fix-with-AI, Copilot),
+   * which share one priority order: system prompt first, then the remaining messages.
+   * Truncation is logged here per path, the same way the chat paths log it.
+   */
+  private async budgetPromptForOrg(
+    organizationId: string,
+    prompt: {
+      system: string;
+      messages: Array<{ role: string; content: string }>;
+    },
+    logContext: string,
+  ): Promise<{
+    system: string;
+    messages: Array<{ role: string; content: string }>;
+  }> {
+    const { messages: fitted, truncated } =
+      await this.aiUtilService.fitMessagesToContextWindowForOrg(
+        organizationId,
+        [{ role: "system", content: prompt.system }, ...prompt.messages],
+      );
+    if (truncated.length) {
+      this.logger.warn(
+        `[${logContext}] context truncated: ${JSON.stringify(truncated)}`,
+      );
+    }
+    // Pass 1 of the fitter always keeps the first system message (possibly trimmed to an
+    // empty string), so the destructure below never loses the prompt to a dropped message.
+    const [systemMessage, ...rest] = fitted;
+    return {
+      system: systemMessage?.content ?? "",
+      messages: rest,
+    };
   }
 
   /**
@@ -1013,30 +1319,50 @@ export class AiService implements IAiService {
     conversationId: string,
     messageId: string,
     organizationId: string,
-    dataSources: QueryableDataSource[]
+    dataSources: QueryableDataSource[],
   ): Promise<Step[]> {
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      'openai',
-      'approve-prd-plan',
+    const prompt = await this.budgetPromptForOrg(
+      organizationId,
       {
         system: STEP_PLAN_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: withConnectedDataSources(prd, dataSources, { forPlanning: true }) }],
-        tools: { proposeStepPlan: proposeStepPlanTool },
-        toolChoice: { type: 'tool', toolName: 'proposeStepPlan' },
+        messages: [
+          {
+            role: "user",
+            content: withConnectedDataSources(prd, dataSources, {
+              forPlanning: true,
+            }),
+          },
+        ],
       },
-      organizationId
+      "generateStepPlan",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-plan",
+      {
+        ...prompt,
+        tools: { proposeStepPlan: proposeStepPlanTool },
+        toolChoice: { type: "tool", toolName: "proposeStepPlan" },
+      },
+      organizationId,
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== 'proposeStepPlan') {
-      throw new Error('The assistant did not propose a build plan');
+    if (!call || call.toolName !== "proposeStepPlan") {
+      throw new Error("The assistant did not propose a build plan");
     }
 
     const { steps: proposedSteps } = call.args as {
-      steps: Array<{ type: StepType; description: string; table?: TableDefinition; seed_rows?: any[]; phase?: string }>;
+      steps: Array<{
+        type: StepType;
+        description: string;
+        table?: TableDefinition;
+        seed_rows?: any[];
+        phase?: string;
+      }>;
     };
     if (!proposedSteps?.length) {
-      throw new Error('The assistant proposed an empty build plan');
+      throw new Error("The assistant proposed an empty build plan");
     }
 
     const persisted: Step[] = [];
@@ -1047,7 +1373,10 @@ export class AiService implements IAiService {
       // malformed one is dropped rather than persisted — execution then falls back to the
       // per-step LLM path instead of trusting a half-formed contract.
       const plannedTable =
-        proposed.type === 'CreateTable' && isWellFormedTableDefinition(proposed.table) ? proposed.table : undefined;
+        proposed.type === "CreateTable" &&
+        isWellFormedTableDefinition(proposed.table)
+          ? proposed.table
+          : undefined;
       // Ticket #48: seed rows ride on the same CreateTable steps, dropped when malformed —
       // execution then creates the table without seeding instead of trusting a half-formed
       // contract (same policy as a malformed planned table). Malformed includes rows that
@@ -1056,7 +1385,7 @@ export class AiService implements IAiService {
       // a hallucinated column fails at plan time (the preview never shows it) rather than
       // mid-execution. Rows are only trusted when the table definition they seed is too.
       const plannedSeedRows =
-        proposed.type === 'CreateTable' &&
+        proposed.type === "CreateTable" &&
         isWellFormedTableDefinition(proposed.table) &&
         isWellFormedSeedRows(proposed.seed_rows) &&
         areSeedRowsConsistentWithTable(proposed.seed_rows, proposed.table)
@@ -1074,7 +1403,7 @@ export class AiService implements IAiService {
         ...(plannedTable && { plannedTable }),
         ...(plannedSeedRows && { plannedSeedRows }),
         ...(phase && { phase }),
-        status: 'pending',
+        status: "pending",
       });
       persisted.push(step);
     }
@@ -1094,25 +1423,38 @@ export class AiService implements IAiService {
   // fields directly instead of relying on narrowing to make them "exist".
   private async executeStepWithRetry(
     step: Step,
-    context: StepExecutionContext
-  ): Promise<{ success: boolean; artifact?: Artifact; errorMessage?: string; skipped?: boolean }> {
+    context: StepExecutionContext,
+  ): Promise<{
+    success: boolean;
+    artifact?: Artifact;
+    errorMessage?: string;
+    skipped?: boolean;
+  }> {
     if (!this.SUPPORTED_STEP_TYPES.includes(step.type)) {
       const errorMessage = `Unsupported step type "${step.type}" — not yet implemented`;
-      await this.stepRepository.updateOne(step.id, { status: 'failed', errorMessage });
+      await this.stepRepository.updateOne(step.id, {
+        status: "failed",
+        errorMessage,
+      });
       return { success: false, errorMessage };
     }
 
     let lastError: string;
     for (let attempt = 1; attempt <= this.MAX_STEP_ATTEMPTS; attempt++) {
       try {
-        const { content, identifier, props } = await this.executeStep(step, context, lastError);
+        const { content, identifier, props } = await this.executeStep(
+          step,
+          context,
+          lastError,
+        );
 
         // Ticket #21: a step the user skipped mid-run must not be recorded with either
         // terminal status — the execution loop owns that transition (step-skipped), and
         // overwriting 'skipped' with 'succeeded'/'failed' here would make the skip silently
         // vanish. The Artifact row is still created, so the loop can undo the real change
         // this attempt already made before discarding it.
-        const skipped = (await this.stepRepository.findById(step.id))?.status === 'skipped';
+        const skipped =
+          (await this.stepRepository.findById(step.id))?.status === "skipped";
         const artifact = await this.artifactRepository.createOne({
           conversationId: step.conversationId,
           messageId: step.messageId,
@@ -1120,24 +1462,33 @@ export class AiService implements IAiService {
           identifier,
         });
         await this.stepRepository.updateOne(step.id, {
-          ...(skipped ? {} : { status: 'succeeded' }),
+          ...(skipped ? {} : { status: "succeeded" }),
           props,
           attempts: attempt,
           artifactId: artifact.id,
         });
         return { success: true, artifact, skipped };
       } catch (error) {
-        lastError = error?.message || 'Step execution failed';
-        this.logger.warn(`[approvePrd] step=${step.id} type=${step.type} attempt=${attempt} failed: ${lastError}`);
-        await this.stepRepository.updateOne(step.id, { attempts: attempt, errorMessage: lastError });
+        lastError = error?.message || "Step execution failed";
+        this.logger.warn(
+          `[approvePrd] step=${step.id} type=${step.type} attempt=${attempt} failed: ${lastError}`,
+        );
+        await this.stepRepository.updateOne(step.id, {
+          attempts: attempt,
+          errorMessage: lastError,
+        });
       }
     }
 
     // Same guard on the failed terminal write: a step skipped while its retries ran is
     // reported back as skipped, not failed — the plan continues instead of stopping.
-    const skipped = (await this.stepRepository.findById(step.id))?.status === 'skipped';
+    const skipped =
+      (await this.stepRepository.findById(step.id))?.status === "skipped";
     if (!skipped) {
-      await this.stepRepository.updateOne(step.id, { status: 'failed', errorMessage: lastError });
+      await this.stepRepository.updateOne(step.id, {
+        status: "failed",
+        errorMessage: lastError,
+      });
     }
     return { success: false, errorMessage: lastError, skipped };
   }
@@ -1150,28 +1501,42 @@ export class AiService implements IAiService {
     step: Step,
     appVersionId: string,
     organizationId: string,
-    artifact: Artifact
+    artifact: Artifact,
   ): Promise<void> {
-    await this.agentsService.undoArtifact(step.type, appVersionId, organizationId, artifact.content);
+    await this.agentsService.undoArtifact(
+      step.type,
+      appVersionId,
+      organizationId,
+      artifact.content,
+    );
     await this.artifactRepository.deleteOne(artifact.id);
     await this.stepRepository.updateOne(step.id, { artifactId: null });
   }
 
-  private sendStepSkippedSSE(response: Response, index: number, of: number, description: string): void {
-    this.aiUtilService.sendSSE(response, 'step-skipped', { step: index + 1, of, description });
+  private sendStepSkippedSSE(
+    response: Response,
+    index: number,
+    of: number,
+    description: string,
+  ): void {
+    this.aiUtilService.sendSSE(response, "step-skipped", {
+      step: index + 1,
+      of,
+      description,
+    });
   }
 
   private async executeStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string
+    previousError?: string,
   ): Promise<{ content: any; identifier: string; props: any }> {
     switch (step.type) {
-      case 'CreateTable':
+      case "CreateTable":
         return this.executeCreateTableStep(step, context, previousError);
-      case 'CreateComponent':
+      case "CreateComponent":
         return this.executeComponentStep(step, context, previousError);
-      case 'CreateQuery':
+      case "CreateQuery":
         return this.executeQueryStep(step, context, previousError);
       default:
         throw new Error(`Unsupported step type "${step.type}"`);
@@ -1185,20 +1550,32 @@ export class AiService implements IAiService {
    * steps need real ids to reference — e.g. CreateQuery needs a CreateTable step's actual
    * table id, not just its human-readable table_name.
    */
-  private buildStepContextLines(step: Step, context: StepExecutionContext, previousError?: string): string {
-    const lines = [`PRD:\n${context.prd}`, `Step to build: ${step.description}`];
+  private buildStepContextLines(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): string {
+    const lines = [
+      `PRD:\n${context.prd}`,
+      `Step to build: ${step.description}`,
+    ];
     if (context.priorResults.length) {
       const summary = context.priorResults
-        .map((result) => `- ${result.type} → ${JSON.stringify(result.artifact.content)}`)
-        .join('\n');
+        .map(
+          (result) =>
+            `- ${result.type} → ${JSON.stringify(result.artifact.content)}`,
+        )
+        .join("\n");
       lines.push(
-        `Already created earlier in this plan (reference real ids/names from here, never invent one):\n${summary}`
+        `Already created earlier in this plan (reference real ids/names from here, never invent one):\n${summary}`,
       );
     }
     if (previousError) {
-      lines.push(`The previous attempt failed with: "${previousError}". Fix the issue and try again.`);
+      lines.push(
+        `The previous attempt failed with: "${previousError}". Fix the issue and try again.`,
+      );
     }
-    return lines.join('\n\n');
+    return lines.join("\n\n");
   }
 
   // Maps a (planner-proposed or LLM-proposed) table definition into the params
@@ -1231,36 +1608,54 @@ export class AiService implements IAiService {
    * table path (which makes no LLM call) would burn all retries on it. Thrown errors are
    * retryable: on the LLM path the message is fed back as previousError.
    */
-  private async validateForeignKeys(tableParams: any, context: StepExecutionContext): Promise<void> {
+  private async validateForeignKeys(
+    tableParams: any,
+    context: StepExecutionContext,
+  ): Promise<void> {
     const foreignKeys = tableParams?.foreign_keys ?? [];
     if (!foreignKeys.length) return;
 
     // Malformed entries (legacy plans persisted before #23's schema) can't name a real
     // table — treat them as unknown so the error names them instead of printing "undefined".
     const referencedNames = foreignKeys.map((foreignKey) =>
-      typeof foreignKey?.referenced_table_name === 'string' ? foreignKey.referenced_table_name : null
+      typeof foreignKey?.referenced_table_name === "string"
+        ? foreignKey.referenced_table_name
+        : null,
     );
     const planTableNames = new Set(
       context.priorResults
-        .filter((result) => result.type === 'CreateTable')
+        .filter((result) => result.type === "CreateTable")
         .map((result) => result.artifact.content?.table_name)
-        .filter(Boolean)
+        .filter(Boolean),
     );
-    if (referencedNames.every((name) => name !== null && planTableNames.has(name))) return;
+    if (
+      referencedNames.every((name) => name !== null && planTableNames.has(name))
+    )
+      return;
 
-    const existingTables = await this.agentsService.ViewTables(context.organizationId);
-    const existingTableNames = new Set(existingTables.map((table) => table.tableName));
+    const existingTables = await this.agentsService.ViewTables(
+      context.organizationId,
+    );
+    const existingTableNames = new Set(
+      existingTables.map((table) => table.tableName),
+    );
 
     const unknownTables = [
       ...new Set(
-        referencedNames.filter((name) => name === null || (!planTableNames.has(name) && !existingTableNames.has(name)))
+        referencedNames.filter(
+          (name) =>
+            name === null ||
+            (!planTableNames.has(name) && !existingTableNames.has(name)),
+        ),
       ),
     ];
     if (unknownTables.length) {
-      const available = [...new Set([...planTableNames, ...existingTableNames])].sort();
+      const available = [
+        ...new Set([...planTableNames, ...existingTableNames]),
+      ].sort();
       throw new Error(
-        `foreign_keys reference table(s) that do not exist in this app: ${unknownTables.join(', ')}. ` +
-          `Available tables: ${available.length ? available.join(', ') : '(none yet)'}`
+        `foreign_keys reference table(s) that do not exist in this app: ${unknownTables.join(", ")}. ` +
+          `Available tables: ${available.length ? available.join(", ") : "(none yet)"}`,
       );
     }
   }
@@ -1268,7 +1663,7 @@ export class AiService implements IAiService {
   async executeCreateTableStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string
+    previousError?: string,
   ): Promise<{ content: any; identifier: string; props: any }> {
     // Ticket #20: a planned table persisted by the planner is the contract — it is created
     // verbatim with no LLM call, so what the pre-approval schema preview showed is exactly
@@ -1277,7 +1672,10 @@ export class AiService implements IAiService {
     if (isWellFormedTableDefinition(step.plannedTable)) {
       const tableParams = this.buildTableParams(step.plannedTable);
       await this.validateForeignKeys(tableParams, context);
-      const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
+      const created = await this.agentsService.CreateTable(
+        context.organizationId,
+        tableParams,
+      );
       // Ticket #48: seed rows the planner proposed (and the preview showed) are inserted
       // here, right after the table exists — same deterministic, no-LLM contract as the
       // table itself. Ticket #62: rows run as individual queries with a per-row report
@@ -1292,38 +1690,57 @@ export class AiService implements IAiService {
           context.organizationId,
           created.id,
           primaryKeyColumns,
-          step.plannedSeedRows
+          step.plannedSeedRows,
         );
       }
       return {
-        content: { ...created, columns: tableParams.columns, ...(seed && { seed }) },
+        content: {
+          ...created,
+          columns: tableParams.columns,
+          ...(seed && { seed }),
+        },
         identifier: created.table_name,
         props: tableParams,
       };
     }
 
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      'openai',
-      'approve-prd-create-table',
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
       {
         system: CREATE_TABLE_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: this.buildStepContextLines(step, context, previousError) }],
-        tools: { createTable: createTableTool },
-        toolChoice: { type: 'tool', toolName: 'createTable' },
+        messages: [
+          {
+            role: "user",
+            content: this.buildStepContextLines(step, context, previousError),
+          },
+        ],
       },
-      context.organizationId
+      "executeTableStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-create-table",
+      {
+        ...prompt,
+        tools: { createTable: createTableTool },
+        toolChoice: { type: "tool", toolName: "createTable" },
+      },
+      context.organizationId,
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== 'createTable') {
-      throw new Error('The assistant did not produce a table definition');
+    if (!call || call.toolName !== "createTable") {
+      throw new Error("The assistant did not produce a table definition");
     }
 
     const args = call.args as TableDefinition;
     const tableParams = this.buildTableParams(args);
     await this.validateForeignKeys(tableParams, context);
 
-    const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
+    const created = await this.agentsService.CreateTable(
+      context.organizationId,
+      tableParams,
+    );
 
     // `created` only carries { id, table_name } (TooljetDbTableOperationsService's return) —
     // merging in the real columns here is what lets later steps (CreateQuery, and a Form
@@ -1339,30 +1756,45 @@ export class AiService implements IAiService {
   private async executeComponentStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string
+    previousError?: string,
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      'openai',
-      'approve-prd-create-component',
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
       {
         system: CREATE_COMPONENT_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: this.buildStepContextLines(step, context, previousError) }],
-        tools: { createComponent: createComponentTool },
-        toolChoice: { type: 'tool', toolName: 'createComponent' },
+        messages: [
+          {
+            role: "user",
+            content: this.buildStepContextLines(step, context, previousError),
+          },
+        ],
       },
-      context.organizationId
+      "executeComponentStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-create-component",
+      {
+        ...prompt,
+        tools: { createComponent: createComponentTool },
+        toolChoice: { type: "tool", toolName: "createComponent" },
+      },
+      context.organizationId,
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== 'createComponent') {
-      throw new Error('The assistant did not produce a component definition');
+    if (!call || call.toolName !== "createComponent") {
+      throw new Error("The assistant did not produce a component definition");
     }
 
-    const { type, ...props } = call.args as { type: string; [key: string]: any };
+    const { type, ...props } = call.args as {
+      type: string;
+      [key: string]: any;
+    };
     if (!(SUPPORTED_COMPONENT_TYPES as readonly string[]).includes(type)) {
       // Retryable, unlike an unsupported Step type: the model chooses `type` per attempt.
       throw new Error(
-        `Unsupported component type "${type}" — supported types are: ${SUPPORTED_COMPONENT_TYPES.join(', ')}`
+        `Unsupported component type "${type}" — supported types are: ${SUPPORTED_COMPONENT_TYPES.join(", ")}`,
       );
     }
 
@@ -1376,30 +1808,40 @@ export class AiService implements IAiService {
     if ((PAGE_WIDGET_TYPES as readonly string[]).includes(type)) {
       const pageExists = context.priorResults.some(
         (result) =>
-          result.type === 'CreateComponent' &&
+          result.type === "CreateComponent" &&
           result.artifact.content?.id === props.pageId &&
-          result.artifact.content?.pageId === undefined
+          result.artifact.content?.pageId === undefined,
       );
       if (!pageExists) {
-        throw new Error(`pageId "${props.pageId}" does not match any Page created earlier in this plan`);
+        throw new Error(
+          `pageId "${props.pageId}" does not match any Page created earlier in this plan`,
+        );
       }
     }
 
-    if (type === 'Table') {
+    if (type === "Table") {
       const queryExists = context.priorResults.some(
-        (result) => result.type === 'CreateQuery' && result.artifact.content?.name === props.queryName
+        (result) =>
+          result.type === "CreateQuery" &&
+          result.artifact.content?.name === props.queryName,
       );
       if (!queryExists) {
-        throw new Error(`queryName "${props.queryName}" does not match any query created earlier in this plan`);
+        throw new Error(
+          `queryName "${props.queryName}" does not match any query created earlier in this plan`,
+        );
       }
     }
 
-    if (type === 'Form') {
+    if (type === "Form") {
       const tableResult = context.priorResults.find(
-        (result) => result.type === 'CreateTable' && result.artifact.content?.id === props.tableId
+        (result) =>
+          result.type === "CreateTable" &&
+          result.artifact.content?.id === props.tableId,
       );
       if (!tableResult) {
-        throw new Error(`tableId "${props.tableId}" does not match any table created earlier in this plan`);
+        throw new Error(
+          `tableId "${props.tableId}" does not match any table created earlier in this plan`,
+        );
       }
       // AgentsService.createFormComponent needs the table's real columns (to build the
       // form's fields) — only available from the CreateTable step's Artifact content.
@@ -1410,60 +1852,92 @@ export class AiService implements IAiService {
       // bound (via the query it displays) to the same underlying ToolJet DB table this
       // form edits. Both are retryable failures — the model picks the name/id per attempt,
       // and the error names what it was actually offered so the next attempt can correct.
-      if (props.mode === 'edit') {
+      if (props.mode === "edit") {
         if (!props.tableName) {
-          throw new Error('An edit-mode Form must reference a Table widget (tableName) to bind its selectedRow to');
+          throw new Error(
+            "An edit-mode Form must reference a Table widget (tableName) to bind its selectedRow to",
+          );
         }
         const tableWidget = context.priorResults.find(
           (result) =>
-            result.type === 'CreateComponent' &&
-            result.artifact.content?.type === 'Table' &&
-            result.artifact.content?.name === props.tableName
+            result.type === "CreateComponent" &&
+            result.artifact.content?.type === "Table" &&
+            result.artifact.content?.name === props.tableName,
         );
         if (!tableWidget) {
           throw new Error(
-            `tableName "${props.tableName}" does not match any Table widget created earlier in this plan`
+            `tableName "${props.tableName}" does not match any Table widget created earlier in this plan`,
           );
         }
         const boundQuery = context.priorResults.find(
           (result) =>
-            result.type === 'CreateQuery' && result.artifact.content?.name === tableWidget.artifact.content?.queryName
+            result.type === "CreateQuery" &&
+            result.artifact.content?.name ===
+              tableWidget.artifact.content?.queryName,
         );
-        if (!boundQuery || boundQuery.artifact.content?.options?.table_id !== props.tableId) {
+        if (
+          !boundQuery ||
+          boundQuery.artifact.content?.options?.table_id !== props.tableId
+        ) {
           throw new Error(
-            `Table "${props.tableName}" is not bound to the same ToolJet DB table (${props.tableId}) this edit-mode form edits`
+            `Table "${props.tableName}" is not bound to the same ToolJet DB table (${props.tableId}) this edit-mode form edits`,
           );
         }
       }
     }
 
-    const created = await this.agentsService.CreateComponent(context.appVersionId, context.organizationId, type, props);
+    const created = await this.agentsService.CreateComponent(
+      context.appVersionId,
+      context.organizationId,
+      type,
+      props,
+    );
 
-    return { content: created, identifier: created.id, props: { type, ...props } };
+    return {
+      content: created,
+      identifier: created.id,
+      props: { type, ...props },
+    };
   }
 
   private async executeQueryStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string
+    previousError?: string,
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const stepContext = this.buildStepContextLines(step, context, previousError);
+    const stepContext = this.buildStepContextLines(
+      step,
+      context,
+      previousError,
+    );
 
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      'openai',
-      'approve-prd-create-query',
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
       {
         system: CREATE_QUERY_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: withConnectedDataSources(stepContext, context.dataSources) }],
-        tools: { createQuery: createQueryTool },
-        toolChoice: { type: 'tool', toolName: 'createQuery' },
+        messages: [
+          {
+            role: "user",
+            content: withConnectedDataSources(stepContext, context.dataSources),
+          },
+        ],
       },
-      context.organizationId
+      "executeQueryStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-create-query",
+      {
+        ...prompt,
+        tools: { createQuery: createQueryTool },
+        toolChoice: { type: "tool", toolName: "createQuery" },
+      },
+      context.organizationId,
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== 'createQuery') {
-      throw new Error('The assistant did not produce a query definition');
+    if (!call || call.toolName !== "createQuery") {
+      throw new Error("The assistant did not produce a query definition");
     }
 
     const args = call.args as {
@@ -1474,9 +1948,15 @@ export class AiService implements IAiService {
       sql?: string;
     };
     const props =
-      args.source === 'sql' ? this.buildExternalQueryProps(args, context) : this.buildTooljetDbQueryProps(args);
+      args.source === "sql"
+        ? this.buildExternalQueryProps(args, context)
+        : this.buildTooljetDbQueryProps(args);
 
-    const created = await this.agentsService.CreateQuery(context.appVersionId, context.organizationId, props);
+    const created = await this.agentsService.CreateQuery(
+      context.appVersionId,
+      context.organizationId,
+      props,
+    );
 
     return { content: created, identifier: created.name, props };
   }
@@ -1489,7 +1969,11 @@ export class AiService implements IAiService {
   private buildTooljetDbQueryProps(args: { name: string; table_id?: string }) {
     return {
       name: args.name,
-      options: { operation: 'list_rows', table_id: args.table_id, list_rows: { limit: 100 } },
+      options: {
+        operation: "list_rows",
+        table_id: args.table_id,
+        list_rows: { limit: 100 },
+      },
     };
   }
 
@@ -1505,31 +1989,37 @@ export class AiService implements IAiService {
    */
   private buildExternalQueryProps(
     args: { name: string; data_source_id?: string; sql?: string },
-    context: StepExecutionContext
+    context: StepExecutionContext,
   ) {
     if (!args.sql?.trim()) {
-      throw new Error('An external data source query needs a SQL statement, but none was given');
+      throw new Error(
+        "An external data source query needs a SQL statement, but none was given",
+      );
     }
     if (!isSingleReadOnlyStatement(args.sql)) {
       throw new Error(
-        `The query must be a single read-only SELECT statement against ${'`'}${args.data_source_id}${'`'}, but it was: ${args.sql}`
+        `The query must be a single read-only SELECT statement against ${"`"}${args.data_source_id}${"`"}, but it was: ${args.sql}`,
       );
     }
 
-    const dataSource = context.dataSources.find((candidate) => candidate.id === args.data_source_id);
+    const dataSource = context.dataSources.find(
+      (candidate) => candidate.id === args.data_source_id,
+    );
     if (!dataSource) {
       const available = context.dataSources.length
-        ? context.dataSources.map((candidate) => `${candidate.name} (${candidate.id})`).join(', ')
-        : 'none — this app has no connected data source, so the query must target ToolJet DB';
+        ? context.dataSources
+            .map((candidate) => `${candidate.name} (${candidate.id})`)
+            .join(", ")
+        : "none — this app has no connected data source, so the query must target ToolJet DB";
       throw new Error(
-        `data_source_id "${args.data_source_id}" does not match any connected data source. Available: ${available}`
+        `data_source_id "${args.data_source_id}" does not match any connected data source. Available: ${available}`,
       );
     }
 
     return {
       name: args.name,
       dataSourceId: dataSource.id,
-      options: { mode: 'sql', query: args.sql },
+      options: { mode: "sql", query: args.sql },
     };
   }
 
@@ -1549,38 +2039,40 @@ export class AiService implements IAiService {
     // count. Ids are advisory context: the model treats them as pointers, and every real
     // execution still re-resolves names/ids against the database.
     const flatten = (value: any, maxLength: number) =>
-      typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, maxLength) : '';
+      typeof value === "string"
+        ? value.replace(/\s+/g, " ").trim().slice(0, maxLength)
+        : "";
     const lines = references
       .slice(0, 20)
       .filter(
         (reference) =>
           reference &&
-          typeof reference === 'object' &&
-          ['page', 'component', 'query'].includes(reference.type) &&
+          typeof reference === "object" &&
+          ["page", "component", "query"].includes(reference.type) &&
           flatten(reference.id, 64) &&
-          flatten(reference.name, 100)
+          flatten(reference.name, 100),
       )
       .map((reference) => {
         const id = flatten(reference.id, 64);
         const name = flatten(reference.name, 100);
         const details: string[] = [];
-        if (reference.type === 'component') {
+        if (reference.type === "component") {
           const widgetType = flatten(reference.widgetType, 60);
           const pageName = flatten(reference.pageName, 100);
           if (widgetType) details.push(`${widgetType} widget`);
           if (pageName) details.push(`on page "${pageName}"`);
-        } else if (reference.type === 'query') {
+        } else if (reference.type === "query") {
           const kind = flatten(reference.kind, 60);
           if (kind) details.push(`kind: ${kind}`);
         }
-        const suffix = details.length ? ` (${details.join(', ')})` : '';
+        const suffix = details.length ? ` (${details.join(", ")})` : "";
         return `- @${name} — ${reference.type}${suffix}, id: ${id}`;
       });
     if (!lines.length) return null;
     return [
-      'The user @-mentioned resources in this message. Each @name below refers to exactly this object:',
+      "The user @-mentioned resources in this message. Each @name below refers to exactly this object:",
       ...lines,
-    ].join('\n');
+    ].join("\n");
   }
 
   /**
@@ -1592,16 +2084,20 @@ export class AiService implements IAiService {
   private buildPrdMessages(
     priorMessages: AiConversationMessage[],
     trailingUserContent?: string,
-    referencesContext?: string | null
+    referencesContext?: string | null,
   ) {
     return [
-      { role: 'system', content: PRD_SYSTEM_PROMPT },
-      ...(referencesContext ? [{ role: 'system', content: referencesContext }] : []),
+      { role: "system", content: PRD_SYSTEM_PROMPT },
+      ...(referencesContext
+        ? [{ role: "system", content: referencesContext }]
+        : []),
       ...priorMessages.map((message) => ({
-        role: message.messageType === 'user' ? 'user' : 'assistant',
+        role: message.messageType === "user" ? "user" : "assistant",
         content: message.content,
       })),
-      ...(trailingUserContent ? [{ role: 'user', content: trailingUserContent }] : []),
+      ...(trailingUserContent
+        ? [{ role: "user", content: trailingUserContent }]
+        : []),
     ];
   }
 
@@ -1624,26 +2120,33 @@ export class AiService implements IAiService {
     body: { conversationId: string; content: string; references?: any },
     response: Response,
     userId: string,
-    organizationId: string
+    organizationId: string,
   ): Promise<any> {
     const { conversationId, content, references } = body ?? ({} as typeof body);
 
     if (!conversationId || !content) {
-      throw new BadRequestException('conversationId and content are required');
+      throw new BadRequestException("conversationId and content are required");
     }
 
     // Generate-only, the mirror of sendUserDocsMessage being Learn-only: this path answers
     // with a PRD, and a PRD in a Learn conversation could never be approved (approvePrd
     // refuses one), so it would be a proposal with no way to act on it.
-    const conversation = await this.loadConversationOfType(conversationId, 'generate', userId);
+    const conversation = await this.loadConversationOfType(
+      conversationId,
+      "generate",
+      userId,
+    );
 
     // Conversation history precedes the new user message; it's fetched before
     // persisting so the new message isn't accidentally double-counted.
-    const priorMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const priorMessages =
+      await this.aiConversationMessageRepository.findLatestByConversationId(
+        conversationId,
+      );
 
     const userMessage = await this.aiConversationMessageRepository.createOne({
       aiConversationId: conversationId,
-      messageType: 'user',
+      messageType: "user",
       content,
       references: references ?? null,
       isLatest: true,
@@ -1653,73 +2156,94 @@ export class AiService implements IAiService {
     // non-existent entities or is too vague to act on. The verdict is persisted as a normal
     // AI message so the thread continues and the user can clarify.
     const inventory = await this.assembleAppInventory(conversation.appId);
-    const verdict = this.aiFeasibilityService.assess(content, inventory, references);
-    if (verdict.type !== 'feasible') {
+    const verdict = this.aiFeasibilityService.assess(
+      content,
+      inventory,
+      references,
+    );
+    if (verdict.type !== "feasible") {
       this.aiUtilService.initSSE(response);
       this.aiUtilService.startHeartbeat(response);
 
       const aiContent =
-        verdict.type === 'infeasible'
+        verdict.type === "infeasible"
           ? verdict.messageForUser
           : `I don't have enough detail to build that. Here are a few ways to proceed:\n\n${verdict.recommendations
               .map((recommendation) => `- ${recommendation}`)
-              .join('\n')}`;
+              .join("\n")}`;
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
-        messageType: 'ai',
+        messageType: "ai",
         content: aiContent,
         parentId: userMessage.id,
         isLatest: true,
         metadata: { feasibility: verdict },
       });
 
-      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
+      this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
       response.end();
       return;
     }
 
-    const messages = this.buildPrdMessages(priorMessages, content, this.buildMentionedResourcesContext(references));
-    const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
-      organizationId,
-      messages
+    const messages = this.buildPrdMessages(
+      priorMessages,
+      content,
+      this.buildMentionedResourcesContext(references),
     );
+    const { messages: budgetedMessages, truncated } =
+      await this.aiUtilService.fitMessagesToContextWindowForOrg(
+        organizationId,
+        messages,
+      );
     if (truncated.length) {
-      this.logger.warn(`[sendUserMessage] context truncated: ${JSON.stringify(truncated)}`);
+      this.logger.warn(
+        `[sendUserMessage] context truncated: ${JSON.stringify(truncated)}`,
+      );
     }
 
     this.aiUtilService.initSSE(response);
     this.aiUtilService.startHeartbeat(response);
-    const endActiveRun = await this.beginActiveRun(conversation.id, userId, organizationId, response);
+    const endActiveRun = await this.beginActiveRun(
+      conversation.id,
+      userId,
+      organizationId,
+      response,
+    );
 
-    let fullText = '';
+    let fullText = "";
 
     try {
       const result = await this.aiUtilService.AIGateway(
-        'openai',
-        'send-message',
+        "openai",
+        "send-message",
         { messages: budgetedMessages },
-        organizationId
+        organizationId,
       );
 
       for await (const chunk of result.textStream) {
         fullText += chunk;
-        this.aiUtilService.sendSSE(response, 'chunk', { content: chunk });
+        this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
       }
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
-        messageType: 'ai',
+        messageType: "ai",
         content: fullText,
         parentId: userMessage.id,
         isLatest: true,
       });
 
-      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
+      this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
       response.end();
     } catch (error) {
-      this.logger.error(`[sendUserMessage] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
-      this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Something went wrong' });
+      this.logger.error(
+        `[sendUserMessage] conversationId=${conversationId} failed: ${error?.message}`,
+        error?.stack,
+      );
+      this.aiUtilService.sendSSE(response, "error", {
+        message: error?.message || "Something went wrong",
+      });
       response.end();
     } finally {
       endActiveRun();
@@ -1736,17 +2260,24 @@ export class AiService implements IAiService {
     inventory: string,
     priorMessages: AiConversationMessage[],
     trailingUserContent?: string,
-    referencesContext?: string | null
+    referencesContext?: string | null,
   ) {
     return [
-      { role: 'system', content: LEARN_SYSTEM_PROMPT },
-      { role: 'system', content: `App inventory (current, assembled just now):\n\n${inventory}` },
-      ...(referencesContext ? [{ role: 'system', content: referencesContext }] : []),
+      { role: "system", content: LEARN_SYSTEM_PROMPT },
+      {
+        role: "system",
+        content: `App inventory (current, assembled just now):\n\n${inventory}`,
+      },
+      ...(referencesContext
+        ? [{ role: "system", content: referencesContext }]
+        : []),
       ...priorMessages.map((message) => ({
-        role: message.messageType === 'user' ? 'user' : 'assistant',
+        role: message.messageType === "user" ? "user" : "assistant",
         content: message.content,
       })),
-      ...(trailingUserContent ? [{ role: 'user', content: trailingUserContent }] : []),
+      ...(trailingUserContent
+        ? [{ role: "user", content: trailingUserContent }]
+        : []),
     ];
   }
 
@@ -1766,21 +2297,28 @@ export class AiService implements IAiService {
     body: { conversationId: string; content: string; references?: any },
     response: Response,
     userId: string,
-    organizationId: string
+    organizationId: string,
   ): Promise<any> {
     const { conversationId, content, references } = body ?? ({} as typeof body);
 
     if (!conversationId || !content) {
-      throw new BadRequestException('conversationId and content are required');
+      throw new BadRequestException("conversationId and content are required");
     }
 
-    const conversation = await this.loadConversationOfType(conversationId, 'learn', userId);
+    const conversation = await this.loadConversationOfType(
+      conversationId,
+      "learn",
+      userId,
+    );
 
-    const priorMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const priorMessages =
+      await this.aiConversationMessageRepository.findLatestByConversationId(
+        conversationId,
+      );
 
     const userMessage = await this.aiConversationMessageRepository.createOne({
       aiConversationId: conversationId,
-      messageType: 'user',
+      messageType: "user",
       content,
       references: references ?? null,
       isLatest: true,
@@ -1788,9 +2326,14 @@ export class AiService implements IAiService {
 
     this.aiUtilService.initSSE(response);
     this.aiUtilService.startHeartbeat(response);
-    const endActiveRun = await this.beginActiveRun(conversation.id, userId, organizationId, response);
+    const endActiveRun = await this.beginActiveRun(
+      conversation.id,
+      userId,
+      organizationId,
+      response,
+    );
 
-    let fullText = '';
+    let fullText = "";
 
     try {
       const inventory = await this.assembleAppInventory(conversation.appId);
@@ -1798,44 +2341,49 @@ export class AiService implements IAiService {
         inventory,
         priorMessages,
         content,
-        this.buildMentionedResourcesContext(references)
+        this.buildMentionedResourcesContext(references),
       );
-      const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
-        organizationId,
-        messages
-      );
+      const { messages: budgetedMessages, truncated } =
+        await this.aiUtilService.fitMessagesToContextWindowForOrg(
+          organizationId,
+          messages,
+        );
       if (truncated.length) {
-        this.logger.warn(`[sendUserDocsMessage] context truncated: ${JSON.stringify(truncated)}`);
+        this.logger.warn(
+          `[sendUserDocsMessage] context truncated: ${JSON.stringify(truncated)}`,
+        );
       }
 
       const result = await this.aiUtilService.AIGateway(
-        'openai',
-        'send-docs-message',
+        "openai",
+        "send-docs-message",
         { messages: budgetedMessages },
-        organizationId
+        organizationId,
       );
 
       for await (const chunk of result.textStream) {
         fullText += chunk;
-        this.aiUtilService.sendSSE(response, 'chunk', { content: chunk });
+        this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
       }
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
-        messageType: 'ai',
+        messageType: "ai",
         content: fullText,
         parentId: userMessage.id,
         isLatest: true,
       });
 
-      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
+      this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
       response.end();
     } catch (error) {
       this.logger.error(
         `[sendUserDocsMessage] conversationId=${conversationId} failed: ${error?.message}`,
-        error?.stack
+        error?.stack,
       );
-      this.aiUtilService.sendSSE(response, 'error', { message: error?.message || 'Something went wrong' });
+      this.aiUtilService.sendSSE(response, "error", {
+        message: error?.message || "Something went wrong",
+      });
       response.end();
     } finally {
       endActiveRun();
@@ -1861,19 +2409,34 @@ export class AiService implements IAiService {
    * flow reads it as ordinary conversation history: the next message the user sends produces
    * a PRD that already has this context, with no special-casing anywhere in `sendUserMessage`.
    */
-  async promoteConversation(conversationId: string, messageId: string, userId: string): Promise<any> {
+  async promoteConversation(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+  ): Promise<any> {
     if (!conversationId) {
-      throw new BadRequestException('conversationId is required');
+      throw new BadRequestException("conversationId is required");
     }
 
-    const conversation = await this.loadConversationOfType(conversationId, 'learn', userId);
+    const conversation = await this.loadConversationOfType(
+      conversationId,
+      "learn",
+      userId,
+    );
 
-    const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const messages =
+      await this.aiConversationMessageRepository.findLatestByConversationId(
+        conversationId,
+      );
     const answer = messageId
-      ? messages.find((message) => message.id === messageId && message.messageType === 'ai')
-      : [...messages].reverse().find((message) => message.messageType === 'ai');
+      ? messages.find(
+          (message) => message.id === messageId && message.messageType === "ai",
+        )
+      : [...messages].reverse().find((message) => message.messageType === "ai");
     if (!answer) {
-      throw new BadRequestException('No answer to promote in this conversation');
+      throw new BadRequestException(
+        "No answer to promote in this conversation",
+      );
     }
 
     const question = messages.find((message) => message.id === answer.parentId);
@@ -1881,20 +2444,25 @@ export class AiService implements IAiService {
     const generateConversation = await this.aiUtilService.createNewConversation(
       userId,
       conversation.appId,
-      'generate',
+      "generate",
       undefined,
-      true
+      true,
     );
 
     // Recorded alongside `handoff` so the originating thread stays traceable from the new one —
     // the two conversations are otherwise unrelated rows, which is exactly ADR-0012's point.
-    const metadata = { ...(generateConversation.metadata || {}), promotedFromConversationId: conversationId };
-    await this.aiConversationRepository.updateOne(generateConversation.id, { metadata });
+    const metadata = {
+      ...(generateConversation.metadata || {}),
+      promotedFromConversationId: conversationId,
+    };
+    await this.aiConversationRepository.updateOne(generateConversation.id, {
+      metadata,
+    });
     generateConversation.metadata = metadata;
 
     const seedMessage = await this.aiConversationMessageRepository.createOne({
       aiConversationId: generateConversation.id,
-      messageType: 'user',
+      messageType: "user",
       content: this.buildContextSeed(question?.content, answer.content),
       isLatest: true,
     });
@@ -1907,18 +2475,18 @@ export class AiService implements IAiService {
   private buildContextSeed(question: string, answer: string): string {
     const MAX_SEED_PART_CHARS = 1500;
     const condense = (text: string) =>
-      (text || '').trim().length > MAX_SEED_PART_CHARS
-        ? `${(text || '').trim().slice(0, MAX_SEED_PART_CHARS)}…`
-        : (text || '').trim();
+      (text || "").trim().length > MAX_SEED_PART_CHARS
+        ? `${(text || "").trim().slice(0, MAX_SEED_PART_CHARS)}…`
+        : (text || "").trim();
 
     return [
-      'Context carried over from a Learn conversation about this app:',
-      '',
-      ...(question ? [`Question: ${condense(question)}`, ''] : []),
+      "Context carried over from a Learn conversation about this app:",
+      "",
+      ...(question ? [`Question: ${condense(question)}`, ""] : []),
       `Answer: ${condense(answer)}`,
-      '',
-      'I want to build on this.',
-    ].join('\n');
+      "",
+      "I want to build on this.",
+    ].join("\n");
   }
 
   /**
@@ -1942,43 +2510,61 @@ export class AiService implements IAiService {
     stepId: string,
     userId: string,
     organizationId: string,
-    inclusive = false
+    inclusive = false,
   ): Promise<any> {
     if (!conversationId || !stepId) {
-      throw new BadRequestException('conversationId and stepId are required');
+      throw new BadRequestException("conversationId and stepId are required");
     }
 
-    const conversation = await this.loadConversationOfType(conversationId, 'generate', userId);
+    const conversation = await this.loadConversationOfType(
+      conversationId,
+      "generate",
+      userId,
+    );
 
     const targetStep = await this.stepRepository.findById(stepId);
     if (!targetStep || targetStep.conversationId !== conversationId) {
-      throw new NotFoundException('Step not found in this conversation');
+      throw new NotFoundException("Step not found in this conversation");
     }
-    if (targetStep.status !== 'succeeded') {
-      throw new BadRequestException('Can only rewind to a completed step');
+    if (targetStep.status !== "succeeded") {
+      throw new BadRequestException("Can only rewind to a completed step");
     }
 
     const appVersionId = await this.resolveAppVersionId(conversation.appId);
-    const stepsAfter = await this.stepRepository.findAfterOrder(conversationId, targetStep.messageId, targetStep.order);
+    const stepsAfter = await this.stepRepository.findAfterOrder(
+      conversationId,
+      targetStep.messageId,
+      targetStep.order,
+    );
     const stepsToUndo = inclusive ? [targetStep, ...stepsAfter] : stepsAfter;
 
     for (const step of [...stepsToUndo].reverse()) {
-      if (step.status === 'succeeded' && step.artifactId) {
-        const artifact = await this.artifactRepository.findById(step.artifactId);
+      if (step.status === "succeeded" && step.artifactId) {
+        const artifact = await this.artifactRepository.findById(
+          step.artifactId,
+        );
         if (artifact) {
-          await this.agentsService.undoArtifact(step.type, appVersionId, organizationId, artifact.content);
+          await this.agentsService.undoArtifact(
+            step.type,
+            appVersionId,
+            organizationId,
+            artifact.content,
+          );
           await this.artifactRepository.deleteOne(artifact.id);
         }
       }
       await this.stepRepository.updateOne(step.id, {
-        status: 'pending',
+        status: "pending",
         artifactId: null,
         errorMessage: null,
         attempts: 0,
       });
     }
 
-    return { rewoundTo: targetStep.id, undone: stepsToUndo.map((step) => step.id) };
+    return {
+      rewoundTo: targetStep.id,
+      undone: stepsToUndo.map((step) => step.id),
+    };
   }
 
   /**
@@ -1989,22 +2575,28 @@ export class AiService implements IAiService {
    * it already produced undone) by the loop. Failed steps can't be skipped — a failed plan
    * has already stopped, and retrying it is rewind + re-approve, not skip.
    */
-  async skipStep(conversationId: string, stepId: string, userId: string): Promise<any> {
+  async skipStep(
+    conversationId: string,
+    stepId: string,
+    userId: string,
+  ): Promise<any> {
     if (!conversationId || !stepId) {
-      throw new BadRequestException('conversationId and stepId are required');
+      throw new BadRequestException("conversationId and stepId are required");
     }
 
-    await this.loadConversationOfType(conversationId, 'generate', userId);
+    await this.loadConversationOfType(conversationId, "generate", userId);
 
     const step = await this.stepRepository.findById(stepId);
     if (!step || step.conversationId !== conversationId) {
-      throw new NotFoundException('Step not found in this conversation');
+      throw new NotFoundException("Step not found in this conversation");
     }
-    if (step.status !== 'pending' && step.status !== 'running') {
-      throw new BadRequestException('Only a pending or running step can be skipped');
+    if (step.status !== "pending" && step.status !== "running") {
+      throw new BadRequestException(
+        "Only a pending or running step can be skipped",
+      );
     }
 
-    await this.stepRepository.updateOne(step.id, { status: 'skipped' });
+    await this.stepRepository.updateOne(step.id, { status: "skipped" });
     return { skipped: step.id };
   }
 
@@ -2019,36 +2611,59 @@ export class AiService implements IAiService {
    * regenerated PRD automatically replaces the prior one as the pending-approval PRD —
    * nothing there needs to change for that.
    */
-  async regenerateAiMessage(parentMessageId: string, userId: string, organizationId: string): Promise<any> {
+  async regenerateAiMessage(
+    parentMessageId: string,
+    userId: string,
+    organizationId: string,
+  ): Promise<any> {
     if (!parentMessageId) {
-      throw new BadRequestException('parentMessageId is required');
+      throw new BadRequestException("parentMessageId is required");
     }
 
-    const parentMessage = await this.aiConversationMessageRepository.findMessageById(parentMessageId);
+    const parentMessage =
+      await this.aiConversationMessageRepository.findMessageById(
+        parentMessageId,
+      );
     if (!parentMessage) {
-      throw new NotFoundException('Message not found');
+      throw new NotFoundException("Message not found");
     }
 
     const conversationId = parentMessage.aiConversationId;
     // Regeneration reads the target conversation's history and re-runs an LLM call grounded in
     // it, so ownership is enforced up front — otherwise a known message UUID lets any user
     // consume AI credits and read/mutate a thread that isn't theirs.
-    const conversation = await this.aiConversationRepository.findById(conversationId);
+    const conversation =
+      await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException("Conversation not found");
     }
-    const latestMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
-    const parentIndex = latestMessages.findIndex((message) => message.id === parentMessageId);
+    const latestMessages =
+      await this.aiConversationMessageRepository.findLatestByConversationId(
+        conversationId,
+      );
+    const parentIndex = latestMessages.findIndex(
+      (message) => message.id === parentMessageId,
+    );
     if (parentIndex === -1) {
-      throw new BadRequestException('Message is not part of the active conversation branch');
+      throw new BadRequestException(
+        "Message is not part of the active conversation branch",
+      );
     }
 
     const staleReply = latestMessages[parentIndex + 1];
-    if (!staleReply || staleReply.parentId !== parentMessageId || staleReply.messageType !== 'ai') {
-      throw new BadRequestException('No AI reply to regenerate for this message');
+    if (
+      !staleReply ||
+      staleReply.parentId !== parentMessageId ||
+      staleReply.messageType !== "ai"
+    ) {
+      throw new BadRequestException(
+        "No AI reply to regenerate for this message",
+      );
     }
     if (parentIndex + 1 !== latestMessages.length - 1) {
-      throw new BadRequestException('Only the latest message in the conversation can be regenerated');
+      throw new BadRequestException(
+        "Only the latest message in the conversation can be regenerated",
+      );
     }
 
     const priorMessages = latestMessages.slice(0, parentIndex + 1);
@@ -2058,30 +2673,38 @@ export class AiService implements IAiService {
     // would silently turn a Q&A answer into a build proposal. The inventory is re-assembled
     // rather than reused (ADR-0011) — the App may well have changed since the first attempt.
     const messages =
-      conversation?.conversationType === 'learn'
-        ? this.buildLearnMessages(await this.assembleAppInventory(conversation.appId), priorMessages)
+      conversation?.conversationType === "learn"
+        ? this.buildLearnMessages(
+            await this.assembleAppInventory(conversation.appId),
+            priorMessages,
+          )
         : this.buildPrdMessages(priorMessages);
-    const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
-      organizationId,
-      messages
-    );
+    const { messages: budgetedMessages, truncated } =
+      await this.aiUtilService.fitMessagesToContextWindowForOrg(
+        organizationId,
+        messages,
+      );
     if (truncated.length) {
-      this.logger.warn(`[regenerateAiMessage] context truncated: ${JSON.stringify(truncated)}`);
+      this.logger.warn(
+        `[regenerateAiMessage] context truncated: ${JSON.stringify(truncated)}`,
+      );
     }
 
     const result = await this.aiUtilService.AIGatewayGenerate(
-      'openai',
-      'regenerate-message',
+      "openai",
+      "regenerate-message",
       { messages: budgetedMessages },
-      organizationId
+      organizationId,
     );
 
-    await this.aiConversationMessageRepository.updateOne(staleReply.id, { isLatest: false });
+    await this.aiConversationMessageRepository.updateOne(staleReply.id, {
+      isLatest: false,
+    });
 
     return await this.aiConversationMessageRepository.createOne({
       aiConversationId: conversationId,
-      messageType: 'ai',
-      content: result?.text || '',
+      messageType: "ai",
+      content: result?.text || "",
       parentId: parentMessageId,
       isLatest: true,
     });
@@ -2092,7 +2715,9 @@ export class AiService implements IAiService {
    * enabled (see BASIC_PLAN_TERMS.features.ai) and usage is unlimited, so this
    * never touches organization_ai_credit_history / selfhost_ai_credit_history.
    */
-  async getCreditsBalance(organizationId): Promise<{ aiFeaturesEnabled: boolean; error?: string }> {
+  async getCreditsBalance(
+    organizationId,
+  ): Promise<{ aiFeaturesEnabled: boolean; error?: string }> {
     return {
       aiFeaturesEnabled: true,
     };
@@ -2108,17 +2733,25 @@ export class AiService implements IAiService {
    * to fall back to — failing at the boundary beats persisting a row that no listing can find.
    */
   private resolveConversationType(conversationType: string): ConversationType {
-    if (!conversationType) return 'generate';
+    if (!conversationType) return "generate";
     if (!(CONVERSATION_TYPES as readonly string[]).includes(conversationType)) {
       throw new BadRequestException(
-        `Unsupported conversationType "${conversationType}" — supported types are: ${CONVERSATION_TYPES.join(', ')}`
+        `Unsupported conversationType "${conversationType}" — supported types are: ${CONVERSATION_TYPES.join(", ")}`,
       );
     }
     return conversationType as ConversationType;
   }
 
-  async listConversations(appId: string, userId: string, conversationType: string): Promise<any> {
-    return this.aiUtilService.getConversationsList(appId, userId, this.resolveConversationType(conversationType));
+  async listConversations(
+    appId: string,
+    userId: string,
+    conversationType: string,
+  ): Promise<any> {
+    return this.aiUtilService.getConversationsList(
+      appId,
+      userId,
+      this.resolveConversationType(conversationType),
+    );
   }
 
   /**
@@ -2132,23 +2765,26 @@ export class AiService implements IAiService {
     conversationType: string,
     organizationId: string,
     currentConversationId?: string,
-    handoff?: boolean
+    handoff?: boolean,
   ): Promise<any> {
     return this.aiUtilService.createNewConversation(
       userId,
       appId,
       this.resolveConversationType(conversationType),
       currentConversationId,
-      handoff
+      handoff,
     );
   }
 
-  async getConversationById(conversationId: string, userId: string): Promise<any> {
+  async getConversationById(
+    conversationId: string,
+    userId: string,
+  ): Promise<any> {
     return this.aiUtilService.getConversationById(conversationId, userId);
   }
 
   async getThreadTokenUsage(conversationId: string, user: any): Promise<any> {
-    throw new Error('Method not implemented.');
+    throw new Error("Method not implemented.");
   }
 
   /**
@@ -2162,11 +2798,20 @@ export class AiService implements IAiService {
    * the field is supposed to hold, which is exactly the case a truthiness test would drop.
    */
   private buildFixContextLines(context: ErrorContext): string {
-    const { expression, errorMessage, componentName, componentType, propertyName, fallbackValue } = context;
+    const {
+      expression,
+      errorMessage,
+      componentName,
+      componentType,
+      propertyName,
+      fallbackValue,
+    } = context;
     const lines: string[] = [];
 
     if (componentName || componentType) {
-      lines.push(`Component: ${[componentType, componentName].filter(Boolean).join(' ')}`);
+      lines.push(
+        `Component: ${[componentType, componentName].filter(Boolean).join(" ")}`,
+      );
     }
     if (propertyName) {
       lines.push(`Property: ${propertyName}`);
@@ -2176,12 +2821,12 @@ export class AiService implements IAiService {
     if (fallbackValue !== undefined) {
       lines.push(
         `The property fell back to this value, which shows the shape it expects: ${summarizeFallbackValue(
-          fallbackValue
-        )}`
+          fallbackValue,
+        )}`,
       );
     }
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   /**
@@ -2196,7 +2841,10 @@ export class AiService implements IAiService {
    * both, there is nothing to fix and no way to tell what "fixed" would mean, so the model
    * could only invent a replacement for a value the user never complained about.
    */
-  async fixWithAi(body: ErrorContext, organizationId: string): Promise<Suggestion> {
+  async fixWithAi(
+    body: ErrorContext,
+    organizationId: string,
+  ): Promise<Suggestion> {
     const { expression, errorMessage } = body ?? ({} as ErrorContext);
 
     // Type-checked, not just truthiness-checked: this endpoint takes a raw `@Body()`, and the
@@ -2204,30 +2852,44 @@ export class AiService implements IAiService {
     // an array of messages. A bare `.trim()` on one of those throws a TypeError, which would
     // surface to the user as a 500 "Internal server error" for what is really a bad request.
     if (!isNonEmptyString(expression)) {
-      throw new BadRequestException('expression is required and must be a non-empty string');
+      throw new BadRequestException(
+        "expression is required and must be a non-empty string",
+      );
     }
     if (!isNonEmptyString(errorMessage)) {
-      throw new BadRequestException('errorMessage is required and must be a non-empty string');
+      throw new BadRequestException(
+        "errorMessage is required and must be a non-empty string",
+      );
     }
 
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      'openai',
-      'fix-with-ai',
+    const prompt = await this.budgetPromptForOrg(
+      organizationId,
       {
         system: FIX_WITH_AI_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: this.buildFixContextLines(body) }],
-        tools: { proposeFix: proposeFixTool },
-        toolChoice: { type: 'tool', toolName: 'proposeFix' },
+        messages: [{ role: "user", content: this.buildFixContextLines(body) }],
       },
-      organizationId
+      "fixWithAi",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "fix-with-ai",
+      {
+        ...prompt,
+        tools: { proposeFix: proposeFixTool },
+        toolChoice: { type: "tool", toolName: "proposeFix" },
+      },
+      organizationId,
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== 'proposeFix') {
-      throw new Error('The assistant did not produce a fix');
+    if (!call || call.toolName !== "proposeFix") {
+      throw new Error("The assistant did not produce a fix");
     }
 
-    const { fixedValue, explanation } = call.args as { fixedValue: string; explanation: string };
+    const { fixedValue, explanation } = call.args as {
+      fixedValue: string;
+      explanation: string;
+    };
     return { fixedValue, explanation };
   }
 
@@ -2241,7 +2903,9 @@ export class AiService implements IAiService {
    * than failing the request (ADR-0016). The failure is logged because a *persistently*
    * ungrounded copilot looks to the user like a model that keeps making names up.
    */
-  private async assembleCopilotInventory(appId?: string): Promise<string | null> {
+  private async assembleCopilotInventory(
+    appId?: string,
+  ): Promise<string | null> {
     if (!appId) return null;
 
     try {
@@ -2249,7 +2913,7 @@ export class AiService implements IAiService {
     } catch (error) {
       this.logger.warn(
         `[copilot] appId=${appId} inventory unavailable, answering ungrounded: ${error?.message}`,
-        error?.stack
+        error?.stack,
       );
       return null;
     }
@@ -2264,34 +2928,43 @@ export class AiService implements IAiService {
    * rendered as empty sections — an "Already in the editor:" heading over nothing invites the
    * model to treat the blank as content and preserve it.
    */
-  private buildCopilotContextLines(context: CopilotContext, inventory: string | null): string {
+  private buildCopilotContextLines(
+    context: CopilotContext,
+    inventory: string | null,
+  ): string {
     const { prompt, currentCode, language, dataSourceKind } = context;
     const sections: string[] = [];
 
     sections.push(`Editor language: ${this.resolveCopilotLanguage(language)}`);
     if (isNonEmptyString(dataSourceKind)) {
-      sections.push(`This query runs against a "${dataSourceKind}" data source.`);
+      sections.push(
+        `This query runs against a "${dataSourceKind}" data source.`,
+      );
     }
     if (inventory) {
       sections.push(`Inventory of the app being edited:\n${inventory}`);
     }
     if (isNonEmptyString(currentCode) && isCodeTooLongToShow(currentCode)) {
       sections.push(
-        'The editor already contains a body too long to include here, so you cannot see it. Write only what was asked, as a self-contained body, and open your explanation by warning that it replaces the existing code rather than extending it.'
+        "The editor already contains a body too long to include here, so you cannot see it. Write only what was asked, as a self-contained body, and open your explanation by warning that it replaces the existing code rather than extending it.",
       );
     } else if (isNonEmptyString(currentCode)) {
-      sections.push(`Already in the editor, which is the user's work in progress:\n${currentCode}`);
+      sections.push(
+        `Already in the editor, which is the user's work in progress:\n${currentCode}`,
+      );
     } else {
-      sections.push('The editor is empty.');
+      sections.push("The editor is empty.");
     }
     sections.push(`What the user asked for:\n${prompt.trim()}`);
 
-    return sections.join('\n\n');
+    return sections.join("\n\n");
   }
 
   private resolveCopilotLanguage(language?: string): string {
-    const normalized = (language || '').trim().toLowerCase();
-    return SUPPORTED_COPILOT_LANGUAGES.includes(normalized) ? normalized : DEFAULT_COPILOT_LANGUAGE;
+    const normalized = (language || "").trim().toLowerCase();
+    return SUPPORTED_COPILOT_LANGUAGES.includes(normalized)
+      ? normalized
+      : DEFAULT_COPILOT_LANGUAGE;
   }
 
   /**
@@ -2306,33 +2979,53 @@ export class AiService implements IAiService {
    * reason `fixWithAi` checks its inputs: this takes a raw `@Body()`, and `.trim()` on a
    * non-string would surface as a 500 for what is a malformed request.
    */
-  async copilot(body: CopilotContext, organizationId: string): Promise<Completion> {
+  async copilot(
+    body: CopilotContext,
+    organizationId: string,
+  ): Promise<Completion> {
     const { prompt } = body ?? ({} as CopilotContext);
 
     if (!isNonEmptyString(prompt)) {
-      throw new BadRequestException('prompt is required and must be a non-empty string');
+      throw new BadRequestException(
+        "prompt is required and must be a non-empty string",
+      );
     }
 
     const inventory = await this.assembleCopilotInventory(body.appId);
 
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      'openai',
-      'copilot',
+    const budgetedPrompt = await this.budgetPromptForOrg(
+      organizationId,
       {
         system: COPILOT_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: this.buildCopilotContextLines(body, inventory) }],
-        tools: { writeCode: writeCodeTool },
-        toolChoice: { type: 'tool', toolName: 'writeCode' },
+        messages: [
+          {
+            role: "user",
+            content: this.buildCopilotContextLines(body, inventory),
+          },
+        ],
       },
-      organizationId
+      "copilot",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "copilot",
+      {
+        ...budgetedPrompt,
+        tools: { writeCode: writeCodeTool },
+        toolChoice: { type: "tool", toolName: "writeCode" },
+      },
+      organizationId,
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== 'writeCode') {
-      throw new Error('The assistant did not produce any code');
+    if (!call || call.toolName !== "writeCode") {
+      throw new Error("The assistant did not produce any code");
     }
 
-    const { code, explanation } = call.args as { code: string; explanation: string };
+    const { code, explanation } = call.args as {
+      code: string;
+      explanation: string;
+    };
     return { code, explanation };
   }
 }
