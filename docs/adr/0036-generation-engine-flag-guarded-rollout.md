@@ -1,4 +1,4 @@
-# ADR-0035: Server-side proxy to the Generation engine is flag-guarded, not a hard switch
+# ADR-0036: Server-side proxy to the Generation engine is flag-guarded, not a hard switch
 
 Date: 2026-09-01
 Ticket: #91 (Generation engine: SSE endpoint + server-side proxy)

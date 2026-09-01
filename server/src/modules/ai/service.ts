@@ -2395,7 +2395,7 @@ export class AiService implements IAiService {
    * catch/`sendSSE(..., 'error', ...)` path the in-process call already uses.
    *
    * Otherwise falls back to the existing in-process `AIGateway` call — this is
-   * the deliberate flag-guard from ADR-0035: nothing deploys the engine yet
+   * the deliberate flag-guard from ADR-0036: nothing deploys the engine yet
    * (CONTEXT.md, "not wired into the root build chain"), so a hard switch
    * would break every PRD generation in dev and prod the moment this merges.
    *

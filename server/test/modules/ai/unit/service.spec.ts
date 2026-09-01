@@ -59,7 +59,7 @@ const buildMockAiFeasibilityService = () => ({
 });
 
 // Defaults to "engine not configured" (GENERATION_ENGINE_URL unset) — every pre-#91 test's
-// world, and the flag-guarded fallback path (ADR-0035): sendUserMessage keeps using
+// world, and the flag-guarded fallback path (ADR-0036): sendUserMessage keeps using
 // aiUtilService.AIGateway unless a test explicitly opts into the engine.
 const buildMockGenerationEngineClient = () => ({
   isConfigured: jest.fn().mockReturnValue(false),
