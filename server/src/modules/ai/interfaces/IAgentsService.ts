@@ -28,6 +28,12 @@ export interface IAgentsService {
   // props shape is type-specific (see AgentsService.CreateComponent's doc comment).
   CreateComponent(appVersionId: string, organizationId: string, type: string, props: any): Promise<any>;
 
+  // Merges a sparse { properties?, styles? } patch onto an existing component (ticket #66) —
+  // only the paths that changed, validated against componentsMeta the same way
+  // CreateComponent's widgets are. Throws when componentId doesn't resolve to a real
+  // component rather than creating one.
+  UpdateComponent(appVersionId: string, organizationId: string, componentId: string, patch: any): Promise<any>;
+
   CreateQuery(appVersionId: string, organizationId: string, props: any): Promise<any>;
 
   // Diff-merges an LLM-proposed options patch into an existing data query's options

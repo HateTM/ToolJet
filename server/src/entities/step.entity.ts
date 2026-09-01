@@ -16,6 +16,7 @@ export type StepType =
   | 'UpdateTable'
   | 'CreateQuery'
   | 'CreateComponent'
+  | 'UpdateComponent'
   | 'UpdateQuery'
   | 'GenerateEvent';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
