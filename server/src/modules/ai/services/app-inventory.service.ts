@@ -67,6 +67,27 @@ export class AppInventoryService {
     ].join('\n\n');
   }
 
+  /**
+   * The `Existing components already in this app` block an UpdateComponent step (ticket #66)
+   * grounds itself in — unlike `renderPages`, this carries each component's real id, because
+   * UpdateComponent has to reference one precisely (the same "never invent an id" contract
+   * CreateComponent's pageId/queryName args already rely on), not just describe the app in
+   * prose. Used both by the step planner (so it knows an UpdateComponent target exists at
+   * all) and by UpdateComponent's own execution-time step context (so the id it emits is
+   * checked against something real).
+   */
+  async renderComponentIndex(appVersionId: string): Promise<string> {
+    const pages = await this.pageService.findPagesForVersion(appVersionId);
+    const lines: string[] = [];
+    for (const page of (pages as any[]) || []) {
+      for (const [id, entry] of Object.entries(page.components || {}) as Array<[string, any]>) {
+        lines.push(`- ${entry?.type} "${entry?.name}" (id: ${id}, page: "${page.name}")`);
+      }
+    }
+    if (!lines.length) return 'Existing components already in this app: none yet.';
+    return ['Existing components already in this app:', ...lines].join('\n');
+  }
+
   private renderPages(pages: any[]): string {
     if (!pages?.length) return 'Pages: none yet.';
 

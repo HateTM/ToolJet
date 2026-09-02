@@ -5,7 +5,13 @@
 // seam: the createTableTool schema (axis 1) and the executeCreateTableStep mapping
 // (axis 2). The offline harness mocks the AI gateway, AgentsService.CreateTable, and the
 // underlying tooljet-db table-operations service so the specs run without a DB.
-import { AiService, createTableTool, proposeStepPlanTool, CREATE_TABLE_SYSTEM_PROMPT, STEP_PLAN_SYSTEM_PROMPT } from '@modules/ai/service';
+import {
+  AiService,
+  createTableTool,
+  proposeStepPlanTool,
+  CREATE_TABLE_SYSTEM_PROMPT,
+  STEP_PLAN_SYSTEM_PROMPT,
+} from '@modules/ai/service';
 
 const buildMockAiUtilService = () => ({
   AIGatewayGenerate: jest.fn(),
@@ -19,6 +25,7 @@ const buildMockAgentsService = () => ({
   // Ticket #23's FK pre-flight consults the org's existing tables when an FK target is not
   // among priorResults; tests default to "no pre-existing tables" and override as needed.
   ViewTables: jest.fn().mockResolvedValue([]),
+  UpdateComponent: jest.fn(),
 });
 
 const buildMockRepositories = () => ({
@@ -28,7 +35,12 @@ const buildMockRepositories = () => ({
   stepRepository: { updateOne: jest.fn(), createOne: jest.fn(), findById: jest.fn() },
   versionRepository: { findVersion: jest.fn() },
   aiResponseVoteRepository: { find: jest.fn(), upsert: jest.fn() },
-  appInventoryService: { findAppById: jest.fn() },
+  appInventoryService: {
+    findAppById: jest.fn(),
+    // Ticket #66: UpdateComponent's own execution-time context — defaults to "nothing built
+    // yet", overridden per test with the target component's real id.
+    renderComponentIndex: jest.fn().mockResolvedValue('Existing components already in this app: none yet.'),
+  },
   dataSourceInventoryService: { findDataSourceByKind: jest.fn() },
 });
 
@@ -146,6 +158,88 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
 
     const [, tableParams] = agentsService.CreateTable.mock.calls[0];
     expect(tableParams.foreign_keys).toEqual(foreignKeys);
+  });
+});
+
+/** @group ai-builder */
+describe('AiService.executeUpdateComponentStep (ticket #66)', () => {
+  const componentIndex =
+    'Existing components already in this app:\n- Text "Welcome" (id: component-1, page: "Home")';
+
+  it("resolves the model's componentId against the real component index and delegates the merge to AgentsService.UpdateComponent", async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [{ toolName: 'updateComponent', args: { componentId: 'component-1', properties: { text: 'New title' } } }],
+    });
+    agentsService.UpdateComponent.mockResolvedValue({
+      id: 'component-1',
+      type: 'Text',
+      patch: { properties: { text: { value: 'New title' } } },
+      previous: { properties: { text: { value: 'Old title' } }, styles: {} },
+    });
+
+    const result = await service.executeUpdateComponentStep(
+      { type: 'UpdateComponent', description: 'change the welcome text' } as any,
+      { prd: 'Change the welcome text to "New title"', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any
+    );
+
+    expect(agentsService.UpdateComponent).toHaveBeenCalledWith('v1', 'org-1', 'component-1', {
+      properties: { text: 'New title' },
+      styles: undefined,
+    });
+    expect(result.identifier).toBe('component-1');
+    expect(result.content.previous).toEqual({ properties: { text: { value: 'Old title' } }, styles: {} });
+  });
+
+  it('throws a retryable, meaningful error for a hallucinated componentId instead of delegating to AgentsService.UpdateComponent', async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [{ toolName: 'updateComponent', args: { componentId: 'ghost-component', properties: { text: 'x' } } }],
+    });
+
+    await expect(
+      service.executeUpdateComponentStep(
+        { type: 'UpdateComponent', description: 'change something' } as any,
+        { prd: 'irrelevant', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any
+      )
+    ).rejects.toThrow(/does not match any existing component/);
+    expect(agentsService.UpdateComponent).not.toHaveBeenCalled();
+  });
+
+  it('accepts an empty patch ({} — "no changes") without erroring', async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [{ toolName: 'updateComponent', args: { componentId: 'component-1' } }],
+    });
+    agentsService.UpdateComponent.mockResolvedValue({
+      id: 'component-1',
+      type: 'Text',
+      patch: {},
+      previous: {},
+      noop: true,
+    });
+
+    const result = await service.executeUpdateComponentStep(
+      { type: 'UpdateComponent', description: 'no actual change needed' } as any,
+      { prd: 'irrelevant', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any
+    );
+
+    expect(agentsService.UpdateComponent).toHaveBeenCalledWith('v1', 'org-1', 'component-1', {
+      properties: undefined,
+      styles: undefined,
+    });
+    expect(result.content.noop).toBe(true);
+  });
+});
+
+/** @group ai-builder */
+describe('UpdateComponent step vocabulary (ticket #66)', () => {
+  it('STEP_PLAN_SYSTEM_PROMPT tells the planner about UpdateComponent and the existing-components grounding', () => {
+    expect(STEP_PLAN_SYSTEM_PROMPT).toMatch(/UpdateComponent/);
+    expect(STEP_PLAN_SYSTEM_PROMPT).toMatch(/Existing components already in this app/);
   });
 });
 
