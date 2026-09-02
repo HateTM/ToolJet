@@ -38,6 +38,16 @@ Two things specific to slots, not needed for Container/Form:
 
 `Tabs` and `Listview` remain rejected, and `updateComponentTool` remains untouched (same reparenting-scope reasoning as the original decision above) — this follow-up only narrows the ModalV2 case, it doesn't revisit the rest.
 
+### Follow-up 2: Tabs pane nesting, and Listview turned out to need no new mechanism at all
+
+`Listview`'s rejection above was overcautious: its `defaultChildren` (`listview.js`) carry no `slotName` and no `tab`, so `getParentComponentIdByType` already falls through to its `return parentId` default — a Listview's row template is addressed by the **bare** widget id, exactly like a Container's body. There is no separate "item" addressing scheme to build; `parentComponentId: <listviewId>` was always going to work once the type check allowed it. It's added to the bare-id-allowed set alongside Container/Form/ModalV2 with no other code change.
+
+`Tabs` is a real slot-qualified case, but a data-driven one rather than a literal-suffix one like ModalV2's `-header`/`-footer`: a pane's parent id is `${tabsId}-${tabId}` (`appCanvasUtils.js`'s `getParentComponentIdByType`), and `tabId` is always the tab's **array index as a string** — `createTabsComponent`'s own `tabsLiteral` assigns `id: '${index}'` regardless of the (customizable) tab titles, so pane addressing is `<tabsId>-<tabIndex>` (0-based), not tied to any title the model chose. Because the tab *count* is per-instance (a plan can create a 2-tab bar and a 5-tab bar on the same page), `createTabsComponent` now returns `tabsCount` on its artifact content, and `executeComponentStep` validates a Tabs suffix against that specific instance's count — not an assumed default of 3.
+
+This also required moving off ModalV2's original regex-based suffix split (`/^(.+)-(header|footer)$/`): every component id here is a UUID already full of dashes, and a literal `-header`/`-footer` suffix regex is unambiguous only because those two words can't appear elsewhere. A `-<tabIndex>` suffix has no such fixed shape to regex for. The validation now tries an exact (bare) id match against this plan's prior `CreateComponent` results first, and only then looks for a prior artifact whose id `rawParentId` extends by exactly `-<suffix>` — avoiding blind dash-splitting of a UUID. A bare Tabs id (no suffix) is explicitly rejected: unlike Container/Form/Listview/ModalV2's body, a Tabs bar has no "default" pane to fall back to.
+
+`updateComponentTool` reparenting remains out of scope, same reasoning as before.
+
 ## Alternatives considered
 
 - **A single `parentComponentId: string` covering every container type, slot-qualification left to the caller.** Rejected: the model would have to construct `${id}-${tab}` strings itself with no grounding for `tab`/slot names, defeating the whole point of validating against `context.priorResults` — a wrong tab index fails silently (ToolJet renders nothing for an unknown pane) rather than the loud retryable failures this lifecycle otherwise guarantees.

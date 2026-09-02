@@ -484,8 +484,8 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - CurrencyInput: reference a Page id, give it a label (optional placeholder and default numeric value).
 - PhoneInput: reference a Page id, give it a label (optional placeholder).
 - Datepicker: reference a Page id (optional default value, placeholder, and format, e.g. "DD/MM/YYYY").
-- Tabs: reference a Page id (optional list of tab titles, default 3 stock tabs). Only one Tabs per page. Its panes cannot be filled with other widgets yet — it renders empty.
-- Listview: reference a Page id, and optionally the name of a query already created in this plan whose rows it should list (omit for stock demo rows). Its items cannot hold other widgets yet.
+- Tabs: reference a Page id (optional list of tab titles, default 3 stock tabs). Only one Tabs per page. Other widgets can nest into a specific pane — see parentComponentId below.
+- Listview: reference a Page id, and optionally the name of a query already created in this plan whose rows it should list (omit for stock demo rows). Other widgets can nest into its single row template — see parentComponentId below.
 - IFrame: reference a Page id and the URL to embed.
 - FilePicker: reference a Page id (optional label). Upload UI only — files are not wired to any query yet.
 - ModalV2: reference a Page id (optional trigger button label); it renders with a default trigger button. Other widgets can nest into its body, header, or footer — see parentComponentId below.
@@ -495,7 +495,7 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - ButtonGroupV2: reference a Page id, give it a label, and optionally a list of short button labels (default 3 stock buttons).
 - DatePickerV2: reference a Page id, give it a label (optional default value, placeholder, and format).
 - Chat (EXPERIMENTAL — decorative only): reference a Page id (optional chat title). No query or event is wired to actually send/receive messages; use only when the PRD explicitly wants a chat UI mockup, not a working chat feature.
-Any widget type (except Page itself) accepts an optional parentComponentId: the id of a Container or Form already created in this plan on the same page, to nest this widget inside it instead of placing it directly on the page. For a ModalV2 already created in this plan, use its id for the body slot, "<modalId>-header" for the header slot, or "<modalId>-footer" for the footer slot — keep header/footer children small (a label, a button, an icon), they render in a thin strip. Tabs and Listview cannot yet hold nested children (their panes/items still render empty) — don't reference them as a parentComponentId.
+Any widget type (except Page itself) accepts an optional parentComponentId: the id of a Container, Form or Listview already created in this plan on the same page, to nest this widget inside it instead of placing it directly on the page (a Listview has a single row template shared by every row it renders — you cannot address individual rows). For a ModalV2 already created in this plan, use its id for the body slot, "<modalId>-header" for the header slot, or "<modalId>-footer" for the footer slot — keep header/footer children small (a label, a button, an icon), they render in a thin strip. For a Tabs already created in this plan, use "<tabsId>-<tabIndex>" (0-based — the first tab is index 0, whether or not you gave tabs custom titles) to nest into that specific pane; a bare Tabs id is not valid on its own.
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
@@ -523,7 +523,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -538,7 +538,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -553,7 +553,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -569,7 +569,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -584,7 +584,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -616,7 +616,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -641,7 +641,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -657,7 +657,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -676,7 +676,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -699,7 +699,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -718,7 +718,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -735,7 +735,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -751,7 +751,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -768,7 +768,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -784,7 +784,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -804,7 +804,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -822,7 +822,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -837,7 +837,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -857,7 +857,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -880,7 +880,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -900,7 +900,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -917,7 +917,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -933,7 +933,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -956,7 +956,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -974,7 +974,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -994,7 +994,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1009,7 +1009,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1024,7 +1024,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1042,7 +1042,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1057,7 +1057,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1072,7 +1072,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1091,7 +1091,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1110,7 +1110,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1134,7 +1134,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1154,7 +1154,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
         ),
     }),
   ]),
@@ -3074,42 +3074,82 @@ export class AiService implements IAiService {
       }
     }
 
-    // Increment 4 (create-time nesting): parentComponentId, when given, must reference a
-    // Container or Form already created earlier in THIS plan on the SAME page — Tabs and
-    // Listview aren't valid nesting targets yet (their children need a slot-qualified
-    // parent id this plan doesn't support). ModalV2 IS slot-qualified: its own id is the
-    // body slot, "<id>-header"/"<id>-footer" the header/footer slots (see
-    // frontend/src/AppBuilder/Widgets/ModalV2/Components/{Modal,Header,Footer}.jsx —
-    // those are the literal sub-container ids the canvas renders children under).
-    // Retryable, same reasoning as the pageId check above.
+    // Create-time nesting: parentComponentId, when given, must reference a Container, Form,
+    // Listview or ModalV2/Tabs slot already created earlier in THIS plan on the SAME page.
+    // Unlike ModalV2's fixed "-header"/"-footer" suffixes, a bare match is tried first
+    // (rather than regexing off a trailing "-segment") because every id here is a UUID
+    // already full of dashes — splitting on "-" blind would mangle it. Only once no widget's
+    // id equals rawParentId outright do we look for one that rawParentId extends by exactly
+    // "-<suffix>", and interpret that suffix per the found parent's own type (ModalV2 ADR-0043
+    // follow-up; Tabs/Listview this pass — see docs/adr/0043, "Follow-up: Tabs pane nesting").
     if (props.parentComponentId) {
       const rawParentId: string = props.parentComponentId;
-      const slotMatch = /^(.+)-(header|footer)$/.exec(rawParentId);
-      const baseParentId = slotMatch ? slotMatch[1] : rawParentId;
-      const slot = slotMatch ? slotMatch[2] : null;
 
-      const parentWidget = context.priorResults.find(
+      const widgetsOnPage = context.priorResults.filter(
         (result) =>
           result.type === "CreateComponent" &&
-          result.artifact.content?.id === baseParentId &&
           result.artifact.content?.pageId === props.pageId,
       );
-      if (!parentWidget) {
-        throw new Error(
-          `parentComponentId "${rawParentId}" does not match any Container, Form or ModalV2 created earlier in this plan on the same page`,
+
+      const bareMatch = widgetsOnPage.find(
+        (result) => result.artifact.content?.id === rawParentId,
+      );
+      if (bareMatch) {
+        const parentType = bareMatch.artifact.content?.type;
+        if (parentType === "Tabs") {
+          throw new Error(
+            `parentComponentId "${rawParentId}" refers to a Tabs bar directly — target one of its panes instead, e.g. "${rawParentId}-0"`,
+          );
+        }
+        if (
+          parentType !== "Container" &&
+          parentType !== "Form" &&
+          parentType !== "Listview" &&
+          parentType !== "ModalV2"
+        ) {
+          throw new Error(
+            `parentComponentId "${rawParentId}" refers to a ${parentType}, which cannot hold nested children — only Container, Form, Listview, ModalV2 and Tabs (via a pane suffix) can`,
+          );
+        }
+        // Container/Form/Listview body, or ModalV2's body slot — all valid bare.
+      } else {
+        const slotParent = widgetsOnPage.find(
+          (result) =>
+            typeof result.artifact.content?.id === "string" &&
+            rawParentId.startsWith(`${result.artifact.content.id}-`),
         );
-      }
-      const parentType = parentWidget.artifact.content?.type;
-      if (parentType === "ModalV2") {
-        // Body slot (no suffix) is valid; header/footer are only valid via their suffix.
-      } else if (slot) {
-        throw new Error(
-          `parentComponentId "${rawParentId}" refers to a ${parentType}, which has no header/footer slots — only ModalV2 does`,
-        );
-      } else if (parentType !== "Container" && parentType !== "Form") {
-        throw new Error(
-          `parentComponentId "${rawParentId}" refers to a ${parentType}, which cannot hold nested children yet — only Container, Form and ModalV2 can`,
-        );
+        if (!slotParent) {
+          throw new Error(
+            `parentComponentId "${rawParentId}" does not match any Container, Form, Listview, ModalV2 or Tabs created earlier in this plan on the same page`,
+          );
+        }
+        const baseParentId: string = slotParent.artifact.content.id;
+        const suffix = rawParentId.slice(baseParentId.length + 1);
+        const parentType = slotParent.artifact.content?.type;
+        if (parentType === "ModalV2") {
+          if (suffix !== "header" && suffix !== "footer") {
+            throw new Error(
+              `parentComponentId "${rawParentId}" refers to a ModalV2 slot suffix "${suffix}", but only "-header" and "-footer" are valid (bare id for the body)`,
+            );
+          }
+        } else if (parentType === "Tabs") {
+          const tabsCount: number =
+            slotParent.artifact.content?.tabsCount ?? 3;
+          const tabIndex = Number(suffix);
+          if (
+            !/^\d+$/.test(suffix) ||
+            tabIndex < 0 ||
+            tabIndex >= tabsCount
+          ) {
+            throw new Error(
+              `parentComponentId "${rawParentId}" refers to tab index "${suffix}", but this Tabs bar only has tabs 0-${tabsCount - 1}`,
+            );
+          }
+        } else {
+          throw new Error(
+            `parentComponentId "${rawParentId}" refers to a ${parentType}, which has no addressable slots — only ModalV2 ("-header"/"-footer") and Tabs ("-<tabIndex>") do`,
+          );
+        }
       }
     }
 

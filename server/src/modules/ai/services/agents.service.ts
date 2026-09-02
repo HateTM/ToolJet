@@ -1240,7 +1240,7 @@ export class AgentsService implements IAgentsService {
     const tabsLiteral = titles
       .map((title: string, index: number) => `{ title: '${String(title).replace(/'/g, "\\'")}', id: '${index}' }`)
       .join(', \n\t\t');
-    return this.createWidgetComponent(
+    const created = await this.createWidgetComponent(
       appVersionId,
       pageId,
       'Tabs',
@@ -1255,6 +1255,12 @@ export class AgentsService implements IAgentsService {
     ,
       parentComponentId
     );
+    // Tab pane ids are always the array index as a string ('0', '1', ...) — see
+    // getParentComponentIdByType in appCanvasUtils.js ("`${parentId}-${tab}`") and this
+    // method's own tabsLiteral above. Carried on the artifact so a later step's
+    // parentComponentId ("<thisId>-<index>") can be validated against the real tab count
+    // this specific Tabs instance was created with, not an assumed default of 3.
+    return { ...created, tabsCount: titles.length };
   }
 
   // defaultSize per listview.js: { width: 15, height: 450 }. Binds to a query's data when
