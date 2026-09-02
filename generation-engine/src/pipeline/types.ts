@@ -1,11 +1,11 @@
 /**
- * Stage contract for the Generation engine's pipeline (ADR-0028 as refined by ADR-0040):
- * classify -> PRD -> LLD -> feature-planner -> per-entity -> step-plan -> evaluate. Every
- * stage reads and returns the same accumulating `PipelineArtifacts` bag so the
- * orchestrator (`./orchestrator.ts`) can sequence an arbitrary stage list without knowing
- * each stage's internal shape.
+ * Stage contract for the Generation engine's pipeline (ADR-0028 as refined by ADR-0040
+ * and ADR-0048): classify -> PRD -> LLD -> feature-planner -> per-entity -> step-plan ->
+ * step-generation -> evaluate. Every stage reads and returns the same accumulating
+ * `PipelineArtifacts` bag so the orchestrator (`./orchestrator.ts`) can sequence an
+ * arbitrary stage list without knowing each stage's internal shape.
  *
- * This file intentionally has zero LLM/network code — it is the seam the seven stage
+ * This file intentionally has zero LLM/network code — it is the seam the eight stage
  * modules and their prompt/catalog/provider dependencies plug into.
  */
 import { EffectiveLlmConfig } from '../config/provider';
@@ -156,6 +156,17 @@ export interface StepPlan {
 }
 
 /**
+ * One non-table step's pre-generated tool-call payload (ADR-0048), produced by the
+ * step-generation stage. `index` is the position of the step it belongs to in
+ * `stepPlan.steps`.
+ */
+export interface GeneratedStep {
+  index: number;
+  type: StepType;
+  payload: Record<string, unknown>;
+}
+
+/**
  * The accumulating artifact bag every stage reads and extends. Optional fields are the
  * ones a given stage produces — populated in pipeline order, never read before their
  * producing stage has run.
@@ -169,6 +180,14 @@ export interface PipelineArtifacts {
   entityToolCalls?: EntityToolCall[];
   /** The fork's Step-list contract (ADR-0001/ADR-0004), produced by the step-plan stage. */
   stepPlan?: StepPlan;
+  /**
+   * Rendered live-app component index the caller passed to /generate/steps ("Existing
+   * components already in this app: ..."). Prompt context only — the caller renders it
+   * from the same source the server's planner uses (ADR-0048).
+   */
+  componentIndex?: string;
+  /** Payloads for the step plan's non-table steps, produced by the step-generation stage. */
+  generatedSteps?: GeneratedStep[];
   evaluation?: EvaluationVerdict;
 }
 
