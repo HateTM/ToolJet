@@ -1,23 +1,25 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { isSingleReadOnlyStatement } from './query-security';
+import { updateQuery as updateQueryPrompts } from '../prompt-library';
 
 /**
- * Ticket #67, modeled on the EE `updateQuery` prompt (ee-extract/server-dist-ee/ai/assets/
- * prompt-library/updateQuery.js): the model returns ONLY the option paths that changed, and
- * the merge below applies them onto the existing options without touching anything else.
- * Unlike EE, the query's name and data source can never change — those are the read-only
- * parts of the contract here, so the tool schema doesn't even accept them.
+ * Ticket #67, prompt sourced from the ported EE library (prompt-library/updateQuery.ts):
+ * the model returns ONLY the option paths that changed, and the merge below applies them
+ * onto the existing options without touching anything else. Unlike EE, the query's name
+ * and data source can never change — those are the read-only parts of the contract here,
+ * so the tool schema doesn't even accept them.
  */
-export const UPDATE_QUERY_SYSTEM_PROMPT = `You update one existing data query in a ToolJet app, based on the PRD and the specific step you've been asked to build.
-
-Call updateQuery exactly once. You are shown the query's current options and the list of other queries in the app; pick the target by its exact name.
+export const UPDATE_QUERY_SYSTEM_PROMPT = [
+  updateQueryPrompts.systemPrompt(),
+  `Call updateQuery exactly once. You are shown the query's current options and the list of other queries in the app; pick the target by its exact name.
 
 Rules:
 - Return ONLY the option keys that actually change, with their new values. Everything you omit is left exactly as it is — never return unchanged keys, and never return the whole options object.
 - Never change the query's name or its data source. They are not part of the response.
 - When the query runs against a connected SQL source (mode "sql"), the updated statement must remain a single read-only SELECT.
-- Keep expression syntax consistent with the rest of the options: bindings use {{ components.name.property }} / {{ queries.name.data }}.`;
+- Keep expression syntax consistent with the rest of the options: bindings use {{ components.name.property }} / {{ queries.name.data }}.`,
+].join('\n\n');
 
 export const updateQueryTool = tool({
   description: 'Update one existing data query by returning only the options that changed.',
