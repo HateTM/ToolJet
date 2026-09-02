@@ -69,6 +69,13 @@ const buildMockGenerationEngineClient = () => ({
   streamPrd: jest.fn(),
 });
 
+// Defaults to "engine not configured" — every pre-ADR-0048 test's world; the engine
+// path in generateStepPlan is opt-in per test via overrides.
+const buildMockGenerationEnginePipelineClient = () => ({
+  isConfigured: jest.fn().mockReturnValue(false),
+  generateSteps: jest.fn(),
+});
+
 // Defaults to "nothing external connected", which is every pre-ADR-0019 test's world: the
 // plan targets ToolJet DB and no data-source block reaches any prompt.
 const buildMockDataSourceInventoryService = () => ({
@@ -154,6 +161,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const aiActiveRunService = overrides.aiActiveRunService ?? buildMockAiActiveRunService();
   const aiFeasibilityService = overrides.aiFeasibilityService ?? buildMockAiFeasibilityService();
   const generationEngineClient = overrides.generationEngineClient ?? buildMockGenerationEngineClient();
+  const generationEnginePipelineClient =
+    overrides.generationEnginePipelineClient ?? buildMockGenerationEnginePipelineClient();
 
   const service = new AiService(
     aiUtilService as any,
@@ -168,7 +177,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     dataSourceInventoryService as any,
     aiActiveRunService as any,
     aiFeasibilityService as any,
-    generationEngineClient as any
+    generationEngineClient as any,
+    generationEnginePipelineClient as any
   );
 
   return {
@@ -3030,6 +3040,126 @@ describe('AiService.approvePrd', () => {
       'step-6',
       expect.objectContaining({ status: 'succeeded', attempts: 2 })
     );
+  });
+
+  describe('AiService.generateStepPlan via the generation engine (ADR-0048)', () => {
+    // Same conversation/message scaffolding every approvePrd test uses (see the
+    // 'generates a step plan...' test above): the approved PRD lives on ai-msg-1.
+    const arrangeApprovedConversation = (conversationRepo, messageRepo) => {
+      conversationRepo.findById.mockResolvedValue({
+        id: 'conv-1',
+        userId: 'user-1',
+        conversationType: 'generate',
+      });
+      messageRepo.findLatestByConversationId.mockResolvedValue([
+        { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+      ]);
+    };
+
+    const plannedStepPlanCall = (calls) =>
+      calls.some(([, label]) => label === 'approve-prd-plan');
+
+    it('plans steps through POST /generate/steps when the engine is configured, reusing the same persistence contract', async () => {
+      const generationEnginePipelineClient = {
+        isConfigured: jest.fn().mockReturnValue(true),
+        generateSteps: jest.fn().mockResolvedValue({
+          steps: [
+            {
+              type: 'CreateTable',
+              description: 'Create a customers table',
+              table: {
+                table_name: 'customers',
+                columns: [
+                  { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
+                ],
+              },
+            },
+            { type: 'UpdateComponent', description: 'retitle the heading' },
+          ],
+          generatedSteps: [
+            { index: 1, type: 'UpdateComponent', payload: { componentId: 'comp-1', properties: { text: 'Hello' } } },
+          ],
+        }),
+      };
+      const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService({
+        generationEnginePipelineClient,
+      });
+
+      arrangeApprovedConversation(conversationRepo, messageRepo);
+      stepRepository.createOne.mockImplementation(async (args) => ({ id: `step-${args.order + 1}`, ...args }));
+
+      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+      // The approved PRD crosses the wire, with the rendered component index (ticket #66
+      // contract) and no LLD (the engine runs its own lld stage).
+      expect(generationEnginePipelineClient.generateSteps).toHaveBeenCalledWith(
+        'PRD text',
+        undefined,
+        expect.stringContaining('Existing components already in this app'),
+        'org-1'
+      );
+      // The in-process planner never ran — the approve-prd-plan gateway label is absent
+      // (later calls, if any, belong to step execution, not planning).
+      expect(plannedStepPlanCall(aiUtilService.AIGatewayGenerate.mock.calls)).toBe(false);
+
+      // The engine's steps went through the exact same persistence contract:
+      expect(stepRepository.createOne).toHaveBeenCalledTimes(2);
+      const tableStep = stepRepository.createOne.mock.calls[0][0];
+      expect(tableStep).toMatchObject({ order: 0, type: 'CreateTable', description: 'Create a customers table' });
+      expect(tableStep).toHaveProperty('plannedTable'); // isWellFormedTableDefinition kept it
+      const componentStep = stepRepository.createOne.mock.calls[1][0];
+      expect(componentStep).toMatchObject({ order: 1, type: 'UpdateComponent' });
+      expect(componentStep).toMatchObject({
+        props: { generatedStep: { componentId: 'comp-1', properties: { text: 'Hello' } } },
+      });
+    });
+
+    it('falls back to the in-process planner when the engine call fails', async () => {
+      const generationEnginePipelineClient = {
+        isConfigured: jest.fn().mockReturnValue(true),
+        generateSteps: jest.fn().mockRejectedValue(new Error('engine unreachable')),
+      };
+      const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService({
+        generationEnginePipelineClient,
+      });
+
+      arrangeApprovedConversation(conversationRepo, messageRepo);
+      aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+        planToolCall([{ type: 'CreateTable', description: 'Create a customers table' }])
+      );
+      stepRepository.createOne.mockResolvedValue(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'));
+
+      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+      expect(generationEnginePipelineClient.generateSteps).toHaveBeenCalledTimes(1);
+      // The fallback ran the in-process planner (its Step was persisted from the
+      // AIGatewayGenerate tool call).
+      expect(plannedStepPlanCall(aiUtilService.AIGatewayGenerate.mock.calls)).toBe(true);
+      expect(stepRepository.createOne).toHaveBeenCalledWith(
+        expect.objectContaining({ order: 0, type: 'CreateTable', description: 'Create a customers table' })
+      );
+    });
+
+    it('uses the in-process planner when the engine is not configured (regression guard)', async () => {
+      const generationEnginePipelineClient = {
+        isConfigured: jest.fn().mockReturnValue(false),
+        generateSteps: jest.fn(),
+      };
+      const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService({
+        generationEnginePipelineClient,
+      });
+
+      arrangeApprovedConversation(conversationRepo, messageRepo);
+      aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+        planToolCall([{ type: 'CreateTable', description: 'Create a customers table' }])
+      );
+      stepRepository.createOne.mockResolvedValue(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'));
+
+      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+      expect(generationEnginePipelineClient.generateSteps).not.toHaveBeenCalled();
+      expect(plannedStepPlanCall(aiUtilService.AIGatewayGenerate.mock.calls)).toBe(true);
+    });
   });
 });
 

@@ -45,6 +45,11 @@ function fakeDepsFactory(emitLog: string[]): PipelineDepsFactory {
           return { steps: [{ type: 'CreateTable', description: 'create customers' }] };
         },
       },
+      stepGeneration: {
+        async generateStepPayload() {
+          return {};
+        },
+      },
       evaluate: {
         async judge() {
           return { pass: true, reasons: [] };
@@ -105,12 +110,21 @@ describe('POST /generate/run', () => {
     const prdChunks = events.filter((e) => e.event === 'prd-chunk');
     expect(prdChunks.map((e) => e.data.content).join('')).toBe('PRD text');
 
-    // Every stage that ran announced itself first — the full 7-stage
-    // ADR-0028 sequence (feature-planner and per-entity run on their
+    // Every stage that ran announced itself first — the full 8-stage
+    // ADR-0028/ADR-0048 sequence (feature-planner and per-entity run on their
     // deterministic defaults).
-    expect(types.filter((t) => t === 'stage')).toHaveLength(7);
+    expect(types.filter((t) => t === 'stage')).toHaveLength(8);
     const stageNames = events.filter((e) => e.event === 'stage').map((e) => e.data.stage);
-    expect(stageNames).toEqual(['classify', 'prd', 'lld', 'feature-planner', 'per-entity', 'step-plan', 'evaluate']);
+    expect(stageNames).toEqual([
+      'classify',
+      'prd',
+      'lld',
+      'feature-planner',
+      'per-entity',
+      'step-plan',
+      'step-generation',
+      'evaluate',
+    ]);
 
     // Terminal event carries all final artifacts in one structured payload.
     const done = events.find((e) => e.event === 'engine-done');
@@ -180,6 +194,11 @@ describe('POST /generate/run', () => {
             throw new Error('should not run');
           },
         },
+        stepGeneration: {
+          async generateStepPayload() {
+            throw new Error('should not run');
+          },
+        },
         evaluate: {
           async judge() {
             throw new Error('should not run');
@@ -226,6 +245,11 @@ describe('POST /generate/run', () => {
         },
         stepPlan: {
           async generateStepPlan() {
+            throw new Error('must be short-circuited');
+          },
+        },
+        stepGeneration: {
+          async generateStepPayload() {
             throw new Error('must be short-circuited');
           },
         },

@@ -46,6 +46,7 @@ import { AiActiveRunService } from "./services/ai-active-run.service";
 import { generateQuery as generateQueryPrompts } from "./prompt-library";
 import { AiFeasibilityService } from "./services/ai-feasibility.service";
 import { GenerationEngineClient } from "./services/generation-engine-client";
+import { GenerationEnginePipelineClient } from "./services/generation-engine-pipeline-client";
 import { VersionRepository } from "@modules/versions/repository";
 import { Step, StepType } from "@entities/step.entity";
 import { Artifact } from "@entities/artifact.entity";
@@ -1553,6 +1554,7 @@ export class AiService implements IAiService {
     private readonly aiActiveRunService: AiActiveRunService,
     private readonly aiFeasibilityService: AiFeasibilityService,
     private readonly generationEngineClient: GenerationEngineClient,
+    private readonly generationEnginePipelineClient: GenerationEnginePipelineClient,
   ) {}
 
   /**
@@ -2154,6 +2156,57 @@ export class AiService implements IAiService {
     dataSources: QueryableDataSource[],
     appVersionId: string,
   ): Promise<Step[]> {
+    // ADR-0048: when the generation engine is deployed, the approved PRD is planned by
+    // the engine's POST /generate/steps (its lld -> feature-planner -> per-entity ->
+    // step-plan -> step-generation -> evaluate pipeline) instead of the in-process
+    // AIGateway planner. The engine only proposes JSON steps — persistence below is the
+    // exact same contract; any engine failure (unreachable, non-200, malformed/empty
+    // plan, no effective org LLM config) is logged and falls back to the in-process
+    // path rather than failing the approval (silent fallback, ADR-0048 decision 5).
+    if (this.generationEnginePipelineClient.isConfigured()) {
+      let engineResult: Awaited<
+        ReturnType<typeof this.generationEnginePipelineClient.generateSteps>
+      > | undefined;
+      try {
+        const componentIndex = await this.appInventoryService.renderComponentIndex(appVersionId);
+        const result = await this.generationEnginePipelineClient.generateSteps(
+          prd,
+          undefined,
+          componentIndex,
+          organizationId
+        );
+        if (!result.steps?.length) {
+          throw new Error("The engine proposed an empty build plan");
+        }
+        // A malformed element shape would persist description-less steps rather than
+        // trip the documented "malformed plan" fallback (code-review finding).
+        if (
+          result.steps.some(
+            (step) => typeof step?.type !== "string" || typeof step?.description !== "string"
+          )
+        ) {
+          throw new Error("The engine returned a malformed step plan");
+        }
+        engineResult = result;
+      } catch (error: any) {
+        // Only engine-call failures fall back. Persistence errors are deliberately
+        // outside this catch: falling back on those would re-plan and double-persist
+        // steps that were already inserted (code-review finding).
+        this.logger.warn(
+          `[AiService] generation-engine step planning failed, falling back in-process: ${error?.message}`
+        );
+      }
+      if (engineResult) {
+        return await this.persistProposedSteps(
+          engineResult.steps.map((step) => ({ ...step, type: step.type as StepType })),
+          conversationId,
+          messageId,
+          dataSources,
+          engineResult.generatedSteps
+        );
+      }
+    }
+
     // Ticket #66: the planner needs to know an UpdateComponent target actually exists before
     // it can propose one — same "never invent an id" contract as the connected-sources block
     // below.
@@ -2206,6 +2259,34 @@ export class AiService implements IAiService {
       throw new Error("The assistant proposed an empty build plan");
     }
 
+    return this.persistProposedSteps(proposedSteps, conversationId, messageId, dataSources);
+  }
+
+  /**
+   * Persists one Step row per proposed step, in order, all `status: 'pending'` — the
+   * single Step-persistence contract shared by the in-process planner and the
+   * generation-engine path (ADR-0048): the isWellFormedTableDefinition drop, seed-row
+   * validation/consistency, resolveCreateTableTarget, phase trimming.
+   *
+   * `generatedSteps` (engine path only) attaches each non-table step's pre-generated
+   * payload as props.generatedStep — inert for executors today (ADR-0048 Consequences:
+   * they keep their own execution-time LLM call); a future ticket may consume it
+   * deterministically. No migration: props is an existing jsonb column.
+   */
+  private async persistProposedSteps(
+    proposedSteps: Array<{
+      type: StepType;
+      description: string;
+      table?: TableDefinition;
+      data_source_id?: string;
+      seed_rows?: any[];
+      phase?: string;
+    }>,
+    conversationId: string,
+    messageId: string,
+    dataSources: QueryableDataSource[],
+    generatedSteps?: Array<{ index: number; type: string; payload: Record<string, unknown> }>
+  ): Promise<Step[]> {
     const persisted: Step[] = [];
     for (let index = 0; index < proposedSteps.length; index++) {
       const proposed = proposedSteps[index];
@@ -2245,6 +2326,16 @@ export class AiService implements IAiService {
       // Ticket #21: the planner-assigned phase name, trimmed; an absent/blank one persists
       // as null so the client's fallback grouping sees a consistent shape.
       const phase = proposed.phase?.trim() || null;
+      // ADR-0048: the engine's pre-generated payload (if any) rides on props; the
+      // collisionError merge keeps ADR-0042's terminal-failure shape intact.
+      const generatedPayload = generatedSteps?.find((entry) => entry.index === index)?.payload;
+      let props: any = generatedPayload ? { generatedStep: generatedPayload } : undefined;
+      if (targetResolution.kind === "collision") {
+        props = {
+          collisionError: targetResolution.message,
+          ...(generatedPayload && { generatedStep: generatedPayload }),
+        };
+      }
       const step = await this.stepRepository.createOne({
         conversationId,
         messageId,
@@ -2259,9 +2350,7 @@ export class AiService implements IAiService {
           plannedTable && { plannedTable }),
         ...(targetResolution.kind !== "collision" &&
           plannedSeedRows && { plannedSeedRows }),
-        ...(targetResolution.kind === "collision" && {
-          props: { collisionError: targetResolution.message },
-        }),
+        ...(props && { props }),
         ...(targetResolution.kind === "external" && {
           targetDataSourceId: targetResolution.dataSource.id,
         }),

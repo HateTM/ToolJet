@@ -2,12 +2,13 @@ import { buildDefaultPipeline, runPipeline } from '../../src/pipeline/index';
 import { makeTestCtx } from './ctx';
 
 describe('buildDefaultPipeline', () => {
-  it('assembles the seven ADR-0028/ADR-0040 stages in order', () => {
+  it('assembles the eight ADR-0028/ADR-0040/ADR-0048 stages in order', () => {
     const stages = buildDefaultPipeline({
       classify: { classify: jest.fn() },
       prd: { generatePrd: jest.fn() },
       lld: { generateLld: jest.fn() },
       stepPlan: { generateStepPlan: jest.fn() },
+      stepGeneration: { generateStepPayload: jest.fn() },
       evaluate: { judge: jest.fn() },
     });
 
@@ -18,6 +19,7 @@ describe('buildDefaultPipeline', () => {
       'feature-planner',
       'per-entity',
       'step-plan',
+      'step-generation',
       'evaluate',
     ]);
   });
@@ -42,6 +44,7 @@ describe('buildDefaultPipeline', () => {
           steps: [{ type: 'CreateTable', description: 'create users', phase: 'Tables' }],
         }),
       },
+      stepGeneration: { generateStepPayload: jest.fn() },
       evaluate: { judge: jest.fn().mockResolvedValue({ pass: true, reasons: [] }) },
     });
 
@@ -58,6 +61,7 @@ describe('buildDefaultPipeline', () => {
       description: 'create users',
       phase: 'Tables',
     });
+    expect(result.generatedSteps).toEqual([]);
     expect(result.evaluation).toEqual({ pass: true, reasons: [] });
   });
 
@@ -72,6 +76,7 @@ describe('buildDefaultPipeline', () => {
       prd: { generatePrd },
       lld: { generateLld },
       stepPlan: { generateStepPlan },
+      stepGeneration: { generateStepPayload: jest.fn() },
       evaluate: { judge },
     });
 

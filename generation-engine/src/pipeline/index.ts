@@ -11,6 +11,7 @@ export * from './lld';
 export * from './feature-planner';
 export * from './per-entity';
 export * from './step-plan';
+export * from './step-generation';
 export * from './evaluate';
 export * from './prompt-assembly';
 export * from './llm-deps';
@@ -22,6 +23,7 @@ import { buildLldStage, LldStageDeps } from './lld';
 import { buildFeaturePlannerStage, FeaturePlannerStageDeps } from './feature-planner';
 import { buildPerEntityStage, PerEntityStageDeps } from './per-entity';
 import { buildStepPlanStage, StepPlanStageDeps } from './step-plan';
+import { buildStepGenerationStage, StepGenerationStageDeps } from './step-generation';
 import { buildEvaluateStage, EvaluateStageDeps } from './evaluate';
 
 export interface DefaultPipelineDeps {
@@ -31,18 +33,21 @@ export interface DefaultPipelineDeps {
   featurePlanner?: FeaturePlannerStageDeps;
   perEntity?: PerEntityStageDeps;
   stepPlan: StepPlanStageDeps;
+  stepGeneration: StepGenerationStageDeps;
   evaluate: EvaluateStageDeps;
 }
 
 /**
- * Assembles the full ADR-0028 stage sequence as refined by ADR-0040:
- * classify -> PRD -> LLD -> feature-planner -> per-entity -> step-plan -> evaluate.
+ * Assembles the full ADR-0028 stage sequence as refined by ADR-0040 and ADR-0048:
+ * classify -> PRD -> LLD -> feature-planner -> per-entity -> step-plan ->
+ * step-generation -> evaluate.
  *
  * Every LLM-calling dependency is required except `featurePlanner`/`perEntity`, whose
  * deterministic halves are useful standalone (see those files' own doc comments).
- * `step-plan` is the terminal planning stage (ADR-0040): it closes the loop to the
- * fork's Step-list contract and must run before evaluate, which judges the plan
- * including the proposed steps. `runPipeline` (./orchestrator.ts) executes the result.
+ * `step-plan` proposes the fork's Step-list contract (ADR-0040) and `step-generation`
+ * (ADR-0048) pre-generates the non-table steps' payloads; both must run before
+ * evaluate, which judges the plan including the proposed steps. `runPipeline`
+ * (./orchestrator.ts) executes the result.
  */
 export function buildDefaultPipeline(deps: DefaultPipelineDeps): PipelineStage[] {
   return [
@@ -52,6 +57,7 @@ export function buildDefaultPipeline(deps: DefaultPipelineDeps): PipelineStage[]
     buildFeaturePlannerStage(deps.featurePlanner),
     buildPerEntityStage(deps.perEntity),
     buildStepPlanStage(deps.stepPlan),
+    buildStepGenerationStage(deps.stepGeneration),
     buildEvaluateStage(deps.evaluate),
   ];
 }

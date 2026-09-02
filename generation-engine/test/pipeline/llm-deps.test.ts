@@ -7,6 +7,7 @@ import {
   LLD_SYSTEM_PROMPT,
   PRD_SYSTEM_PROMPT,
   STEP_PLAN_SYSTEM_PROMPT,
+  UPDATE_COMPONENT_SYSTEM_PROMPT,
   UPDATE_TABLE_SYSTEM_PROMPT,
 } from '../../src/prompts';
 import { PipelineArtifacts, EntityToolCall } from '../../src/pipeline/types';
@@ -88,6 +89,21 @@ describe('buildRealPipelineDeps', () => {
     const raw = await buildRealPipelineDeps().stepPlan.generateStepPlan('# PRD\n\nx', ctx);
     expect(lastCall().system).toBe(STEP_PLAN_SYSTEM_PROMPT);
     expect(raw).toEqual({ steps: [{ type: 'CreateTable', description: 't' }] });
+  });
+
+  it('stepGeneration dispatches the step type onto its ported system prompt and parses JSON', async () => {
+    mockGenerateText.mockResolvedValue({ text: '{"componentId":"c-1","properties":{"text":"Hi"}}' });
+    const artifacts = { prompt: '', prd: 'PRD', stepPlan: { steps: [] } } as PipelineArtifacts;
+    const payload = await buildRealPipelineDeps().stepGeneration.generateStepPayload(
+      { type: 'UpdateComponent', description: 'retitle the heading' },
+      1,
+      artifacts,
+      ctx
+    );
+    const { system, user } = lastCall();
+    expect(system).toBe(UPDATE_COMPONENT_SYSTEM_PROMPT);
+    expect(user).toContain('retitle the heading');
+    expect(payload).toEqual({ componentId: 'c-1', properties: { text: 'Hi' } });
   });
 
   it('evaluate judges a compact artifact summary with the evaluate prompt', async () => {

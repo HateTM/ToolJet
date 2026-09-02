@@ -2,16 +2,29 @@ import { generateText } from 'ai';
 import { resolveLanguageModel } from '../config/provider';
 import {
   CLASSIFY_SYSTEM_PROMPT,
+  CREATE_COMPONENT_SYSTEM_PROMPT,
+  CREATE_QUERY_SYSTEM_PROMPT,
   CREATE_TABLE_SYSTEM_PROMPT,
+  DELETE_COMPONENT_SYSTEM_PROMPT,
+  DELETE_QUERY_SYSTEM_PROMPT,
   EVALUATE_SYSTEM_PROMPT,
+  GENERATE_EVENT_SYSTEM_PROMPT,
   LLD_SYSTEM_PROMPT,
+  MOVE_COMPONENT_SYSTEM_PROMPT,
   PRD_SYSTEM_PROMPT,
   STEP_PLAN_SYSTEM_PROMPT,
+  UPDATE_COMPONENT_SYSTEM_PROMPT,
+  UPDATE_QUERY_SYSTEM_PROMPT,
   UPDATE_TABLE_SYSTEM_PROMPT,
 } from '../prompts';
-import { buildEvaluateStageInput, buildLldStageInput, buildPerEntityStageInput } from './prompt-assembly';
+import {
+  buildEvaluateStageInput,
+  buildLldStageInput,
+  buildPerEntityStageInput,
+  buildStepGenerationStageInput,
+} from './prompt-assembly';
 import type { DefaultPipelineDeps } from './index';
-import { StageContext } from './types';
+import { StageContext, StepType } from './types';
 
 /**
  * The real (production) LLM-calling halves of the pipeline's stages, wired per ticket
@@ -53,6 +66,22 @@ async function completeJson(system: string, user: string, ctx: StageContext): Pr
 }
 
 /**
+ * Step type -> ported system prompt (ADR-0048). All eight non-table types have entries:
+ * the five ADR-0048 ports plus the three already in the #93 library. CreateTable is
+ * absent — per-entity owns table payloads.
+ */
+const STEP_PAYLOAD_SYSTEM_PROMPTS: Record<Exclude<StepType, 'CreateTable'>, string> = {
+  CreateComponent: CREATE_COMPONENT_SYSTEM_PROMPT,
+  UpdateComponent: UPDATE_COMPONENT_SYSTEM_PROMPT,
+  DeleteComponent: DELETE_COMPONENT_SYSTEM_PROMPT,
+  MoveComponent: MOVE_COMPONENT_SYSTEM_PROMPT,
+  CreateQuery: CREATE_QUERY_SYSTEM_PROMPT,
+  UpdateQuery: UPDATE_QUERY_SYSTEM_PROMPT,
+  DeleteQuery: DELETE_QUERY_SYSTEM_PROMPT,
+  GenerateEvent: GENERATE_EVENT_SYSTEM_PROMPT,
+};
+
+/**
  * Production `DefaultPipelineDeps`. The feature-planner keeps its deterministic default
  * (no `planFeatures` refinement — ADR-0040 keeps it engine-internal and 1:1 per table),
  * and per-entity dispatch routes deterministically; `executeToolCall` generates the
@@ -89,6 +118,15 @@ export function buildRealPipelineDeps(): DefaultPipelineDeps {
     stepPlan: {
       async generateStepPlan(input, ctx) {
         return completeJson(STEP_PLAN_SYSTEM_PROMPT, input, ctx);
+      },
+    },
+    stepGeneration: {
+      async generateStepPayload(step, index, artifacts, ctx) {
+        const system = STEP_PAYLOAD_SYSTEM_PROMPTS[step.type as Exclude<StepType, 'CreateTable'>];
+        if (!system) {
+          throw new Error(`step-generation has no system prompt for step type "${step.type}"`);
+        }
+        return completeJson(system, buildStepGenerationStageInput(step, index, artifacts), ctx);
       },
     },
     evaluate: {

@@ -1,5 +1,5 @@
 import { toPromptContext } from '../catalogs';
-import { EntityToolCall, FeaturePlan, PipelineArtifacts } from './types';
+import { EntityToolCall, FeaturePlan, PipelineArtifacts, ProposedStep, StepType } from './types';
 
 /**
  * Deterministic prompt assembly for the stages that ground their generation against the
@@ -97,4 +97,81 @@ export function buildEvaluateStageInput(artifacts: PipelineArtifacts): string {
 /** The feature-plan ordering hint a stage may include (see step-plan.ts's input builder). */
 export function featurePlanOrdering(featurePlan: FeaturePlan): string {
   return featurePlan.items.map((item) => item.entityName).join(' -> ');
+}
+
+/**
+ * The forced tool-call name each non-table StepType's payload rides (ADR-0048) — mirrors
+ * the tool names in server/src/modules/ai/service.ts. CreateTable is absent: table
+ * payloads are per-entity's concern (ADR-0028).
+ */
+export const STEP_PAYLOAD_TOOL_NAMES: Partial<Record<StepType, string>> = {
+  CreateComponent: 'createComponent',
+  UpdateComponent: 'updateComponent',
+  DeleteComponent: 'deleteComponent',
+  MoveComponent: 'moveComponent',
+  CreateQuery: 'createQuery',
+  UpdateQuery: 'updateQuery',
+  DeleteQuery: 'deleteQuery',
+  GenerateEvent: 'generateEvent',
+};
+
+/**
+ * The step-generation stage's user message for one step (ADR-0048): the PRD, the
+ * caller-supplied component index verbatim (it arrives self-headed "Existing components
+ * already in this app: ..."), the plan's earlier steps, and the JSON response contract.
+ * The system prompt is ported verbatim from the server and keeps its forced tool-call
+ * wording; the engine realizes that contract as plain JSON (no tool plumbing), so the
+ * response-format instruction closes the gap. GenerateEvent steps additionally get the
+ * machine catalogs — same grounding the server's executeEventStep appends (ticket #67).
+ */
+export function buildStepGenerationStageInput(
+  step: ProposedStep,
+  index: number,
+  artifacts: PipelineArtifacts
+): string {
+  const toolName = STEP_PAYLOAD_TOOL_NAMES[step.type];
+  if (!toolName) {
+    throw new Error(`buildStepGenerationStageInput has no payload contract for step type "${step.type}"`);
+  }
+  const sections: string[] = ['# PRD', '', artifacts.prd ?? ''];
+
+  if (artifacts.componentIndex) {
+    sections.push('', artifacts.componentIndex);
+  }
+
+  // Strictly the steps before this one: a payload must only reference things the plan
+  // has already produced by this point, never steps that come later (code-review P2).
+  const earlier = (artifacts.stepPlan?.steps ?? [])
+    .slice(0, index)
+    .map((s, i) => `${i}. ${s.type}: ${s.description}`)
+    .join('\n');
+
+  sections.push(
+    '',
+    '# The step to generate',
+    '',
+    JSON.stringify({ index, type: step.type, description: step.description }, null, 2),
+    '',
+    '# Earlier steps in this plan (order)',
+    '',
+    earlier || '(none)'
+  );
+
+  if (step.type === 'GenerateEvent') {
+    sections.push(
+      '',
+      '# Component and event catalogs',
+      '',
+      'Pick eventIds, actionIds and their keys ONLY from this catalog (JSON):',
+      '',
+      buildCatalogPromptContext()
+    );
+  }
+
+  sections.push(
+    '',
+    `Respond with a single JSON object and nothing else — the argument payload of the ${toolName} tool call described in the system prompt. No prose, no markdown fences.`
+  );
+
+  return sections.join('\n');
 }

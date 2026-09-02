@@ -59,7 +59,14 @@ const buildAiService = (overrides: any = {}) => {
     repositories.versionRepository,
     repositories.aiResponseVoteRepository,
     repositories.appInventoryService,
-    repositories.dataSourceInventoryService
+    repositories.dataSourceInventoryService,
+    // The deps below are never touched on these tests' code paths, but the pipeline
+    // client IS: generateStepPlan's ADR-0048 branch calls isConfigured() first, so it
+    // must exist and default to "engine not configured" (in-process planner, as before).
+    undefined,
+    undefined,
+    undefined,
+    { isConfigured: jest.fn().mockReturnValue(false), generateSteps: jest.fn() }
   );
 
   return { service, aiUtilService, agentsService, repositories };
