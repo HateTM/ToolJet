@@ -182,9 +182,13 @@ async function updateKey(body) {
   return fetch(`${config.apiUrl}/ai/update-key`, requestOptions).then(handleResponse);
 }
 
+// `licenseType` is accepted for callers that already pass it, but the ticket #59 backend
+// (AiController.getKeySettings) ignores query params entirely — the response is the same
+// org-scoped BYOK settings regardless, so it's optional here (ticket #65).
 async function getKeySettings(licenseType) {
   const requestOptions = { method: 'GET', headers: authHeader(), credentials: 'include' };
-  return fetch(`${config.apiUrl}/ai/key-settings?licenseType=${licenseType}`, requestOptions).then(handleResponse);
+  const query = licenseType ? `?licenseType=${licenseType}` : '';
+  return fetch(`${config.apiUrl}/ai/key-settings${query}`, requestOptions).then(handleResponse);
 }
 
 async function updateMessageData(messageId, body) {
