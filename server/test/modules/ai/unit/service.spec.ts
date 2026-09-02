@@ -1887,6 +1887,95 @@ describe('AiService.approvePrd', () => {
     );
   });
 
+  // Standards review of PR #126: executeMoveComponentStep's grounding only checked that
+  // newParentComponentId existed (a substring match against the rendered component index),
+  // never that it was a Container/Form/Listview — unlike executeComponentStep's create-time
+  // parentComponentId, which type-checks at this same layer. AgentsService.MoveComponent
+  // does type-check, but one layer deeper and with a less specific error; a wrong-type target
+  // should fail loud and retryable right here, the same way every other hallucinated/invalid
+  // target in this file does.
+  it('rejects a newParentComponentId that resolves to a component of the wrong type, then succeeds once the retry targets a real Container', async () => {
+    const agentsService = { ...buildMockAgentsService(), MoveComponent: jest.fn() };
+    const {
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      artifactRepository,
+      stepRepository,
+      appInventoryService,
+    } = buildService({ agentsService });
+
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+    appInventoryService.renderComponentIndex.mockResolvedValue(
+      [
+        'Existing components already in this app:',
+        '- Text "Label" (id: text-1, page: "Home")',
+        '- Container "Sidebar" (id: container-1, page: "Home")',
+      ].join('\n')
+    );
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([{ type: 'MoveComponent', description: 'Move the label into the sidebar' }])
+    )
+      // Attempt 1: newParentComponentId resolves to a real component, but a Text, not a
+      // Container/Form/Listview.
+      .mockResolvedValueOnce({
+        toolCalls: [
+          { toolName: 'moveComponent', args: { componentId: 'text-1', newParentComponentId: 'text-1' } },
+        ],
+      })
+      // Attempt 2 (retry): the real Container.
+      .mockResolvedValueOnce({
+        toolCalls: [
+          { toolName: 'moveComponent', args: { componentId: 'text-1', newParentComponentId: 'container-1' } },
+        ],
+      });
+
+    stepRepository.createOne.mockResolvedValueOnce({
+      id: 'step-1',
+      conversationId: 'conv-1',
+      messageId: 'ai-msg-1',
+      order: 0,
+      type: 'MoveComponent',
+      description: 'Move the label into the sidebar',
+      status: 'pending',
+    });
+    agentsService.MoveComponent.mockResolvedValue({
+      id: 'text-1',
+      pageId: 'page-1',
+      previousParent: null,
+      newParent: 'container-1',
+    });
+    artifactRepository.createOne.mockResolvedValue({ id: 'artifact-1' });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    // Attempt 1 never reaches AgentsService.MoveComponent — the wrong-type target is caught
+    // at this layer, retryable, before any DB write.
+    expect(agentsService.MoveComponent).toHaveBeenCalledTimes(1);
+    expect(agentsService.MoveComponent).toHaveBeenCalledWith('version-1', 'text-1', 'container-1');
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-1',
+      expect.objectContaining({
+        attempts: 1,
+        errorMessage: expect.stringContaining('cannot hold nested children via Move'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-1',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
   it('builds a working page end to end: CreateTable → CreateComponent(Page) → CreateQuery → CreateComponent(Table), each step referencing the real prior artifacts', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
