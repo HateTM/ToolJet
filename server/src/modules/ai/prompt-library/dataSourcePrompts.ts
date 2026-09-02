@@ -41,9 +41,9 @@ const postgresPrompt = `## postgres database ruleset
             { "name": "comment_text", "type": "TEXT", "nullable": false },
             { "name": "created_at", "type": "TIMESTAMP", "nullable": false }
         ],
-        " sampleData": [
+        "sampleData": [
             { "id": 1, "bug_id": 101, "developer_id": 201, "comment_text": "Fixed the null pointer issue in the login flow.", "created_at": "2025-06-25 10:15:00" },
-            { "id": 2, "bug_id": 102, "developer_id": 202, "comment_text": "Added validation for empty email field.", "created_at": "2025-06-25 11:00:00" },
+            { "id": 2, "bug_id": 102, "developer_id": 202, "comment_text": "Added validation for empty email field.", "created_at": "2025-06-25 11:00:00" }
           ]
         }
     ],
@@ -56,7 +56,7 @@ const postgresPrompt = `## postgres database ruleset
                 "mode": "sql",
                 "query": "Select * from bugs where status = '{{components.filter_bugs.label}}'"
             },
-            run_on_page_load: false
+            "run_on_page_load": false
         },
         {
             "name": "list_all_bugs",
@@ -66,7 +66,7 @@ const postgresPrompt = `## postgres database ruleset
                 "mode": "sql",
                 "query": "SELECT b.id, b.title, b.priority, b.status, d.name as assigned_to, b.created_at FROM bugs b LEFT JOIN developers d ON b.assigned_developer_id = d.id WHERE b.status IN ('Open', 'In Progress') ORDER BY b.created_at DESC"
             },
-            run_on_page_load = false
+            "run_on_page_load": false
         }
     ]
 }
@@ -83,7 +83,7 @@ const tooljetdbPrompt = `## Tooljet database ruleset
     - You have the context of the tables that you are creating and LLD so you can create the queries for the tables.
     - Use the below JSON format for all the 4 operations.
       Rules:
-      1. In filter there are 6 operators {"eq":"equals to", "gt": "greater than", "neq"not equal to", "lt": "less than", "lte": "less than equal to", "gte": "greatthan equals to"}
+      1. In filter there are 6 operators {"eq":"equals to", "gt": "greater than", "neq":"not equal to", "lt": "less than", "lte": "less than equal to", "gte": "greater than equals to"}
       2. The id should be unique for each filter and should be a number
       3. Table name is the name of the table in the database
       4. components refers to the components available in the app as given above
@@ -113,6 +113,7 @@ const tooljetdbPrompt = `## Tooljet database ruleset
         "name": "updateProduct",
         "id": "3df3c11c-5cab-4b65-9a23-3b8d8832d654",
         "update_rows": {"columns": {"47": {"column": "qty_in_stock","value": "{{components.textinput1.value}}"}},"where_filters": {"45": {"column": "id","operator": "eq","value": "{{components.dropdown2.value}}","id": "45"},"46": {"column": "is_active","operator": "eq","value": "true","id": "46"}}}
+      },
       {
         "operation": "delete_rows",
         "component": "tooljetdb",
@@ -130,11 +131,11 @@ const tooljetdbPrompt = `## Tooljet database ruleset
 `;
 
 export const dataSourcePrompt = (dataSource) => {
-  let prompt;
-  if (dataSource.kind == 'tooljetdb') {
-    prompt = tooljetdbPrompt;
-  } else if (dataSource.kind == 'postgresql') {
-    prompt = postgresPrompt;
+  if (dataSource.kind === 'tooljetdb') {
+    return tooljetdbPrompt;
   }
-  return prompt;
+  if (dataSource.kind === 'postgresql') {
+    return postgresPrompt;
+  }
+  throw new Error(`Unsupported data source kind for prompt generation: ${dataSource.kind}`);
 };
