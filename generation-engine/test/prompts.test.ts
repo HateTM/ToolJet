@@ -113,4 +113,8 @@ describe('ported non-table step prompts (ADR-0048)', () => {
     expect(promptsIndex.GENERATE_EVENT_SYSTEM_PROMPT).toContain('Call generateEvent exactly once');
     expect(promptsIndex.GENERATE_EVENT_SYSTEM_PROMPT).toContain('pick only from it');
   });
+
+  it('exports the DeleteQuery prompt with the forced tool-call contract', () => {
+    expect(promptsIndex.DELETE_QUERY_SYSTEM_PROMPT).toContain('Call deleteQuery exactly once');
+  });
 });
