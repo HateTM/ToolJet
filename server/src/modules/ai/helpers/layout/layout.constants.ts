@@ -63,4 +63,17 @@ export const DEFAULT_COMPONENT_SIZES: Record<string, { width: number; height: nu
   CurrencyInput: { width: 10, height: 40 },
   PhoneInput: { width: 10, height: 40 },
   Datepicker: { width: 5, height: 40 },
+  // Wave 2 (plan increment 3): 'Tabs' is special-cased to TABS_FIXED_LAYOUT above and never
+  // reads this entry, but it's listed for documentation symmetry with widgetConfig.js.
+  Tabs: { width: 15, height: 450 },
+  Listview: { width: 15, height: 450 },
+  IFrame: { width: 10, height: 310 },
+  FilePicker: { width: 15, height: 140 },
+  ModalV2: { width: 10, height: 40 },
+  TreeSelect: { width: 12, height: 200 },
+  Html: { width: 10, height: 310 },
+  PopoverMenu: { width: 6, height: 40 },
+  ButtonGroupV2: { width: 12, height: 80 },
+  DatePickerV2: { width: 10, height: 40 },
+  Chat: { width: 15, height: 400 },
 };

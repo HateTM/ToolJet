@@ -374,6 +374,39 @@ export class AgentsService implements IAgentsService {
     if (type === 'Datepicker') {
       return this.createDatepickerComponent(appVersionId, props);
     }
+    if (type === 'Tabs') {
+      return this.createTabsComponent(appVersionId, props);
+    }
+    if (type === 'Listview') {
+      return this.createListviewComponent(appVersionId, props);
+    }
+    if (type === 'IFrame') {
+      return this.createIFrameComponent(appVersionId, props);
+    }
+    if (type === 'FilePicker') {
+      return this.createFilePickerComponent(appVersionId, props);
+    }
+    if (type === 'ModalV2') {
+      return this.createModalV2Component(appVersionId, props);
+    }
+    if (type === 'TreeSelect') {
+      return this.createTreeSelectComponent(appVersionId, props);
+    }
+    if (type === 'Html') {
+      return this.createHtmlComponent(appVersionId, props);
+    }
+    if (type === 'PopoverMenu') {
+      return this.createPopoverMenuComponent(appVersionId, props);
+    }
+    if (type === 'ButtonGroupV2') {
+      return this.createButtonGroupComponent(appVersionId, props);
+    }
+    if (type === 'DatePickerV2') {
+      return this.createDatePickerV2Component(appVersionId, props);
+    }
+    if (type === 'Chat') {
+      return this.createChatComponent(appVersionId, props);
+    }
     throw new Error(`Unsupported component type "${type}"`);
   }
 
@@ -1066,6 +1099,240 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       { width: 5, height: 40 }
+    );
+  }
+
+  // Wave 2 (plan increment 3) — more complex widgets, still standalone/empty like Container
+  // and Modal above: nesting children into them (Tabs panes, Listview items, ModalV2 body)
+  // isn't wired up yet — that's increment 4's `parentComponentId` work, not this ticket's.
+
+  // defaultSize per tabs.js: { width: 15, height: 450 }, but generateComponentLayout special-
+  // cases 'Tabs' to TABS_FIXED_LAYOUT regardless of the size passed here (one Tabs per page).
+  private async createTabsComponent(appVersionId: string, props: any) {
+    const { pageId, tabs } = props ?? {};
+    const titles = tabs?.length ? tabs : ['Home', 'Profile', 'Settings'];
+    const tabsLiteral = titles
+      .map((title: string, index: number) => `{ title: '${String(title).replace(/'/g, "\\'")}', id: '${index}' }`)
+      .join(', \n\t\t');
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Tabs',
+      'Tabs',
+      {
+        tabs: { value: `{{[ \n\t\t${tabsLiteral} \n ]}}` },
+        defaultTab: { value: '0' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 450 }
+    );
+  }
+
+  // defaultSize per listview.js: { width: 15, height: 450 }. Binds to a query's data when
+  // one is referenced, otherwise keeps the widget's own stock demo rows.
+  private async createListviewComponent(appVersionId: string, props: any) {
+    const { pageId, queryName } = props ?? {};
+    const created = await this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Listview',
+      'Listview',
+      {
+        ...(queryName ? { data: { value: `{{queries.${queryName}.data}}` } } : {}),
+        mode: { value: 'list' },
+        visible: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 450 }
+    );
+    return { ...created, queryName };
+  }
+
+  // defaultSize per iframe.js: { width: 10, height: 310 }.
+  private async createIFrameComponent(appVersionId: string, props: any) {
+    const { pageId, source } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'IFrame',
+      'IFrame',
+      {
+        source: { value: source || 'https://tooljet.com' },
+        visible: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 310 }
+    );
+  }
+
+  // defaultSize per filepicker.js: { width: 15, height: 140 }.
+  private async createFilePickerComponent(appVersionId: string, props: any) {
+    const { pageId, label } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'FilePicker',
+      label || 'FilePicker',
+      {
+        label: { value: label || 'Upload files' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 140 }
+    );
+  }
+
+  // defaultSize per modalV2.js: { width: 10, height: 40 }. Newer sibling of the legacy Modal
+  // builder above; unlike it, ModalV2 has no `title` property of its own — its header content
+  // is a child slot, which (like every widget here) isn't nestable yet.
+  private async createModalV2Component(appVersionId: string, props: any) {
+    const { pageId, triggerButtonLabel } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'ModalV2',
+      'Modal',
+      {
+        useDefaultButton: { value: '{{true}}' },
+        triggerButtonLabel: { value: triggerButtonLabel || 'Launch Modal' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per treeSelect.js: { width: 12, height: 200 }. Keeps the widget's own stock
+  // demo tree — building a real hierarchy from a flat prop list is out of this ticket's scope.
+  private async createTreeSelectComponent(appVersionId: string, props: any) {
+    const { pageId, label } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'TreeSelect',
+      label || 'TreeSelect',
+      {
+        label: { value: label || 'Options' },
+      },
+      {},
+      { width: 12, height: 200 }
+    );
+  }
+
+  // defaultSize per html.js: { width: 10, height: 310 }.
+  private async createHtmlComponent(appVersionId: string, props: any) {
+    const { pageId, html } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Html',
+      'Html',
+      {
+        rawHtml: { value: html || '<div>Hello world</div>' },
+      },
+      {},
+      { width: 10, height: 310 }
+    );
+  }
+
+  // defaultSize per popoverMenu.js: { width: 6, height: 40 }. `options` mirrors DropdownV2's
+  // list shape (createDropdownComponent), plus the icon/disable wrappers PopoverMenu itself
+  // stores per entry.
+  private async createPopoverMenuComponent(appVersionId: string, props: any) {
+    const { pageId, label, options } = props ?? {};
+    const list = (options?.length ? options : ['option1', 'option2', 'option3']).map(
+      (option: string, index: number) => ({
+        format: 'plain',
+        label: String(option),
+        description: '',
+        value: String(index + 1),
+        icon: { value: 'IconBolt' },
+        iconVisibility: false,
+        disable: { value: false },
+        visible: { value: true },
+      })
+    );
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'PopoverMenu',
+      label || 'PopoverMenu',
+      {
+        label: { value: label || 'Menu' },
+        options: { value: list },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 6, height: 40 }
+    );
+  }
+
+  // defaultSize per buttonGroupV2.js: { width: 12, height: 80 }.
+  private async createButtonGroupComponent(appVersionId: string, props: any) {
+    const { pageId, label, options } = props ?? {};
+    const list = (options?.length ? options : ['Button1', 'Button2', 'Button3']).map(
+      (option: string, index: number) => ({
+        label: String(option),
+        value: String(index + 1),
+        icon: { value: 'IconBolt' },
+        iconVisibility: false,
+        disable: { value: false },
+        default: { value: index === 0 },
+      })
+    );
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'ButtonGroupV2',
+      label || 'ButtonGroup',
+      {
+        label: { value: label || 'Label' },
+        options: { value: list },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 12, height: 80 }
+    );
+  }
+
+  // defaultSize per datepickerV2.js: { width: 10, height: 40 }. Unlike the legacy Datepicker
+  // builder above, visibility lives under properties here (matches the current widget).
+  private async createDatePickerV2Component(appVersionId: string, props: any) {
+    const { pageId, label, defaultValue, placeholder, format } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'DatePickerV2',
+      label || 'DatePicker',
+      {
+        label: { value: label || 'Label' },
+        defaultValue: { value: defaultValue || '01/01/2022' },
+        placeholder: { value: placeholder || 'Select date' },
+        dateFormat: { value: format || 'DD/MM/YYYY' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per chat.js: { width: 15, height: 400 }. Decorative only — no query/event is
+  // wired to actually send or receive messages (that needs increment 5/6 machinery this
+  // ticket doesn't build); the tool description flags it experimental for the same reason.
+  private async createChatComponent(appVersionId: string, props: any) {
+    const { pageId, chatTitle } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Chat',
+      chatTitle || 'Chat',
+      {
+        chatTitle: { value: chatTitle || 'Chat' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 400 }
     );
   }
 

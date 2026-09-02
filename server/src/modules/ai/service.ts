@@ -426,6 +426,19 @@ const SUPPORTED_COMPONENT_TYPES = [
   "CurrencyInput",
   "PhoneInput",
   "Datepicker",
+  // Wave 2 (plan increment 3) — more complex widgets. Placed standalone/empty, same as
+  // Container/Modal above: nesting children into them isn't wired up yet (increment 4).
+  "Tabs",
+  "Listview",
+  "IFrame",
+  "FilePicker",
+  "ModalV2",
+  "TreeSelect",
+  "Html",
+  "PopoverMenu",
+  "ButtonGroupV2",
+  "DatePickerV2",
+  "Chat",
 ] as const;
 
 // Component types that place a widget on an existing Page — everything except 'Page'
@@ -462,11 +475,22 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - CurrencyInput: reference a Page id, give it a label (optional placeholder and default numeric value).
 - PhoneInput: reference a Page id, give it a label (optional placeholder).
 - Datepicker: reference a Page id (optional default value, placeholder, and format, e.g. "DD/MM/YYYY").
+- Tabs: reference a Page id (optional list of tab titles, default 3 stock tabs). Only one Tabs per page. Its panes cannot be filled with other widgets yet — it renders empty.
+- Listview: reference a Page id, and optionally the name of a query already created in this plan whose rows it should list (omit for stock demo rows). Its items cannot hold other widgets yet.
+- IFrame: reference a Page id and the URL to embed.
+- FilePicker: reference a Page id (optional label). Upload UI only — files are not wired to any query yet.
+- ModalV2: reference a Page id (optional trigger button label); it renders with a default trigger button. Its body cannot be filled with other widgets yet — it opens empty.
+- TreeSelect: reference a Page id (optional label). Keeps its own stock demo tree — a real hierarchy from arbitrary data isn't supported yet.
+- Html: reference a Page id and raw HTML to render.
+- PopoverMenu: reference a Page id, give it a label, and optionally a list of short option strings (default 3 stock options).
+- ButtonGroupV2: reference a Page id, give it a label, and optionally a list of short button labels (default 3 stock buttons).
+- DatePickerV2: reference a Page id, give it a label (optional default value, placeholder, and format).
+- Chat (EXPERIMENTAL — decorative only): reference a Page id (optional chat title). No query or event is wired to actually send/receive messages; use only when the PRD explicitly wants a chat UI mockup, not a working chat feature.
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
   description:
-    "Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal, TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker) on an existing Page.",
+    "Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal, TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker, Tabs, Listview, IFrame, FilePicker, ModalV2, TreeSelect, Html, PopoverMenu, ButtonGroupV2, DatePickerV2, Chat) on an existing Page.",
   parameters: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("Page"),
@@ -774,6 +798,133 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe('Date format string (default "DD/MM/YYYY")'),
+    }),
+    z.object({
+      type: z.literal("Tabs"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this tab bar on",
+        ),
+      tabs: z
+        .array(z.string())
+        .optional()
+        .describe("Tab titles, in order; omit for 3 stock tabs"),
+    }),
+    z.object({
+      type: z.literal("Listview"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this list on",
+        ),
+      queryName: z
+        .string()
+        .optional()
+        .describe(
+          "name of an already-created query (from context) whose rows this list should display; omit for stock demo rows",
+        ),
+    }),
+    z.object({
+      type: z.literal("IFrame"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this iframe on",
+        ),
+      source: z.string().describe("URL to embed"),
+    }),
+    z.object({
+      type: z.literal("FilePicker"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this file picker on",
+        ),
+      label: z.string().optional().describe("Label shown above the picker"),
+    }),
+    z.object({
+      type: z.literal("ModalV2"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this modal on",
+        ),
+      triggerButtonLabel: z
+        .string()
+        .optional()
+        .describe("Label of the default trigger button that opens the modal"),
+    }),
+    z.object({
+      type: z.literal("TreeSelect"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this tree select on",
+        ),
+      label: z.string().optional().describe("Field label"),
+    }),
+    z.object({
+      type: z.literal("Html"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this HTML block on",
+        ),
+      html: z.string().describe("Raw HTML to render"),
+    }),
+    z.object({
+      type: z.literal("PopoverMenu"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this menu on",
+        ),
+      label: z.string().describe("Menu trigger label"),
+      options: z
+        .array(z.string())
+        .optional()
+        .describe("Menu option labels, in order; omit for 3 stock options"),
+    }),
+    z.object({
+      type: z.literal("ButtonGroupV2"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this button group on",
+        ),
+      label: z.string().describe("Button group label"),
+      options: z
+        .array(z.string())
+        .optional()
+        .describe("Button labels, in order; omit for 3 stock buttons"),
+    }),
+    z.object({
+      type: z.literal("DatePickerV2"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this date picker on",
+        ),
+      label: z.string().describe("Field label"),
+      defaultValue: z.string().optional().describe('Default date, matching `format`, e.g. "01/01/2022"'),
+      placeholder: z.string().optional().describe("Placeholder text"),
+      format: z
+        .string()
+        .optional()
+        .describe('Date format string (default "DD/MM/YYYY")'),
+    }),
+    z.object({
+      type: z.literal("Chat"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this chat UI on",
+        ),
+      chatTitle: z
+        .string()
+        .optional()
+        .describe("Chat panel title; experimental — decorative only, no working send/receive"),
     }),
   ]),
 });

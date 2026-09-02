@@ -290,4 +290,71 @@ describe('component schema validation (ticket #60)', () => {
       expect(warnings).toHaveLength(0);
     });
   });
+
+  // Plan increment 3, Wave 2: componentsMeta.json entries for Tabs/Listview/IFrame/
+  // FilePicker/ModalV2/TreeSelect/Html ported from the EE meta snapshot; PopoverMenu/
+  // ButtonGroupV2/DatePickerV2/Chat (no EE equivalent) hand-authored from this fork's own
+  // widget configs. Same rationale as Wave 1 (ADR-0026): a dropped property here means the
+  // widget renders with it missing.
+  describe('Wave 2 widget meta (plan increment 3)', () => {
+    const wave2PropertyInputs: Record<string, Record<string, any>> = {
+      Tabs: {
+        tabs: { value: "{{[ { title: 'Home', id: '0' } ]}}" },
+        defaultTab: { value: '0' },
+        visibility: { value: '{{true}}' },
+      },
+      Listview: { mode: { value: 'list' }, visible: { value: '{{true}}' } },
+      IFrame: { source: { value: 'https://tooljet.com' }, visible: { value: '{{true}}' } },
+      FilePicker: { label: { value: 'Upload files' }, visibility: { value: '{{true}}' } },
+      ModalV2: {
+        useDefaultButton: { value: '{{true}}' },
+        triggerButtonLabel: { value: 'Launch Modal' },
+        visibility: { value: '{{true}}' },
+      },
+      TreeSelect: { label: { value: 'Options' } },
+      Html: { rawHtml: { value: '<div>Hello world</div>' } },
+      PopoverMenu: {
+        label: { value: 'Menu' },
+        options: {
+          value: [
+            {
+              format: 'plain',
+              label: 'option1',
+              description: '',
+              value: '1',
+              icon: { value: 'IconBolt' },
+              iconVisibility: false,
+              disable: { value: false },
+              visible: { value: true },
+            },
+          ],
+        },
+        visibility: { value: '{{true}}' },
+      },
+      ButtonGroupV2: {
+        label: { value: 'Label' },
+        options: {
+          value: [
+            { label: 'Button1', value: '1', icon: { value: 'IconBolt' }, iconVisibility: false, disable: { value: false }, default: { value: true } },
+          ],
+        },
+        visibility: { value: '{{true}}' },
+      },
+      DatePickerV2: {
+        label: { value: 'Label' },
+        defaultValue: { value: '01/01/2022' },
+        placeholder: { value: 'Select date' },
+        dateFormat: { value: 'DD/MM/YYYY' },
+        visibility: { value: '{{true}}' },
+      },
+      Chat: { chatTitle: { value: 'Chat' }, visibility: { value: '{{true}}' } },
+    };
+
+    it.each(Object.entries(wave2PropertyInputs))('%s: builder properties all pass sanitization', (type, input) => {
+      const { result, warnings } = sanitizeComponentSection(type, 'properties', input);
+
+      expect(Object.keys(result)).toEqual(Object.keys(input));
+      expect(warnings).toHaveLength(0);
+    });
+  });
 });

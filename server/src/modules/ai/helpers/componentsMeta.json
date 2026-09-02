@@ -5819,5 +5819,2161 @@
         }
       }
     }
+  },
+  "Tabs": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "useDynamicOptions": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "tabs": {
+          "value": "{{[ \n\t\t{ title: 'Home', id: '0' }, \n\t\t{ title: 'Profile', id: '1' }, \n\t\t{ title: 'Settings', id: '2' } \n ]}}",
+          "validation": {
+            "schema": {
+              "type": "array",
+              "element": {
+                "type": "object",
+                "object": {
+                  "id": {
+                    "type": "union",
+                    "schemas": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "defaultValue": [
+              {
+                "title": "Home",
+                "id": "0"
+              },
+              {
+                "title": "Profile",
+                "id": "1"
+              },
+              {
+                "title": "Settings",
+                "id": "2"
+              }
+            ]
+          }
+        },
+        "tabItems": {
+          "value": [
+            {
+              "id": "t0",
+              "title": "Tab 1",
+              "icon": {
+                "value": "IconHome2"
+              },
+              "iconVisibility": {
+                "value": false
+              },
+              "loading": {
+                "value": false
+              },
+              "disable": {
+                "value": false
+              },
+              "visible": {
+                "value": true
+              }
+            },
+            {
+              "id": "t1",
+              "title": "Tab 2",
+              "icon": {
+                "value": "IconHome2"
+              },
+              "iconVisibility": {
+                "value": false
+              },
+              "loading": {
+                "value": false
+              },
+              "disable": {
+                "value": false
+              },
+              "visible": {
+                "value": true
+              }
+            },
+            {
+              "id": "t2",
+              "title": "Tab 3",
+              "icon": {
+                "value": "IconHome2"
+              },
+              "iconVisibility": {
+                "value": false
+              },
+              "loading": {
+                "value": false
+              },
+              "disable": {
+                "value": false
+              },
+              "visible": {
+                "value": true
+              }
+            }
+          ],
+          "validation": null
+        },
+        "defaultTab": {
+          "value": "0",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "0"
+          }
+        },
+        "hideTabs": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "renderOnlyActiveTab": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "loadingState": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "visibility": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledState": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "tooltip": {
+          "value": "",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": ""
+          }
+        }
+      },
+      "styles": {
+        "headerBackground": {
+          "value": "#FFFFFF",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#375FCF"
+          }
+        },
+        "divider": {
+          "value": "#CCD1D5",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#CCD1D5"
+          }
+        },
+        "unselectedText": {
+          "value": "#6A727C",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#375FCF"
+          }
+        },
+        "selectedText": {
+          "value": "#1B1F24",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#375FCF"
+          }
+        },
+        "highlightColor": {
+          "value": "#375FCF",
+          "validation": null
+        },
+        "hoverBackground": {
+          "value": "#1B1F24",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#1B1F24"
+          }
+        },
+        "unselectedIcon": {
+          "value": "#CCD1D5",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#CCD1D5"
+          }
+        },
+        "selectedIcon": {
+          "value": "#CCD1D5",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#CCD1D5"
+          }
+        },
+        "accent": {
+          "value": "#4368E3",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#CCD1D5"
+          }
+        },
+        "tabWidth": {
+          "value": "auto",
+          "validation": null
+        },
+        "transition": {
+          "value": "slide",
+          "validation": null
+        },
+        "borderRadius": {
+          "value": "{{6}}",
+          "validation": {
+            "validation": {
+              "schema": {
+                "type": "union",
+                "schemas": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              }
+            },
+            "defaultValue": false
+          }
+        },
+        "border": {
+          "value": "#CCD1D5",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#375FCF"
+          }
+        },
+        "boxShadow": {
+          "value": "0px 0px 0px 0px #121212",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
+          }
+        },
+        "padding": {
+          "value": "default",
+          "validation": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "Listview": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "data": {
+          "value": "{{[\n    { imageURL: 'https://www.svgrepo.com/show/34217/image.svg', text: 'Sample text 1', buttonText: 'Button 1' },\n      { imageURL: 'https://www.svgrepo.com/show/34217/image.svg', text: 'Sample text 1', buttonText: 'Button 2' },\n      { imageURL: 'https://www.svgrepo.com/show/34217/image.svg', text: 'Sample text 1', buttonText: 'Button 3' },\n    ]}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "array",
+                  "element": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "type": "array",
+                  "element": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "defaultValue": "[{text: 'Sample text 1'}]"
+          }
+        },
+        "mode": {
+          "value": "list",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "list"
+          }
+        },
+        "columns": {
+          "value": "{{3}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 3
+          }
+        },
+        "rowHeight": {
+          "value": "100",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 100
+          }
+        },
+        "visible": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showBorder": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "rowsPerPage": {
+          "value": "{{10}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 10
+          }
+        },
+        "enablePagination": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        }
+      },
+      "styles": {
+        "backgroundColor": {
+          "value": "#fff",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#fff"
+          }
+        },
+        "borderColor": {
+          "value": "#dadcde",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#dadcde"
+          }
+        },
+        "visibility": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledState": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "borderRadius": {
+          "value": "{{4}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 4
+          }
+        }
+      }
+    }
+  },
+  "IFrame": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "source": {
+          "value": "https://tooljet.io/",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "https://tooljet.io/"
+          }
+        },
+        "visible": {
+          "value": "{{true}}",
+          "validation": null
+        }
+      },
+      "styles": {
+        "visibility": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledState": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        }
+      }
+    }
+  },
+  "FilePicker": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "label": {
+          "value": "Upload files",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Label"
+          }
+        },
+        "instructionText": {
+          "value": "Drag and drop files here or click to select files",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Drag and drop files or click here to upload"
+          }
+        },
+        "enableDropzone": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "enablePicker": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "enableMultiple": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "parseContent": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "parseFileType": {
+          "value": "auto-detect",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "auto-detect"
+          }
+        },
+        "loadingState": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "visibility": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledState": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "tooltip": {
+          "value": "",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": ""
+          }
+        }
+      },
+      "styles": {
+        "borderRadius": {
+          "value": "{{6}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 6
+          }
+        },
+        "dropzoneTitleColor": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": false
+          }
+        },
+        "dropzoneActiveColor": {
+          "value": "var(--cc-primary-brand)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": false
+          }
+        },
+        "dropzoneErrorColor": {
+          "value": "var(--cc-error-systemStatus)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": false
+          }
+        },
+        "containerBackgroundColor": {
+          "value": "var(--cc-surface1-surface)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": false
+          }
+        },
+        "containerBorder": {
+          "value": "var(--cc-default-border)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "transparent"
+          }
+        },
+        "containerBoxShadow": {
+          "value": "0px 1px 3px rgba(0,0,0,0.1)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "0px 1px 3px rgba(0,0,0,0.1)"
+          }
+        },
+        "containerPadding": {
+          "value": "16px",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": 16
+          }
+        }
+      },
+      "validation": {
+        "enableValidation": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "fileType": {
+          "value": "{{}}",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "image/*"
+          }
+        },
+        "minSize": {
+          "value": "{{50}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 50
+          }
+        },
+        "maxSize": {
+          "value": "{{51200000}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 1048576
+          }
+        },
+        "minFileCount": {
+          "value": "{{0}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 2
+          }
+        },
+        "maxFileCount": {
+          "value": "{{2}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 2
+          }
+        }
+      }
+    }
+  },
+  "ModalV2": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "loadingState": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "visibility": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledTrigger": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "disabledModal": {
+          "value": "{{false}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "useDefaultButton": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "triggerButtonLabel": {
+          "value": "Launch Modal",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Launch Modal"
+          }
+        },
+        "size": {
+          "value": "lg",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "lg"
+          }
+        },
+        "showHeader": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showFooter": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "hideCloseButton": {
+          "value": "{{false}}",
+          "validation": null
+        },
+        "hideOnEsc": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "closeOnClickingOutside": {
+          "value": "{{false}}",
+          "validation": null
+        },
+        "modalHeight": {
+          "value": 400,
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 400
+          }
+        },
+        "headerHeight": {
+          "value": 80,
+          "validation": null
+        },
+        "footerHeight": {
+          "value": 80,
+          "validation": null
+        }
+      },
+      "styles": {
+        "headerBackgroundColor": {
+          "value": "#ffffffff",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#ffffffff"
+          }
+        },
+        "footerBackgroundColor": {
+          "value": "#ffffffff",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#ffffffff"
+          }
+        },
+        "bodyBackgroundColor": {
+          "value": "#ffffffff",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "#ffffffff"
+          }
+        },
+        "triggerButtonBackgroundColor": {
+          "value": "var(--cc-primary-brand)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": false
+          }
+        },
+        "triggerButtonTextColor": {
+          "value": "#ffffffff",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": false
+          }
+        }
+      }
+    }
+  },
+  "TreeSelect": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "label": {
+          "value": "Countries",
+          "validation": null
+        },
+        "data": {
+          "value": "{{[{\"label\":\"Asia\",\"value\":\"asia\",\"children\":[{\"label\":\"China\",\"value\":\"china\",\"children\":[{\"label\":\"Beijing\",\"value\":\"beijing\"},{\"label\":\"Shanghai\",\"value\":\"shanghai\"}]},{\"label\":\"Japan\",\"value\":\"japan\"},{\"label\":\"India\",\"value\":\"india\",\"children\":[{\"label\":\"Delhi\",\"value\":\"delhi\"},{\"label\":\"Mumbai\",\"value\":\"mumbai\"},{\"label\":\"Bengaluru\",\"value\":\"bengaluru\"}]}]},{\"label\":\"Europe\",\"value\":\"europe\",\"children\":[{\"label\":\"France\",\"value\":\"france\"},{\"label\":\"Spain\",\"value\":\"spain\"},{\"label\":\"England\",\"value\":\"england\"}]},{\"label\":\"Africa\",\"value\":\"africa\"}]}}",
+          "validation": null
+        },
+        "checkedData": {
+          "value": "{{[\"asia\"]}}",
+          "validation": null
+        },
+        "expandedData": {
+          "value": "{{[\"asia\"]}}",
+          "validation": null
+        }
+      },
+      "styles": {
+        "textColor": {
+          "value": "",
+          "validation": null
+        },
+        "checkboxColor": {
+          "value": "",
+          "validation": null
+        },
+        "visibility": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "disabledState": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      }
+    }
+  },
+  "Html": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "rawHtml": {
+          "value": "<body><main><section class=\"hero\" style=\"height:306px;display: flex;\n            justify-content: center;padding:0 1px;align-items: center;text-align:center\">You can build your custom HTML-CSS template here</section></main></body>",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "<body><div><h1>Hello World</h1></div></body>"
+          }
+        }
+      },
+      "styles": {
+        "visibility": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        }
+      }
+    }
+  },
+  "PopoverMenu": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "label": {
+          "value": "Menu",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Menu"
+          }
+        },
+        "buttonType": {
+          "value": "primary",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "primary"
+          }
+        },
+        "trigger": {
+          "value": "click",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "click"
+          }
+        },
+        "options": {
+          "value": [
+            {
+              "format": "plain",
+              "label": "option1",
+              "description": "",
+              "value": "1",
+              "icon": {
+                "value": "IconBolt"
+              },
+              "iconVisibility": false,
+              "disable": {
+                "value": false
+              },
+              "visible": {
+                "value": true
+              }
+            }
+          ],
+          "validation": null
+        },
+        "loadingState": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "visibility": {
+          "value": true,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledState": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "tooltip": {
+          "value": "",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": ""
+          }
+        }
+      },
+      "styles": {
+        "textColor": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "labelFontSize": {
+          "value": "{{12}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 12
+          }
+        },
+        "placeholderTextColor": {
+          "value": "var(--cc-placeholder-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-placeholder-text)"
+          }
+        },
+        "borderColor": {
+          "value": "var(--cc-default-border)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-border)"
+          }
+        },
+        "accentColor": {
+          "value": "var(--cc-primary-brand)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-brand)"
+          }
+        },
+        "errTextColor": {
+          "value": "var(--cc-error-systemStatus)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-error-systemStatus)"
+          }
+        },
+        "borderRadius": {
+          "value": "{{6}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 6
+          }
+        },
+        "backgroundColor": {
+          "value": "var(--cc-surface1-surface)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-surface1-surface)"
+          }
+        },
+        "iconColor": {
+          "value": "var(--cc-default-icon)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-icon)"
+          }
+        },
+        "direction": {
+          "value": "left",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "left"
+          }
+        },
+        "width": {
+          "value": "{{33}}",
+          "validation": null
+        },
+        "alignment": {
+          "value": "side",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "side"
+          }
+        },
+        "color": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "auto": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "padding": {
+          "value": "default",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "default"
+          }
+        },
+        "boxShadow": {
+          "value": "0px 0px 0px 0px #00000040",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "0px 0px 0px 0px #00000040"
+          }
+        },
+        "icon": {
+          "value": "IconHome2",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "IconHome2"
+          }
+        },
+        "iconVisibility": {
+          "value": false,
+          "validation": null
+        },
+        "widthType": {
+          "value": "ofComponent",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "ofComponent"
+          }
+        }
+      }
+    }
+  },
+  "ButtonGroupV2": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "label": {
+          "value": "Label",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Label"
+          }
+        },
+        "options": {
+          "value": [
+            {
+              "label": "Button1",
+              "value": "1",
+              "icon": {
+                "value": "IconBolt"
+              },
+              "iconVisibility": false,
+              "disable": {
+                "value": false
+              },
+              "default": {
+                "value": true
+              }
+            }
+          ],
+          "validation": null
+        },
+        "multiSelection": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "layout": {
+          "value": "row",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "row"
+          }
+        },
+        "visibility": {
+          "value": true,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledState": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        }
+      },
+      "styles": {
+        "textColor": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "labelFontSize": {
+          "value": "{{12}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 12
+          }
+        },
+        "placeholderTextColor": {
+          "value": "var(--cc-placeholder-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-placeholder-text)"
+          }
+        },
+        "borderColor": {
+          "value": "var(--cc-default-border)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-border)"
+          }
+        },
+        "accentColor": {
+          "value": "var(--cc-primary-brand)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-brand)"
+          }
+        },
+        "errTextColor": {
+          "value": "var(--cc-error-systemStatus)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-error-systemStatus)"
+          }
+        },
+        "borderRadius": {
+          "value": "{{6}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 6
+          }
+        },
+        "backgroundColor": {
+          "value": "var(--cc-surface1-surface)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-surface1-surface)"
+          }
+        },
+        "iconColor": {
+          "value": "var(--cc-default-icon)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-icon)"
+          }
+        },
+        "direction": {
+          "value": "left",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "left"
+          }
+        },
+        "width": {
+          "value": "{{33}}",
+          "validation": null
+        },
+        "alignment": {
+          "value": "side",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "side"
+          }
+        },
+        "color": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "auto": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "padding": {
+          "value": "default",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "default"
+          }
+        },
+        "boxShadow": {
+          "value": "0px 0px 0px 0px #00000040",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "0px 0px 0px 0px #00000040"
+          }
+        },
+        "icon": {
+          "value": "IconHome2",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "IconHome2"
+          }
+        },
+        "iconVisibility": {
+          "value": false,
+          "validation": null
+        },
+        "widthType": {
+          "value": "ofComponent",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "ofComponent"
+          }
+        }
+      }
+    }
+  },
+  "DatePickerV2": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "label": {
+          "value": "Label",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Label"
+          }
+        },
+        "defaultValue": {
+          "value": "01/01/2022",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "01/01/2022"
+          }
+        },
+        "placeholder": {
+          "value": "Select date",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Select date"
+          }
+        },
+        "dateFormat": {
+          "value": "DD/MM/YYYY",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "DD/MM/YYYY"
+          }
+        },
+        "loadingState": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "visibility": {
+          "value": true,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disabledState": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        },
+        "tooltip": {
+          "value": "",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": ""
+          }
+        },
+        "showClearBtn": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        }
+      },
+      "styles": {
+        "textColor": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "labelFontSize": {
+          "value": "{{12}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 12
+          }
+        },
+        "placeholderTextColor": {
+          "value": "var(--cc-placeholder-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-placeholder-text)"
+          }
+        },
+        "borderColor": {
+          "value": "var(--cc-default-border)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-border)"
+          }
+        },
+        "accentColor": {
+          "value": "var(--cc-primary-brand)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-brand)"
+          }
+        },
+        "errTextColor": {
+          "value": "var(--cc-error-systemStatus)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-error-systemStatus)"
+          }
+        },
+        "borderRadius": {
+          "value": "{{6}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 6
+          }
+        },
+        "backgroundColor": {
+          "value": "var(--cc-surface1-surface)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-surface1-surface)"
+          }
+        },
+        "iconColor": {
+          "value": "var(--cc-default-icon)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-icon)"
+          }
+        },
+        "direction": {
+          "value": "left",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "left"
+          }
+        },
+        "width": {
+          "value": "{{33}}",
+          "validation": null
+        },
+        "alignment": {
+          "value": "side",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "side"
+          }
+        },
+        "color": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "auto": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "padding": {
+          "value": "default",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "default"
+          }
+        },
+        "boxShadow": {
+          "value": "0px 0px 0px 0px #00000040",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "0px 0px 0px 0px #00000040"
+          }
+        },
+        "icon": {
+          "value": "IconHome2",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "IconHome2"
+          }
+        },
+        "iconVisibility": {
+          "value": false,
+          "validation": null
+        },
+        "widthType": {
+          "value": "ofComponent",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "ofComponent"
+          }
+        }
+      }
+    }
+  },
+  "Chat": {
+    "definition": {
+      "others": {
+        "showOnDesktop": {
+          "value": "{{true}}",
+          "validation": null
+        },
+        "showOnMobile": {
+          "value": "{{false}}",
+          "validation": null
+        }
+      },
+      "properties": {
+        "chatTitle": {
+          "value": "Chat",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Chat"
+          }
+        },
+        "placeholder": {
+          "value": "Ask me anything!",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Ask me anything!"
+          }
+        },
+        "userName": {
+          "value": "{{globals.currentUser.firstName}}",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "{{globals.currentUser.firstName}}"
+          }
+        },
+        "respondentName": {
+          "value": "Assistant",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "Assistant"
+          }
+        },
+        "visibility": {
+          "value": true,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "disableInput": {
+          "value": false,
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": false
+          }
+        }
+      },
+      "styles": {
+        "textColor": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "labelFontSize": {
+          "value": "{{12}}",
+          "validation": {
+            "schema": {
+              "type": "number"
+            },
+            "defaultValue": 12
+          }
+        },
+        "placeholderTextColor": {
+          "value": "var(--cc-placeholder-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-placeholder-text)"
+          }
+        },
+        "borderColor": {
+          "value": "var(--cc-default-border)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-border)"
+          }
+        },
+        "accentColor": {
+          "value": "var(--cc-primary-brand)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-brand)"
+          }
+        },
+        "errTextColor": {
+          "value": "var(--cc-error-systemStatus)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-error-systemStatus)"
+          }
+        },
+        "borderRadius": {
+          "value": "{{6}}",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": 6
+          }
+        },
+        "backgroundColor": {
+          "value": "var(--cc-surface1-surface)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-surface1-surface)"
+          }
+        },
+        "iconColor": {
+          "value": "var(--cc-default-icon)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-default-icon)"
+          }
+        },
+        "direction": {
+          "value": "left",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "left"
+          }
+        },
+        "width": {
+          "value": "{{33}}",
+          "validation": null
+        },
+        "alignment": {
+          "value": "side",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "side"
+          }
+        },
+        "color": {
+          "value": "var(--cc-primary-text)",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "var(--cc-primary-text)"
+          }
+        },
+        "auto": {
+          "value": "{{true}}",
+          "validation": {
+            "schema": {
+              "type": "boolean"
+            },
+            "defaultValue": true
+          }
+        },
+        "padding": {
+          "value": "default",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "default"
+          }
+        },
+        "boxShadow": {
+          "value": "0px 0px 0px 0px #00000040",
+          "validation": {
+            "schema": {
+              "type": "union",
+              "schemas": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultValue": "0px 0px 0px 0px #00000040"
+          }
+        },
+        "icon": {
+          "value": "IconHome2",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "IconHome2"
+          }
+        },
+        "iconVisibility": {
+          "value": false,
+          "validation": null
+        },
+        "widthType": {
+          "value": "ofComponent",
+          "validation": {
+            "schema": {
+              "type": "string"
+            },
+            "defaultValue": "ofComponent"
+          }
+        }
+      }
+    }
   }
 }
