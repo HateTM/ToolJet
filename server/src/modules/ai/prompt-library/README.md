@@ -29,7 +29,7 @@
 | `generateTablesPrompt.ts` | потребляет PRD в формате EE (JSON-массив секций); у форка PRD — чат-текст (ADR-0001) |
 | `generateTJDBTables.ts` | конвертер SQL→TJDB с суффиксом имён; тул `createTable` форка создаёт одну таблицу с FK/indexes (ADR-0020/#23) |
 | `generatePrd.ts` | PRD в формате EE (JSON-массив `sectionName`/`header`/`design` с color-picker); контракты форка — чат-PRD (ADR-0001) и `STEP_PLAN_SYSTEM_PROMPT` |
-| `generateLayout.ts` | читает файл по зашитому абсолютному пути из рабочей машины EE (`fs.readFileSync('/Users/...')`) — перед подключением нужен перенос layoutExample в ассеты сервера |
+| `generateLayout.ts` | читает `assets/layoutExample.json` относительно `__dirname` (перенесён из EE, копи-правило в `nest-cli.json`); не подключён — относится к LLD/components-agent конвейеру (инкременты 3–4) |
 | `generateComponent.ts`, `updateComponent.ts`, `componentsAgent.ts`, `evaluatePrompt.ts`, `featureAnalysis.ts`, `featurePlanner.ts`, `siblingLayoutOptimise.ts`, `generateTodoList.ts`, `generateDummySchema.ts`, `describeAppClassifierPrompt.ts`, `generateLLDPrompt.ts`, `applicationNameSimilarityCheckPrompt.ts` | относятся к EE-конвейеру LLD/components-agent (инкременты 3–4 плана: полный каталог виджетов, Update/Delete/Layout). Подключать по мере ввода соответствующих шагов |
 
 ### Не переносим (deep-agent payload)

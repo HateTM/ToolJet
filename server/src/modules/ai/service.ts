@@ -1194,12 +1194,17 @@ const deleteQueryTool = tool({
   }),
 });
 
-// Opening line sourced from the ported EE prompt library (prompt-library/generateQuery.ts);
-// the tool contract below is the fork's own (ADR-0006 v1 vocabulary): the model picks a
-// narrow createQuery call, it never writes a full runjs/runpy query config the way EE's
-// flow did.
+// Opening line sourced from the ported EE prompt library (prompt-library/generateQuery.ts),
+// stripped of its "always return json" framing: the tool contract below is the fork's own
+// (ADR-0006 v1 vocabulary), driven by a forced tool call (createQuery), not free-form JSON
+// output, so that instruction would contradict the actual response format.
 const CREATE_QUERY_SYSTEM_PROMPT = [
-  generateQueryPrompts.systemPrompt(),
+  generateQueryPrompts
+    .systemPrompt()
+    .replace(
+      / Always return json without starting or ending with the word JSON or any other comments\. Do not include any additional text or explanations\.$/,
+      "",
+    ),
   `You create one data query for this step, based on the PRD, the table(s) already created earlier in this plan, and the connected data sources listed below (if any).
 
 Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the query itself:
