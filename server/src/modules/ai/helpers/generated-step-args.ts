@@ -30,12 +30,11 @@ const REQUIRED_ARGS: Partial<Record<Step['type'], Record<string, ArgKind>>> = {
   GenerateEvent: { targetName: 'string', eventId: 'string', actionId: 'string' },
 };
 
-const isPlainObject = (value: unknown) =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const isPlainObject = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function resolveGeneratedStepArgs(
   step: Pick<Step, 'type' | 'props'>,
-  previousError?: string,
+  previousError?: string
 ): Record<string, unknown> | null {
   if (previousError !== undefined) return null;
 
