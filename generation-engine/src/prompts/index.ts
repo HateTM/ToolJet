@@ -14,4 +14,5 @@ export * from './update-table';
 export * from './update-component';
 export * from './delete-component';
 export * from './move-component';
+export * from './generate-event';
 export * from './evaluate';

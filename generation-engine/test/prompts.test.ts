@@ -108,4 +108,9 @@ describe('ported non-table step prompts (ADR-0048)', () => {
   it('exports the MoveComponent prompt with the forced tool-call contract', () => {
     expect(promptsIndex.MOVE_COMPONENT_SYSTEM_PROMPT).toContain('Call moveComponent exactly once');
   });
+
+  it('exports the GenerateEvent prompt with the catalog-grounding contract', () => {
+    expect(promptsIndex.GENERATE_EVENT_SYSTEM_PROMPT).toContain('Call generateEvent exactly once');
+    expect(promptsIndex.GENERATE_EVENT_SYSTEM_PROMPT).toContain('pick only from it');
+  });
 });
