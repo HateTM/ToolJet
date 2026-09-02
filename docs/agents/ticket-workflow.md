@@ -156,9 +156,9 @@ The live list is the issue tracker; this records the ordering the rules above pr
 1. The machine's default `node` is v24 but the repo requires 22.15.1; under Node 24, Jest reads `jest.config.ts` as native ESM and dies on its extensionless import.
 2. Even under Node 22, `setupFilesAfterEnv` → `test/helpers/setup.ts` imports `@ee/audit-logs/module`, and `server/ee/` is an empty, uncloned submodule in this CE-only fork.
 
-The workaround above assumes a `server/jest.ai-unit.config.js` that is **not yet checked in**. It keeps `rootDir`, the `moduleNameMapper` (including `scripts/`, `lib/`, the `mariadb` mock and `test-helper`) and the ts-jest transform, and drops `globalSetup`, `setupFiles`, `setupFilesAfterEnv`, `runner: 'groups'` and `coverageConfig`. Only the AI unit specs are pure enough to run under it; the other `test/modules/*/unit` suites still fail on the missing `@ee/*` modules.
+`server/jest.ai-unit.config.js` (checked in, also wired as `npm run test:ai`) keeps `rootDir`, the `moduleNameMapper` (including `scripts/`, `lib/`, the `mariadb` mock and `test-helper`, plus offline `@tooljet/plugins`, `isolated-vm` and `got` mocks) and the ts-jest transform, and drops `globalSetup`, `setupFiles`, `setupFilesAfterEnv`, `runner: 'groups'` and `coverageConfig`. It covers the AI unit specs plus the mocked tooljet-db create-table spec; the other `test/modules/*/unit` suites still fail on the missing `@ee/*` modules.
 
-Checking that config in, and fixing the harness properly, are both unfiled.
+Fixing the harness properly is still unfiled.
 
 ## CLI quirks
 

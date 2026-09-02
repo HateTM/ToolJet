@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, Bug, Database, ListTodo, Truck, Users, X } from 'lucide-react';
@@ -14,20 +14,56 @@ import PromptEditor from './PromptEditor';
 // appsService.createApp and, on success, navigating into the new app with
 // `state: { prompt }` — ADR-0010's handoff picks that up on the builder side via
 // useAppData.js, so nothing else is needed here beyond calling it with the typed prompt.
-const ROTATING_EXAMPLES = [
-  'Build an inventory management system for a manufacturing company',
-  'Build a customer support ticketing system for SaaS startup',
-  'Build a vendor onboarding portal for procurement department',
-  'Build a compliance audit tracker for a finance company',
+// Example prompt strings live in the translation files (en/ru); the English
+// literals below are i18next fallbacks. Each constant is a factory taking `t`
+// so the arrays re-resolve when the active language changes.
+const ROTATING_EXAMPLES = (t) => [
+  t(
+    'homePage.createAppWithPrompt.rotatingExamples.inventoryManagement',
+    'Build an inventory management system for a manufacturing company'
+  ),
+  t(
+    'homePage.createAppWithPrompt.rotatingExamples.supportTicketing',
+    'Build a customer support ticketing system for SaaS startup'
+  ),
+  t(
+    'homePage.createAppWithPrompt.rotatingExamples.vendorOnboarding',
+    'Build a vendor onboarding portal for procurement department'
+  ),
+  t(
+    'homePage.createAppWithPrompt.rotatingExamples.complianceAudit',
+    'Build a compliance audit tracker for a finance company'
+  ),
 ];
 
-const EXAMPLE_CHIPS = [
-  { label: 'Task manager', prompt: 'Build a task management app for a small team', Icon: ListTodo },
-  { label: 'Software bug tracker', prompt: 'Build a software bug tracker for a SaaS startup', Icon: Bug },
-  { label: 'Employee directory', prompt: 'Build an employee directory for a mid-size company', Icon: Users },
+const EXAMPLE_CHIPS = (t) => [
   {
-    label: 'Vendor management portal',
-    prompt: 'Build a vendor management portal for a procurement department',
+    label: t('homePage.createAppWithPrompt.chips.taskManager.label', 'Task manager'),
+    prompt: t('homePage.createAppWithPrompt.chips.taskManager.prompt', 'Build a task management app for a small team'),
+    Icon: ListTodo,
+  },
+  {
+    label: t('homePage.createAppWithPrompt.chips.bugTracker.label', 'Software bug tracker'),
+    prompt: t(
+      'homePage.createAppWithPrompt.chips.bugTracker.prompt',
+      'Build a software bug tracker for a SaaS startup'
+    ),
+    Icon: Bug,
+  },
+  {
+    label: t('homePage.createAppWithPrompt.chips.employeeDirectory.label', 'Employee directory'),
+    prompt: t(
+      'homePage.createAppWithPrompt.chips.employeeDirectory.prompt',
+      'Build an employee directory for a mid-size company'
+    ),
+    Icon: Users,
+  },
+  {
+    label: t('homePage.createAppWithPrompt.chips.vendorPortal.label', 'Vendor management portal'),
+    prompt: t(
+      'homePage.createAppWithPrompt.chips.vendorPortal.prompt',
+      'Build a vendor management portal for a procurement department'
+    ),
     Icon: Truck,
   },
 ];
@@ -35,26 +71,34 @@ const EXAMPLE_CHIPS = [
 // Home-variant dropdown (ticket #45): unlike the short appsList chips, each option
 // carries a full paragraph-length prompt — mirrors the production "Example prompts"
 // dropdown, whose options are complete requirement descriptions.
-const EXAMPLE_DROPDOWN = [
+const EXAMPLE_DROPDOWN = (t) => [
   {
-    label: 'Task manager',
-    prompt:
-      "I'm managing multiple projects and responsibilities simultaneously but currently tracking everything through scattered methods including sticky notes, email reminders, and various digital tools. I frequently lose track of important deadlines or discover urgent tasks buried in my disorganized system, creating stress and impacting my ability to deliver quality work on time. I need a personal task management system that organizes my work by project categories, allowing me to separate different initiatives, departmental responsibilities, and administrative tasks. The system should track deadlines for each task with clear visibility into what's due today, this week, and upcoming, helping me plan my daily schedule around the most time-sensitive commitments. Priority levels are essential since work often shifts between urgent requests and routine responsibilities, and I need to quickly identify which items require immediate attention versus those I can schedule for later. The database should store task details including project context, estimated effort, and completion notes to help me track progress and reference previous work when similar requests arise.",
+    label: t('homePage.createAppWithPrompt.dropdown.taskManager.label', 'Task manager'),
+    prompt: t(
+      'homePage.createAppWithPrompt.dropdown.taskManager.prompt',
+      "I'm managing multiple projects and responsibilities simultaneously but currently tracking everything through scattered methods including sticky notes, email reminders, and various digital tools. I frequently lose track of important deadlines or discover urgent tasks buried in my disorganized system, creating stress and impacting my ability to deliver quality work on time. I need a personal task management system that organizes my work by project categories, allowing me to separate different initiatives, departmental responsibilities, and administrative tasks. The system should track deadlines for each task with clear visibility into what's due today, this week, and upcoming, helping me plan my daily schedule around the most time-sensitive commitments. Priority levels are essential since work often shifts between urgent requests and routine responsibilities, and I need to quickly identify which items require immediate attention versus those I can schedule for later. The database should store task details including project context, estimated effort, and completion notes to help me track progress and reference previous work when similar requests arise."
+    ),
   },
   {
-    label: 'Software bug tracker',
-    prompt:
-      'Our development team currently manages bug reports through email threads and spreadsheets, causing us to lose track of critical issues and struggle with resolution visibility. We need a centralized bug tracking system to streamline how we document, prioritize, and resolve software defects. The system should provide structured forms for logging bug reports with reproduction steps, affected environments, and severity classifications from critical production failures to minor UI issues. Each entry needs priority rankings and status tracking from discovery through resolution, giving our product manager clear pipeline visibility. Developers require filtering capabilities by assigned team member, severity level, and affected modules to focus on relevant work during sprint planning. We need a searchable database storing all bug details, reporter information, and resolution notes to build institutional knowledge for recurring issues. Basic reporting on bug discovery patterns and resolution times would help us identify problematic code areas and improve development quality.',
+    label: t('homePage.createAppWithPrompt.dropdown.bugTracker.label', 'Software bug tracker'),
+    prompt: t(
+      'homePage.createAppWithPrompt.dropdown.bugTracker.prompt',
+      'Our development team currently manages bug reports through email threads and spreadsheets, causing us to lose track of critical issues and struggle with resolution visibility. We need a centralized bug tracking system to streamline how we document, prioritize, and resolve software defects. The system should provide structured forms for logging bug reports with reproduction steps, affected environments, and severity classifications from critical production failures to minor UI issues. Each entry needs priority rankings and status tracking from discovery through resolution, giving our product manager clear pipeline visibility. Developers require filtering capabilities by assigned team member, severity level, and affected modules to focus on relevant work during sprint planning. We need a searchable database storing all bug details, reporter information, and resolution notes to build institutional knowledge for recurring issues. Basic reporting on bug discovery patterns and resolution times would help us identify problematic code areas and improve development quality.'
+    ),
   },
   {
-    label: 'Employee directory',
-    prompt:
-      'Our startup has scaled from twelve to forty-five employees in the past eight months, and our team is struggling to keep track of who handles what responsibilities across our expanding departments. We need a centralized employee directory that displays current staff contact information including email addresses, phone extensions, and Slack handles alongside their department assignments and specific job titles. The system should include robust search functionality allowing users to find colleagues by name, department, job function, or even project involvement, helping our remote and hybrid workforce navigate our growing organization structure. We need the database to store employee photos and brief role descriptions so new hires can quickly identify team members during video calls and understand reporting relationships without constantly asking for introductions. Basic filtering by office location and department would help coordinate in-person meetings and team events across our distributed workforce.',
+    label: t('homePage.createAppWithPrompt.dropdown.employeeDirectory.label', 'Employee directory'),
+    prompt: t(
+      'homePage.createAppWithPrompt.dropdown.employeeDirectory.prompt',
+      'Our startup has scaled from twelve to forty-five employees in the past eight months, and our team is struggling to keep track of who handles what responsibilities across our expanding departments. We need a centralized employee directory that displays current staff contact information including email addresses, phone extensions, and Slack handles alongside their department assignments and specific job titles. The system should include robust search functionality allowing users to find colleagues by name, department, job function, or even project involvement, helping our remote and hybrid workforce navigate our growing organization structure. We need the database to store employee photos and brief role descriptions so new hires can quickly identify team members during video calls and understand reporting relationships without constantly asking for introductions. Basic filtering by office location and department would help coordinate in-person meetings and team events across our distributed workforce.'
+    ),
   },
   {
-    label: 'Vendor management portal',
-    prompt:
-      'Our company has expanded from working with eight suppliers to managing relationships with over thirty vendors across raw materials, equipment maintenance, and professional services, but we are still tracking everything through scattered spreadsheets and email folders. We frequently miss contract renewal deadlines, leading to unexpected price increases or service interruptions. We need a centralized vendor management system that stores comprehensive supplier contact information including primary and backup contacts, payment terms, and preferred communication methods. The system should track contract start and end dates with alerts for upcoming renewals. Our procurement team requires access to complete purchase order history for each vendor, including order dates, amounts, delivery performance, and payment status to identify spending patterns and evaluate vendor reliability. Search functionality by vendor name, product category, or contract status would help our growing team quickly locate supplier information during urgent procurement situations.',
+    label: t('homePage.createAppWithPrompt.dropdown.vendorPortal.label', 'Vendor management portal'),
+    prompt: t(
+      'homePage.createAppWithPrompt.dropdown.vendorPortal.prompt',
+      'Our company has expanded from working with eight suppliers to managing relationships with over thirty vendors across raw materials, equipment maintenance, and professional services, but we are still tracking everything through scattered spreadsheets and email folders. We frequently miss contract renewal deadlines, leading to unexpected price increases or service interruptions. We need a centralized vendor management system that stores comprehensive supplier contact information including primary and backup contacts, payment terms, and preferred communication methods. The system should track contract start and end dates with alerts for upcoming renewals. Our procurement team requires access to complete purchase order history for each vendor, including order dates, amounts, delivery performance, and payment status to identify spending patterns and evaluate vendor reliability. Search functionality by vendor name, product category, or contract status would help our growing team quickly locate supplier information during urgent procurement situations.'
+    ),
   },
 ];
 
@@ -63,6 +107,7 @@ const ROTATION_INTERVAL_MS = 2000;
 
 const ExamplePromptsDropdown = ({ onSelect, disabled }) => {
   const { t } = useTranslation();
+  const exampleDropdown = EXAMPLE_DROPDOWN(t);
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -88,7 +133,7 @@ const ExamplePromptsDropdown = ({ onSelect, disabled }) => {
           sideOffset={4}
           className="tw-z-50 tw-max-w-[420px] tw-overflow-hidden tw-rounded-lg tw-border tw-border-solid tw-border-border-weak tw-bg-background-surface-layer-01 tw-p-1 tw-shadow-elevation-200-box-shadow"
         >
-          {EXAMPLE_DROPDOWN.map(({ label, prompt }) => (
+          {exampleDropdown.map(({ label, prompt }) => (
             <DropdownMenu.Item
               key={label}
               className="tw-cursor-pointer tw-rounded-md tw-px-3 tw-py-2 tw-text-12 tw-text-text-default tw-outline-none hover:tw-bg-background-surface-layer-02"
@@ -182,6 +227,10 @@ const DatasourceReferencePicker = ({ selected, onToggle, disabled }) => {
 
 const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
   const { t } = useTranslation();
+  // Memoized on `t` so the effect below (and its interval) only re-arms when the
+  // language actually changes, not on every render.
+  const rotatingExamples = useMemo(() => ROTATING_EXAMPLES(t), [t]);
+  const exampleChips = EXAMPLE_CHIPS(t);
   const isHomeVariant = variant === 'home';
   const [prompt, setPrompt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -194,10 +243,10 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
   useEffect(() => {
     if (!isHomeVariant || hasPrompt) return undefined;
     const timer = setInterval(() => {
-      setExampleIndex((index) => (index + 1) % ROTATING_EXAMPLES.length);
+      setExampleIndex((index) => (index + 1) % rotatingExamples.length);
     }, ROTATION_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [isHomeVariant, hasPrompt]);
+  }, [isHomeVariant, hasPrompt, rotatingExamples]);
 
   const handleCreate = async () => {
     const trimmed = prompt.trim();
@@ -223,7 +272,7 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
     // with content the binding is consumed as a no-op (a plain Tab never
     // inserts anything into the prompt).
     if (isHomeVariant && !docText.trim()) {
-      setPrompt(ROTATING_EXAMPLES[exampleIndex]);
+      setPrompt(rotatingExamples[exampleIndex]);
     }
     return true;
   };
@@ -237,7 +286,7 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
         className="tw-pointer-events-none tw-absolute tw-inset-0 tw-z-10 tw-flex tw-flex-col tw-justify-start tw-overflow-hidden"
         data-cy="prompt-placeholder-overlay"
       >
-        {ROTATING_EXAMPLES.map((example, index) => (
+        {rotatingExamples.map((example, index) => (
           <div
             key={example}
             data-cy="prompt-placeholder-line"
@@ -347,7 +396,7 @@ const CreateAppWithPrompt = ({ createApp, variant = 'appsList' }) => {
           <span className="tw-font-body-default tw-text-12 tw-text-text-placeholder">
             {t('homePage.createAppWithPrompt.tryTheseExamples', 'Try these examples to get started')}
           </span>
-          {EXAMPLE_CHIPS.map(({ label, prompt: examplePrompt, Icon }) => (
+          {exampleChips.map(({ label, prompt: examplePrompt, Icon }) => (
             <button
               key={label}
               type="button"

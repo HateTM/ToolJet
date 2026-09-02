@@ -50,3 +50,9 @@ docs/superpowers/
 .codegraph/
 contexts/
 memory/
+
+# Fork-local artifacts (never commit)
+/ee-extract/
+/ee-ai-extract/
+.mimosa/
+.superpowers/

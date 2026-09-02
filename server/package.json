@@ -15,6 +15,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "NODE_ENV=production node dist/src/main",
     "test": "NODE_ENV=test NODE_OPTIONS='--max-old-space-size=8192' jest --config jest.config.ts --verbose --maxWorkers=50%",
+    "test:ai": "npx jest --config jest.ai-unit.config.js --verbose",
     "test:cov": "NODE_ENV=test NODE_OPTIONS='--max-old-space-size=8192' jest --config jest.config.ts --verbose --coverage --maxWorkers=50%",
     "test:watch": "NODE_ENV=test jest --watch",
     "test:debug": "NODE_ENV=test node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
@@ -234,7 +235,7 @@
     "typescript": "^5.8.3"
   },
   "engines": {
-    "node": "22.15.1",
-    "npm": "10.9.2"
+    "node": "24.18.1",
+    "npm": "11.16.0"
   }
 }
