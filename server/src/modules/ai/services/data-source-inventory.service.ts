@@ -18,6 +18,16 @@ import { DataQueriesUtilService } from '@modules/data-queries/util.service';
  */
 export const SQL_QUERYABLE_KINDS = ['postgresql', 'mysql', 'mariadb', 'mssql', 'oracledb'];
 
+/**
+ * Increment 5: a REST source has no schema to introspect — there is no `tables` list to
+ * ground the model in, so it is queryable by name/id alone (the AI Builder gives it a
+ * request path, not a table). Kept as its own list rather than folded into
+ * `SQL_QUERYABLE_KINDS` because it changes both how the source survives `listQueryableSources`
+ * (never dropped for having zero tables) and how it is rendered to the model
+ * (`renderConnectedDataSources`).
+ */
+export const REST_QUERYABLE_KINDS = ['restapi'];
+
 export type QueryableDataSource = {
   id: string;
   name: string;
@@ -66,12 +76,16 @@ const listTablesOptionsFor = (kind: string) => (kind === 'postgresql' ? { schema
 export const renderConnectedDataSources = (dataSources: QueryableDataSource[]): string => {
   if (!dataSources?.length) return '';
 
-  const lines = dataSources.map(
-    (dataSource) =>
-      `- ${dataSource.name} (${dataSource.kind}), id ${dataSource.id} — tables: ${dataSource.tables.join(', ')}`
+  const lines = dataSources.map((dataSource) =>
+    REST_QUERYABLE_KINDS.includes(dataSource.kind)
+      ? `- ${dataSource.name} (${dataSource.kind}), id ${dataSource.id} — a REST API; give a request path relative to its base URL`
+      : `- ${dataSource.name} (${dataSource.kind}), id ${dataSource.id} — tables: ${dataSource.tables.join(', ')}`
   );
 
-  return ['Connected data sources (already configured by the user, queryable with SQL):', ...lines].join('\n');
+  return [
+    'Connected data sources (already configured by the user, queryable with SQL or, for a REST source, an HTTP request):',
+    ...lines,
+  ].join('\n');
 };
 
 @Injectable()
@@ -113,7 +127,10 @@ export class DataSourceInventoryService {
         // own demo data rather than something the user connected, so nothing should propose
         // building an app against them.
         .filter((dataSource) => dataSource.type !== DataSourceTypes.SAMPLE)
-        .filter((dataSource) => SQL_QUERYABLE_KINDS.includes(dataSource.kind))
+        .filter(
+          (dataSource) =>
+            SQL_QUERYABLE_KINDS.includes(dataSource.kind) || REST_QUERYABLE_KINDS.includes(dataSource.kind)
+        )
         .sort((left, right) => (left.name || '').localeCompare(right.name || ''));
     } catch (error) {
       this.logger.warn(`[dataSourceInventory] could not list data sources: ${error?.message}`);
@@ -125,6 +142,14 @@ export class DataSourceInventoryService {
       // Capped on what survives, not on what was found: ten unreachable sources must not be
       // able to hide the readable eleventh.
       if (queryable.length >= MAX_SOURCES) break;
+
+      // A REST source has no schema to introspect — it is never dropped for having zero
+      // tables, unlike a SQL source (whose empty `tables` means "could not read its schema").
+      if (REST_QUERYABLE_KINDS.includes(dataSource.kind)) {
+        queryable.push({ id: dataSource.id, name: dataSource.name, kind: dataSource.kind, tables: [] });
+        continue;
+      }
+
       const tables = await this.readTables(user, dataSource);
       if (!tables.length) continue;
       queryable.push({ id: dataSource.id, name: dataSource.name, kind: dataSource.kind, tables });

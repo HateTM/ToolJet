@@ -1239,7 +1239,8 @@ const CREATE_QUERY_SYSTEM_PROMPT = [
 
 Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the query itself:
 - source "tooljetdb" — the default. Give the real id of a ToolJet DB table created earlier in this plan to list rows from.
-- source "sql" — only when this step is meant to read from a data source the user has already connected. Give that source's real id and one SQL SELECT statement against a table that source actually has.
+- source "sql" — only when this step is meant to read from a connected SQL data source the user has already connected. Give that source's real id and one SQL SELECT statement against a table that source actually has.
+- source "restapi" — only when this step is meant to call a connected REST API data source the user has already connected. Give that source's real id, the HTTP method, and a request path relative to that source's base URL (e.g. "/users/{{components.userId.value}}"). Headers, query params, and a request body are optional.
 
 Every id must come from the context below, never invented. Prefer ToolJet DB unless the PRD or this step clearly asks for data that lives in a connected source.`,
 ].join("\n\n");
@@ -1277,6 +1278,38 @@ const createQueryTool = tool({
         .describe(
           "One SELECT statement against a table that data source has, e.g. SELECT * FROM orders LIMIT 100",
         ),
+    }),
+    z.object({
+      source: z.literal("restapi"),
+      name: z
+        .string()
+        .describe(
+          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
+        ),
+      data_source_id: z
+        .string()
+        .describe("id of a connected REST API data source (from the list in context)"),
+      method: z
+        .enum(["get", "post", "put", "patch", "delete"])
+        .default("get")
+        .describe("HTTP method"),
+      url: z
+        .string()
+        .describe(
+          "Request path relative to the data source's base URL, e.g. /users/{{components.userId.value}}",
+        ),
+      headers: z
+        .array(z.object({ key: z.string(), value: z.string() }))
+        .optional()
+        .describe("Optional request headers"),
+      params: z
+        .array(z.object({ key: z.string(), value: z.string() }))
+        .optional()
+        .describe("Optional URL query parameters"),
+      body: z
+        .string()
+        .optional()
+        .describe("Optional raw request body, e.g. a JSON string, for post/put/patch"),
     }),
   ]),
 });
@@ -3277,11 +3310,26 @@ export class AiService implements IAiService {
       table_id?: string;
       data_source_id?: string;
       sql?: string;
+      method?: string;
+      url?: string;
+      headers?: Array<{ key: string; value: string }>;
+      params?: Array<{ key: string; value: string }>;
+      body?: string;
     };
-    const props =
-      args.source === "sql"
-        ? this.buildExternalQueryProps(args, context)
-        : this.buildTooljetDbQueryProps(args);
+    // Absent `source` lands on tooljetdb (see buildTooljetDbQueryProps) — a plan written
+    // without one is a ToolJet DB plan, exactly as it always was.
+    let props: any;
+    switch (args.source) {
+      case "sql":
+        props = this.buildExternalQueryProps(args, context);
+        break;
+      case "restapi":
+        props = this.buildRestApiQueryProps(args, context);
+        break;
+      default:
+        props = this.buildTooljetDbQueryProps(args);
+        break;
+    }
 
     const created = await this.agentsService.CreateQuery(
       context.appVersionId,
@@ -3559,6 +3607,34 @@ export class AiService implements IAiService {
    * table name that doesn't exist would not surface here either way; showing the model the
    * source's real tables (renderConnectedDataSources) is what keeps the statement honest.
    */
+  /**
+   * Resolves a model-supplied `data_source_id` against the same connected-sources list the
+   * prompt showed it, the same way `pageId`/`queryName` are resolved elsewhere in this flow:
+   * the tool schema can only ask for a string, so an id the model invented has to be caught
+   * here, and failing is retryable — the error names what was actually offered so the next
+   * attempt can correct itself. Shared by every external-source query branch (sql, restapi)
+   * so the hallucinated-id retry text is identical regardless of which branch was picked.
+   */
+  private resolveExternalDataSource(
+    dataSourceId: string | undefined,
+    context: StepExecutionContext,
+  ): QueryableDataSource {
+    const dataSource = context.dataSources.find(
+      (candidate) => candidate.id === dataSourceId,
+    );
+    if (!dataSource) {
+      const available = context.dataSources.length
+        ? context.dataSources
+            .map((candidate) => `${candidate.name} (${candidate.id})`)
+            .join(", ")
+        : "none — this app has no connected data source, so the query must target ToolJet DB";
+      throw new Error(
+        `data_source_id "${dataSourceId}" does not match any connected data source. Available: ${available}`,
+      );
+    }
+    return dataSource;
+  }
+
   private buildExternalQueryProps(
     args: { name: string; data_source_id?: string; sql?: string },
     context: StepExecutionContext,
@@ -3574,24 +3650,65 @@ export class AiService implements IAiService {
       );
     }
 
-    const dataSource = context.dataSources.find(
-      (candidate) => candidate.id === args.data_source_id,
+    const dataSource = this.resolveExternalDataSource(
+      args.data_source_id,
+      context,
     );
-    if (!dataSource) {
-      const available = context.dataSources.length
-        ? context.dataSources
-            .map((candidate) => `${candidate.name} (${candidate.id})`)
-            .join(", ")
-        : "none — this app has no connected data source, so the query must target ToolJet DB";
-      throw new Error(
-        `data_source_id "${args.data_source_id}" does not match any connected data source. Available: ${available}`,
-      );
-    }
 
     return {
       name: args.name,
       dataSourceId: dataSource.id,
       options: { mode: "sql", query: args.sql },
+    };
+  }
+
+  /**
+   * A query against a connected REST API data source. Mirrors the option shape the restapi
+   * plugin's runtime actually reads (`plugins/packages/restapi/lib/index.ts`'s `run()` /
+   * the query editor's `Restapi` component defaults) — `headers`/`url_params`/`body` as
+   * key-value pair arrays, `body_toggle` gating whether `body` is even sent — so a query
+   * this step creates runs identically to one a user built by hand.
+   */
+  private buildRestApiQueryProps(
+    args: {
+      name: string;
+      data_source_id?: string;
+      method?: string;
+      url?: string;
+      headers?: Array<{ key: string; value: string }>;
+      params?: Array<{ key: string; value: string }>;
+      body?: string;
+    },
+    context: StepExecutionContext,
+  ) {
+    if (!args.url?.trim()) {
+      throw new Error(
+        "A REST API query needs a request path/URL, but none was given",
+      );
+    }
+
+    const dataSource = this.resolveExternalDataSource(
+      args.data_source_id,
+      context,
+    );
+
+    const toPairs = (entries?: Array<{ key: string; value: string }>) =>
+      (entries ?? []).map(({ key, value }) => [key, value]);
+
+    return {
+      name: args.name,
+      dataSourceId: dataSource.id,
+      options: {
+        method: args.method ?? "get",
+        url: args.url,
+        url_params: toPairs(args.params),
+        headers: toPairs(args.headers),
+        body_toggle: Boolean(args.body?.trim()),
+        raw_body: args.body ?? null,
+        json_body: null,
+        body: [],
+        cookies: [],
+      },
     };
   }
 

@@ -1,5 +1,5 @@
 // server/test/modules/ai/unit/data-source-inventory.service.spec.ts
-import { DataSourceInventoryService } from '@modules/ai/services/data-source-inventory.service';
+import { DataSourceInventoryService, renderConnectedDataSources } from '@modules/ai/services/data-source-inventory.service';
 
 const USER = { id: 'user-1', organizationId: 'org-1' } as any;
 const PERMISSIONS = { isAdmin: true } as any;
@@ -51,7 +51,7 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
     expect(dataSourcesRepository.allGlobalDS).toHaveBeenCalledWith(PERMISSIONS, 'org-1', expect.anything());
   });
 
-  it('offers only SQL-family sources, ignoring the other kinds the org has connected', async () => {
+  it('offers SQL-family and restapi sources, ignoring every other kind the org has connected', async () => {
     const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
     dataSourcesRepository.allGlobalDS.mockResolvedValue([
       { id: 'ds-rest', name: 'Stripe', kind: 'restapi' },
@@ -63,8 +63,21 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
 
     const sources = await service.listQueryableSources(USER, PERMISSIONS);
 
-    expect(sources.map((source) => source.id)).toEqual(['ds-pg']);
+    expect(sources.map((source) => source.id).sort()).toEqual(['ds-pg', 'ds-rest']);
+    // Only the SQL source's schema is read — a restapi source has no schema to introspect.
     expect(dataQueriesUtilService.listTables).toHaveBeenCalledTimes(1);
+  });
+
+  // Increment 5: a restapi source has no schema to read at all, so — unlike a SQL source —
+  // reporting zero tables must not drop it from the inventory.
+  it('keeps a restapi source even though it reports no tables, unlike an empty SQL source', async () => {
+    const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([{ id: 'ds-rest', name: 'Petstore', kind: 'restapi' }]);
+
+    const sources = await service.listQueryableSources(USER, PERMISSIONS);
+
+    expect(sources).toEqual([{ id: 'ds-rest', name: 'Petstore', kind: 'restapi', tables: [] }]);
+    expect(dataQueriesUtilService.listTables).not.toHaveBeenCalled();
   });
 
   it("never offers a sample data source — it is ToolJet's demo data, not something the user connected", async () => {
@@ -234,5 +247,22 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
     dataSourcesRepository.allGlobalDS.mockRejectedValue(new Error('db is down'));
 
     await expect(service.listQueryableSources(USER, PERMISSIONS)).resolves.toEqual([]);
+  });
+});
+
+describe('renderConnectedDataSources (increment 5)', () => {
+  it('renders a SQL source with its table list, and a restapi source without one', () => {
+    const rendered = renderConnectedDataSources([
+      { id: 'ds-pg', name: 'Warehouse', kind: 'postgresql', tables: ['orders', 'customers'] },
+      { id: 'ds-rest', name: 'Petstore', kind: 'restapi', tables: [] },
+    ]);
+
+    expect(rendered).toContain('Warehouse (postgresql), id ds-pg — tables: orders, customers');
+    expect(rendered).toContain('Petstore (restapi), id ds-rest — a REST API');
+    expect(rendered).not.toContain('Petstore (restapi), id ds-rest — tables:');
+  });
+
+  it('renders nothing when there are no connected sources', () => {
+    expect(renderConnectedDataSources([])).toBe('');
   });
 });

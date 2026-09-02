@@ -510,3 +510,70 @@ describe('planned seed rows are consistent with the planned schema (ticket #48 s
     expect('plannedSeedRows' in persisted).toBe(false);
   });
 });
+
+// Increment 5: createQuery gains a "restapi" branch alongside "tooljetdb"/"sql". These pin
+// buildRestApiQueryProps and the shared id-resolution it uses (also exercised by the
+// pre-existing "sql" branch, buildExternalQueryProps) — retryable hallucinated-id failures
+// and the concrete option shape the restapi plugin's runtime actually reads.
+describe('AiService.buildRestApiQueryProps (increment 5)', () => {
+  const { service } = buildAiService();
+
+  const context = {
+    dataSources: [{ id: 'ds-1', name: 'Petstore', kind: 'restapi', tables: [] }],
+  } as any;
+
+  it('builds options matching the restapi plugin runtime shape (method/url/headers/params/body)', () => {
+    const props = (service as any).buildRestApiQueryProps(
+      {
+        name: 'get_pet',
+        data_source_id: 'ds-1',
+        method: 'post',
+        url: '/pets/{{components.petId.value}}',
+        headers: [{ key: 'X-Trace', value: '1' }],
+        params: [{ key: 'limit', value: '10' }],
+        body: '{"active": true}',
+      },
+      context
+    );
+
+    expect(props).toEqual({
+      name: 'get_pet',
+      dataSourceId: 'ds-1',
+      options: {
+        method: 'post',
+        url: '/pets/{{components.petId.value}}',
+        url_params: [['limit', '10']],
+        headers: [['X-Trace', '1']],
+        body_toggle: true,
+        raw_body: '{"active": true}',
+        json_body: null,
+        body: [],
+        cookies: [],
+      },
+    });
+  });
+
+  it('defaults to GET and leaves body_toggle off when no body is given', () => {
+    const props = (service as any).buildRestApiQueryProps(
+      { name: 'list_pets', data_source_id: 'ds-1', url: '/pets' },
+      context
+    );
+
+    expect(props.options.method).toBe('get');
+    expect(props.options.body_toggle).toBe(false);
+    expect(props.options.url_params).toEqual([]);
+    expect(props.options.headers).toEqual([]);
+  });
+
+  it('rejects a missing url', () => {
+    expect(() => (service as any).buildRestApiQueryProps({ name: 'x', data_source_id: 'ds-1' }, context)).toThrow(
+      /request path\/URL/
+    );
+  });
+
+  it('rejects a data_source_id that is not among the connected sources, naming what was available (retryable)', () => {
+    expect(() =>
+      (service as any).buildRestApiQueryProps({ name: 'x', data_source_id: 'not-real', url: '/pets' }, context)
+    ).toThrow(/does not match any connected data source.*Petstore \(ds-1\)/s);
+  });
+});
