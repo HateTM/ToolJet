@@ -1,4 +1,3 @@
-// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Defined per ADR-0041 (ticket #111) — the fork has no update-table prompt to port yet
 // (ticket #93's known gap #4: only create-* prompts exist in server code), so this is
 // written fresh against the decided shape, in the same style as create-table.ts.

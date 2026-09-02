@@ -1,4 +1,3 @@
-// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Ported verbatim from server/src/modules/ai/service.ts's CREATE_QUERY_SYSTEM_PROMPT
 // (ticket #93 — see docs/adr/0030). Per-entity generation prompt: creates one data
 // query for a single CreateQuery step, against a ToolJet DB table this plan already

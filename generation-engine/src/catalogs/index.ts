@@ -1,4 +1,3 @@
-// transit copy from PR #92 (feature/92-generation-engine-catalogs @ fc192cb7db) — dedupe at merge
 /**
  * Lookup API over the component and event catalogs -- the seam per-entity/event generation
  * (ADR-0028, not yet built) is meant to call into, per AC "consumed by, not duplicated in,

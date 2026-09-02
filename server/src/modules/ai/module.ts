@@ -47,6 +47,9 @@ export class AiModule extends SubModule {
     const { AppsUtilService } = await import(`${importPath}/apps/util.service`);
     const { AiCacheService } = await import(`${importPath}/ai/ai-cache`);
     const { AiKeySettingsService } = await import(`${importPath}/ai/services/ai-key-settings.service`);
+    const { GenerationEnginePipelineClient } = await import(
+      `${importPath}/ai/services/generation-engine-pipeline-client`
+    );
     const { OrganizationAiKeyRepository } = await import(
       `${importPath}/ai/repositories/organization-ai-key.repository`
     );
@@ -94,6 +97,7 @@ export class AiModule extends SubModule {
         AppsUtilService,
         AiCacheService,
         AiKeySettingsService,
+        GenerationEnginePipelineClient,
         OrganizationAiKeyRepository,
         ...(isMainImport ? [AiService, AiCacheService] : []),
       ],

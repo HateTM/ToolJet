@@ -1,4 +1,3 @@
-// transit copy from PR #93 (feature/93-generation-engine-prompt-library @ 9cf62c7d86) — dedupe at merge
 // Placeholder — ticket #93 (docs/adr/0030). The fork's own classify() stub
 // (server/src/modules/ai/services/agents.service.ts) has never had real prompt content —
 // it throws "Method not implemented." — so there is no existing behavior to port here.

@@ -1,4 +1,3 @@
-// transit copy from PR #94 (feature/94-generation-engine-llm-config @ 60754490ca) — dedupe at merge
 /**
  * LLM provider vocabulary for the Generation engine.
  *
