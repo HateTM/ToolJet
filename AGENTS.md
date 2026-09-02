@@ -5,6 +5,7 @@ Working copy of **ToolJet** (CE, OSS) forked to `HateTM/ToolJet`, used to build 
 - **AI Builder** (EE-like) — implemented in the CE branch, backed by an OpenAI-compatible endpoint (LocalAI on TrueNAS, `OPENAI_BASE_URL`, port 30286; models in `/mnt/NaS/Apps/Localai/Models`)
 - **Production build** — `docker/ce-production.Dockerfile` → custom image `tooljet-ce:local`, replacing `tooljet/tooljet:ee-lts-latest` in the TrueNAS custom app (port 8083, `LANGUAGE=ru` already in env)
 - **Generation engine** — separate TrueNAS custom app (`generation-engine/`, ADR-0029), reachable from `tooljet-ce:local` only over a shared `external: true` docker network, no host port published (ADR-0032, `deploy/truenas/generation-engine.compose.yaml`); `tooljet-ce:local` gets `GENERATION_ENGINE_URL` pointing at the engine's internal hostname, alongside the existing `OPENAI_BASE_URL`/`OPENAI_API_KEY`/`AI_MODEL` trio
+- **Active plan** — [`docs/plans/2026-09-03-ai-builder-unification-part-1.md`](docs/plans/2026-09-03-ai-builder-unification-part-1.md): текущий план унификации AI Builder (модернизация стэка 2026 → ADR-0050 hard switch → sync-гварды; Часть 2: каталог движка 36 типов, деплой, удаление fallback, полный фронтенд). Сверяться с ним **до** любой работы в области AI Builder / `generation-engine/` — статусы задач в чекбоксах плана.
 
 Upstream sync: `upstream` remote = `https://github.com/ToolJet/ToolJet.git`, `origin` = fork. Codegraph index lives at `/home/hatetm/tooljet/.codegraph` (use `codegraph_explore` before reading files).
 
@@ -41,7 +42,7 @@ Route each task to the narrowest source; this is an index, not documentation.
 - `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md` — local agent rules, architecture, and AI Builder glossary.
 - `server/` — NestJS backend (`src/modules/<name>/`, `src/helpers/edition.helper.ts`); `frontend/` — React app (`src/modules/`, `_ui/`, `assets/translations/`).
 - `plugins/` — Lerna-managed data-source connectors; `cli/` — `@tooljet/cli`; `cypress-tests/` — E2E suites.
-- `docs/adr/` — architecture decisions; `docs/agents/` — agent skills (issue-tracker, triage-labels, domain).
+- `docs/adr/` — architecture decisions; `docs/agents/` — agent skills (issue-tracker, triage-labels, domain); `docs/plans/` — активные планы реализации (текущий — унификация AI Builder, см. ссылку в шапке).
 - `docker/` — build/deploy (incl. `ce-production.Dockerfile`); `deploy/` — deployment configs.
 - `.github/copilot-instructions.md` — mandatory code conventions.
 
