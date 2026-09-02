@@ -665,3 +665,319 @@ describe('AiService.buildPluginQueryProps (ADR-0045)', () => {
     ).rejects.toThrow(/does not match any connected data source.*Team Slack \(ds-slack\)/s);
   });
 });
+
+describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)', () => {
+  const componentIndex =
+    'Existing components already in this app:\n- Text "Welcome" (id: component-1, page: "Home")';
+  const execContext = {
+    prd: 'p',
+    organizationId: 'org-1',
+    appVersionId: 'v1',
+    priorResults: [],
+  } as any;
+
+  it('UpdateComponent consumes the payload on the first attempt without an LLM call', async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+    agentsService.UpdateComponent.mockResolvedValue({ id: 'component-1' });
+
+    const result = await service.executeUpdateComponentStep(
+      {
+        type: 'UpdateComponent',
+        description: 'd',
+        props: { generatedStep: { componentId: 'component-1', properties: { text: 'New title' } } },
+      } as any,
+      execContext,
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.UpdateComponent).toHaveBeenCalledWith('v1', 'org-1', 'component-1', {
+      properties: { text: 'New title' },
+      styles: undefined,
+    });
+    expect(result.props).toEqual({
+      componentId: 'component-1',
+      properties: { text: 'New title' },
+      styles: undefined,
+    });
+  });
+
+  it('UpdateComponent: a payload failing the component-index guard throws retryably without calling the LLM', async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+
+    await expect(
+      service.executeUpdateComponentStep(
+        {
+          type: 'UpdateComponent',
+          description: 'd',
+          props: { generatedStep: { componentId: 'ghost' } },
+        } as any,
+        execContext,
+      ),
+    ).rejects.toThrow(/does not match any existing component/);
+    expect(agentsService.UpdateComponent).not.toHaveBeenCalled();
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  it('UpdateComponent: with previousError set the payload is ignored and the LLM path runs', async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue({
+      toolCalls: [
+        { toolName: 'updateComponent', args: { componentId: 'component-1', properties: { text: 'LLM' } } },
+      ],
+    });
+    agentsService.UpdateComponent.mockResolvedValue({ id: 'component-1' });
+
+    const result = await service.executeUpdateComponentStep(
+      {
+        type: 'UpdateComponent',
+        description: 'd',
+        props: { generatedStep: { componentId: 'ghost' } },
+      } as any,
+      execContext,
+      'previous attempt failed',
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(1);
+    expect(result.props).toEqual({
+      componentId: 'component-1',
+      properties: { text: 'LLM' },
+      styles: undefined,
+    });
+  });
+
+  it('DeleteComponent consumes the payload without an LLM call', async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+    agentsService.DeleteComponent = jest.fn().mockResolvedValue({ id: 'component-1' });
+
+    const result = await service.executeDeleteComponentStep(
+      {
+        type: 'DeleteComponent',
+        description: 'd',
+        props: { generatedStep: { componentId: 'component-1' } },
+      } as any,
+      execContext,
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.DeleteComponent).toHaveBeenCalledWith('v1', 'component-1');
+    expect(result.props).toEqual({ componentId: 'component-1' });
+    expect(result.identifier).toBe('component-1');
+  });
+
+  it('MoveComponent consumes the payload (move to root) without an LLM call', async () => {
+    const { service, aiUtilService, agentsService, repositories } = buildAiService();
+    repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
+    agentsService.MoveComponent = jest.fn().mockResolvedValue({ id: 'component-1' });
+
+    const result = await service.executeMoveComponentStep(
+      {
+        type: 'MoveComponent',
+        description: 'd',
+        props: { generatedStep: { componentId: 'component-1' } },
+      } as any,
+      execContext,
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.MoveComponent).toHaveBeenCalledWith('v1', 'component-1', undefined);
+    expect(result.props).toEqual({ componentId: 'component-1', newParentComponentId: undefined });
+  });
+
+  it('CreateComponent consumes the payload without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        CreateComponent: jest.fn().mockResolvedValue({ id: 'new-1', type: 'Text' }),
+      },
+    });
+    // Text is a page widget: the executor's pageId guard requires a Page artifact from an
+    // earlier step in the same plan, so the payload must carry a valid pageId.
+    const pageContext = {
+      ...execContext,
+      priorResults: [
+        { type: 'CreateComponent', artifact: { content: { id: 'page-1', type: 'Page' } } },
+      ],
+    } as any;
+
+    const result = await service.executeComponentStep(
+      {
+        type: 'CreateComponent',
+        description: 'welcome text',
+        props: { generatedStep: { type: 'Text', pageId: 'page-1', properties: { text: 'Hello' } } },
+      } as any,
+      pageContext,
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    // executor destructures { type, ...props } from call.args, so CreateComponent receives
+    // the widget definition (properties/styles keys included) as its 4th argument
+    expect(agentsService.CreateComponent).toHaveBeenCalledWith(
+      'v1',
+      'org-1',
+      'Text',
+      expect.objectContaining({ properties: { text: 'Hello' } }),
+    );
+    expect(result.identifier).toBe('new-1');
+    expect(result.props.type).toBe('Text');
+  });
+
+  it('CreateComponent: a payload with an unsupported component type throws retryably without calling the LLM', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        CreateComponent: jest.fn(),
+      },
+    });
+
+    await expect(
+      service.executeComponentStep(
+        {
+          type: 'CreateComponent',
+          description: 'd',
+          props: { generatedStep: { type: 'TimeTravelWidget' } },
+        } as any,
+        execContext,
+      ),
+    ).rejects.toThrow(/Unsupported component type/);
+    expect(agentsService.CreateComponent).not.toHaveBeenCalled();
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
+
+  it('CreateQuery consumes the payload (default ToolJet DB branch) without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        CreateQuery: jest.fn().mockResolvedValue({ name: 'fetchOrders' }),
+      },
+    });
+
+    const result = await service.executeQueryStep(
+      {
+        type: 'CreateQuery',
+        description: 'orders list',
+        props: { generatedStep: { name: 'fetchOrders' } },
+      } as any,
+      execContext,
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.CreateQuery).toHaveBeenCalledWith(
+      'v1',
+      'org-1',
+      expect.objectContaining({ name: 'fetchOrders' }),
+    );
+    expect(result.identifier).toBe('fetchOrders');
+  });
+
+  it('UpdateQuery consumes the payload and merges over prior CreateQuery options without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        UpdateQuery: jest.fn().mockResolvedValue({ id: 'q1' }),
+      },
+    });
+    const prior = {
+      type: 'CreateQuery',
+      artifact: {
+        content: { id: 'q1', name: 'fetchOrders', options: { operation: 'list_rows', list_rows: { limit: 100 } } },
+      },
+    };
+
+    const result = await service.executeUpdateQueryStep(
+      {
+        type: 'UpdateQuery',
+        description: 'limit to 50',
+        props: { generatedStep: { queryName: 'fetchOrders', options: { list_rows: { limit: 50 } } } },
+      } as any,
+      { ...execContext, priorResults: [prior] },
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.UpdateQuery).toHaveBeenCalledWith('q1', {
+      operation: 'list_rows',
+      list_rows: { limit: 50 },
+    });
+    // props carry the raw payload options (the diff), not the merged result — same as the LLM path
+    expect(result.props).toEqual({ queryName: 'fetchOrders', options: { list_rows: { limit: 50 } } });
+  });
+
+  it('DeleteQuery consumes the payload without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        DeleteQuery: jest.fn().mockResolvedValue({ name: 'fetchOrders' }),
+      },
+    });
+    const prior = {
+      type: 'CreateQuery',
+      artifact: { content: { id: 'q1', name: 'fetchOrders', options: {} } },
+    };
+
+    const result = await service.executeDeleteQueryStep(
+      {
+        type: 'DeleteQuery',
+        description: 'd',
+        props: { generatedStep: { queryName: 'fetchOrders' } },
+      } as any,
+      { ...execContext, priorResults: [prior] },
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.DeleteQuery).toHaveBeenCalledWith('q1');
+    expect(result.props).toEqual({ queryName: 'fetchOrders' });
+    expect(result.identifier).toBe('fetchOrders');
+  });
+
+  it('GenerateEvent consumes the payload without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        FindEventsBySource: jest.fn().mockResolvedValue([]),
+        CreateEvent: jest.fn().mockResolvedValue({ id: 'e1' }),
+      },
+    });
+    const prior = {
+      type: 'CreateComponent',
+      artifact: { content: { name: 'SaveButton', id: 'comp-1', type: 'Button', pageId: 'page-1' } },
+    };
+
+    const result = await service.executeEventStep(
+      {
+        type: 'GenerateEvent',
+        description: 'alert on click',
+        props: {
+          generatedStep: {
+            targetName: 'SaveButton',
+            eventId: 'click',
+            actionId: 'show-modal',
+            params: { modal: 'detailsModal' },
+          },
+        },
+      } as any,
+      { ...execContext, priorResults: [prior] },
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.CreateEvent).toHaveBeenCalledWith(
+      'v1',
+      expect.objectContaining({
+        name: 'onClick',
+        event: { eventId: 'onClick', actionId: 'show-modal', modal: 'detailsModal' },
+        eventType: 'component',
+        attachedTo: 'comp-1',
+        index: 0,
+      }),
+    );
+    expect(result.props).toEqual({
+      targetName: 'SaveButton',
+      eventId: 'onClick',
+      actionId: 'show-modal',
+      modal: 'detailsModal',
+    });
+    expect(result.identifier).toBe('SaveButton.onClick');
+  });
+});

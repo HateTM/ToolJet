@@ -176,19 +176,16 @@ export default function AppCard({
   const LaunchButton =
     appType === 'workflow' ? (
       <div>
-        <ToolTip
-          message={t(
-            'homePage.appCard.launchingWorkflowNotAvailable',
-            'Launching workflows is not currently available'
-          )}
-        >
+        <ToolTip message={t('workflowsDashboard.appCard.openInWorkflowEditor', 'Open in workflow editor')}>
           <button
             type="button"
-            className={cx(`launch-button tj-text-xsm tj-disabled-btn`)}
-            disabled
+            className={cx(`launch-button tj-text-xsm tj-tertiary-btn`)}
+            onClick={() => {
+              navigate(getPrivateRoute('editor', { slug: isValidSlug(app.slug) ? app.slug : app.id }));
+            }}
             data-cy="launch-button"
           >
-            <SolidIcon name="rightarrrow" width="14" fill="#4C5155" />
+            <SolidIcon name="rightarrrow" width="14" fill="var(--icon-default)" />
             {t('homePage.appCard.launch', 'Launch')}
           </button>
         </ToolTip>

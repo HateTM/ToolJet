@@ -1,15 +1,10 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { withEditionSpecificComponent } from '@/modules/common/helpers/withEditionSpecificComponent';
-import { useNavigate } from 'react-router-dom';
+import WorkflowEditorPage from '@/modules/workflows/pages/WorkflowEditorPage';
 
-const RenderWorkflow = () => {
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    navigate('/');
-  }, []);
-
-  return <></>;
-};
+/* ADR-0047: workflow apps mount the workflow editor skeleton instead of redirecting away.
+   AppsRoute resolves { id, slug, type, canEdit } for the /apps/:slug route and AppLoader
+   forwards everything here. */
+const RenderWorkflow = (props) => <WorkflowEditorPage {...props} />;
 
 export default withEditionSpecificComponent(RenderWorkflow, 'RenderWorkflow');

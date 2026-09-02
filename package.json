@@ -3,8 +3,8 @@
   "version": "1.18.0",
   "description": "ToolJet is an open-source low-code framework to build and deploy internal tools.",
   "engines": {
-    "node": "22.15.1",
-    "npm": "10.9.2"
+    "node": "24.18.1",
+    "npm": "11.16.0"
   },
   "lint-staged": {
     "./frontend/src/**/*.{js,jsx}": [

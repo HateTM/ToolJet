@@ -1,6 +1,6 @@
 # План: полный tool-паритет AI Builder (6 инкрементов)
 
-Статус-трекер. Каждый инкремент — ветка `feature/<n>-...`, пушится в origin, тесты `npx jest --config jest-ai-unit.config.ts` + lint + ручной сценарий после каждого.
+Статус-трекер. Каждый инкремент — ветка `feature/<n>-...`, пушится в origin, тесты `npm run test:ai` (`npx jest --config jest.ai-unit.config.js`) + lint + ручной сценарий после каждого.
 
 ## 1. Token-usage (малый)
 

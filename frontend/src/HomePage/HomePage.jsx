@@ -31,7 +31,7 @@ import Footer from './Footer';
 import { ButtonSolid } from '@/_ui/AppButton/AppButton';
 import BulkIcon from '@/_ui/Icon/bulkIcons/index';
 import { getWorkspaceId } from '@/_helpers/utils';
-import { getQueryParams } from '@/_helpers/routes';
+import { getQueryParams, getPrivateRoute } from '@/_helpers/routes';
 import { withRouter } from '@/_hoc/withRouter';
 import LicenseBanner from '@/modules/common/components/LicenseBanner';
 import { LicenseTooltip } from '@/LicenseTooltip';
@@ -451,9 +451,14 @@ class HomePageComponent extends React.Component {
       posthogHelper.captureEvent('app_created', { entry_source: prompt ? 'prompt' : 'create_button', prompt });
 
       const workspaceId = getWorkspaceId();
-      _self.props.navigate(`/${workspaceId}/apps/${data.id}`, {
-        state: { commitEnabled: this.state.commitEnabled, prompt, taggedResources },
-      });
+      if (this.props.appType === 'workflow') {
+        /* ADR-0047: newly created workflows open in the workflow editor, not the app editor. */
+        _self.props.navigate(getPrivateRoute('editor', { slug: data?.slug || data?.id }));
+      } else {
+        _self.props.navigate(`/${workspaceId}/apps/${data.id}`, {
+          state: { commitEnabled: this.state.commitEnabled, prompt, taggedResources },
+        });
+      }
       this.eraseAIOnboardingRelatedCookies();
       this.props.appType !== 'front-end' && toast.success(`${capitalize(this.getAppType())} created successfully!`);
       _self.setState({ creatingApp: false, posthog_from: null, showAIOnboardingLoadingScreen: false });

@@ -1,9 +1,9 @@
-FROM node:22.15.1-bookworm AS builder
+FROM node:24.18.1-bookworm AS builder
 
 # Fix for JS heap limit allocation issue
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-RUN npm i -g npm@10.9.2
+RUN npm i -g npm@11.16.0
 RUN npm install -g @nestjs/cli
 
 RUN mkdir -p /app
@@ -34,12 +34,12 @@ RUN apt-get update -yq \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -O https://nodejs.org/dist/v22.15.1/node-v22.15.1-linux-x64.tar.xz \
-    && tar -xf node-v22.15.1-linux-x64.tar.xz \
-    && mv node-v22.15.1-linux-x64 /usr/local/lib/nodejs \
+RUN curl -O https://nodejs.org/dist/v24.18.1/node-v24.18.1-linux-x64.tar.xz \
+    && tar -xf node-v24.18.1-linux-x64.tar.xz \
+    && mv node-v24.18.1-linux-x64 /usr/local/lib/nodejs \
     && echo 'export PATH="/usr/local/lib/nodejs/bin:$PATH"' >> /etc/profile.d/nodejs.sh \
     && /bin/bash -c "source /etc/profile.d/nodejs.sh" \
-    && rm node-v22.15.1-linux-x64.tar.xz
+    && rm node-v24.18.1-linux-x64.tar.xz
 ENV PATH=/usr/local/lib/nodejs/bin:$PATH
 
 ENV NODE_ENV=production

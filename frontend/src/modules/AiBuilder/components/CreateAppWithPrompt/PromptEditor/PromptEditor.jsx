@@ -93,7 +93,6 @@ const PromptEditor = ({
           readOnly={disabled}
           onCreateEditor={(view) => onReady?.(view)}
           className="tw-bg-transparent [&_.cm-editor]:tw-bg-transparent [&_.cm-gutters]:tw-hidden [&_.cm-content]:tw-px-0 [&_.cm-content]:tw-py-0 [&_.cm-content]:tw-text-sm [&_.cm-content]:tw-text-text-default [&_.cm-placeholder]:tw-text-text-placeholder"
-          style={{ backgroundColor: 'transparent' }}
         />
       </div>
     </div>

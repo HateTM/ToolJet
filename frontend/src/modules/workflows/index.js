@@ -1,16 +1,6 @@
-import React from 'react';
-import { withEditionSpecificModule } from '@/modules/common/helpers';
-import { MODULE_CONSTANTS } from '../common/constants';
-import { TJLoader } from '@/_ui/TJLoader';
+import WorkflowsPage from './pages/WorkflowsPage';
 
-const Workflows = withEditionSpecificModule('Workflows', {
-  moduleRequiredIn: [MODULE_CONSTANTS.MODULE_EDITIONS.EE],
-  LoadingComponent: () => (
-    <>
-      <TJLoader />
-    </>
-  ),
-});
-
-// Export the wrapped component
-export default Workflows;
+/* ADR-0047: Workflows ship fully in CE — no edition gating, so the CE page is
+   exported directly instead of being wrapped in withEditionSpecificModule (which
+   could only ever resolve an @ee module and redirected CE users to the dashboard). */
+export default WorkflowsPage;

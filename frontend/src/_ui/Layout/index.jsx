@@ -12,6 +12,7 @@ import { shallow } from 'zustand/shallow';
 import { retrieveWhiteLabelLogo, fetchWhiteLabelDetails } from '@white-label/whiteLabelling';
 import '../../_styles/left-sidebar.scss';
 import { hasBuilderRole } from '@/_helpers/utils';
+import { isWorkflowsFeatureEnabled } from '@/modules/common/helpers/utils';
 import { LeftNavSideBar } from '@/modules/common/components';
 import { useWhiteLabellingStore } from '@/_stores/whiteLabellingStore';
 import UnsavedChangesDialog from '@/modules/dataSources/components/DataSourceManager/UnsavedChangesDialog';
@@ -157,7 +158,8 @@ function Layout({
               darkMode={darkMode}
               isAuthorizedForGDS={isAuthorizedForGDS}
               isBuilder={isBuilder}
-              workflowsEnabled={false}
+              /* Same gate as BaseLogoNavDropdown — ADR-0047 ungates Workflows in CE. */
+              workflowsEnabled={admin && isWorkflowsFeatureEnabled()}
               canCreateVariableOrConstant={canCreateVariableOrConstant}
               featureAccess={featureAccess}
               checkForUnsavedChanges={checkForUnsavedChanges}
