@@ -90,6 +90,15 @@ export class AiController implements IAiController {
     return await this.aiService.skipStep(conversationId, stepId, user.id);
   }
 
+  // Ticket #77 / ADR-0042: records the user's explicit go-ahead on an external CreateTable
+  // step's confirmation gate. Not SSE — the execution loop's poll picks up the new status.
+  @InitFeature(FEATURE_KEY.CONFIRM_STEP)
+  @Post('conversation/confirm-step')
+  async confirmStep(@User() user, @Body() body) {
+    const { conversationId, stepId } = body ?? {};
+    return await this.aiService.confirmStep(conversationId, stepId, user.id);
+  }
+
   @InitFeature(FEATURE_KEY.REGENERATE_MESSAGE)
   @Post('conversation/regenerate-message')
   async regenerateAiMessage(@User() user, @Body() body) {

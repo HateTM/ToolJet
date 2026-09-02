@@ -94,7 +94,7 @@ const STEP_TYPES = [
 export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
 Call proposeStepPlan exactly once with the ordered list of steps needed to build what the PRD describes. Each step is one of:
-- CreateTable: creates a ToolJet DB table. Include the full table definition you propose in the optional table field — the user previews exactly that definition (tables, columns, foreign keys, indexes) before approving, and it is what gets created.
+- CreateTable: creates a table. By default this creates a ToolJet DB table. If the PRD explicitly asks for the table to live in a connected PostgreSQL source (see the connected data sources below), set the optional data_source_id field to that source's id — every other connector kind never accepts a CreateTable step, only postgresql. Include the full table definition you propose in the optional table field — the user previews exactly that definition (tables, columns, foreign keys, indexes) before approving, and it is what gets created. A table name that already exists in the target source fails this step at plan time — pick a name you have not been shown as already existing there.
   If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
@@ -282,6 +282,40 @@ const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
     ),
   );
 
+// Ticket #77 / ADR-0042: what a proposed CreateTable step's `data_source_id` resolves to,
+// decided once at plan time — never re-decided at execution. Exported as a pure function
+// (no I/O) so the three outcomes are each directly unit-testable without mocking the LLM
+// gateway or a repository: 'tjdb' whenever no id was given, the id names a source not shown
+// to the planner, or that source's kind isn't 'postgresql' (ADR-0018 stands unchanged for
+// every other kind); 'collision' when the proposed table name already exists in that source
+// (`dataSources[].tables`, from the same listTables introspection ADR-0019 already runs, per
+// ticket #77's implementation note — no second call); 'external' otherwise.
+export type CreateTableTargetResolution =
+  | { kind: "tjdb" }
+  | { kind: "external"; dataSource: QueryableDataSource }
+  | { kind: "collision"; dataSource: QueryableDataSource; message: string };
+
+export const resolveCreateTableTarget = (
+  dataSourceId: string | undefined,
+  tableName: string | undefined,
+  dataSources: QueryableDataSource[],
+): CreateTableTargetResolution => {
+  if (!dataSourceId) return { kind: "tjdb" };
+  const target = dataSources.find((source) => source.id === dataSourceId);
+  if (!target || target.kind !== "postgresql") return { kind: "tjdb" };
+  if (tableName && target.tables.includes(tableName)) {
+    return {
+      kind: "collision",
+      dataSource: target,
+      message:
+        `A table named "${tableName}" already exists in the connected PostgreSQL source ` +
+        `"${target.name}". CreateTable never alters or reuses an existing table, so this ` +
+        `step cannot be built — pick a different table name, or target ToolJet DB instead.`,
+    };
+  }
+  return { kind: "external", dataSource: target };
+};
+
 export const proposeStepPlanTool = tool({
   description: "Propose the ordered list of build steps for this PRD.",
   parameters: z.object({
@@ -296,6 +330,11 @@ export const proposeStepPlanTool = tool({
           // proposes, persisted as the Step's plannedTable and shown in the pre-approval
           // schema preview (ticket #20).
           table: tableDefinitionObject.optional(),
+          // Only meaningful on CreateTable steps (ticket #77 / ADR-0042): the id of a
+          // connected data source (from the connected-sources block) this step targets
+          // instead of ToolJet DB. Only honored when that source's kind is 'postgresql' —
+          // every other kind falls back to ToolJet DB unchanged (ADR-0018).
+          data_source_id: z.string().optional(),
           // Only meaningful on CreateTable steps: the seed rows this step proposes to insert
           // after the table is created (ticket #48), persisted as the Step's plannedSeedRows
           // and shown in the pre-approval schema preview alongside the table.
@@ -639,10 +678,11 @@ const createQueryTool = tool({
 });
 
 // Planning-time only. It is the *plan* that must not contain a CreateTable against an
-// external source (ADR-0018); a CreateQuery step has no CreateTable to propose, so telling it
-// the same thing is noise in a prompt that already carries the whole PRD.
+// external source of any kind other than postgresql (ADR-0018, narrowed by ADR-0042); a
+// CreateQuery step has no CreateTable to propose, so telling it the same thing is noise in a
+// prompt that already carries the whole PRD.
 const NO_TABLES_IN_EXTERNAL_SOURCES =
-  "Tables can only be created in ToolJet DB — never plan a CreateTable step against one of these sources; query the tables it already has instead.";
+  "Tables can only be created in ToolJet DB or a connected source whose kind above is 'postgresql' — never plan a CreateTable step against any other kind of connected source; query the tables it already has instead.";
 
 // Both the planner and every CreateQuery step are grounded in the same connected-sources
 // block, appended the same way, and neither gains anything when nothing is connected.
@@ -827,6 +867,10 @@ type StepExecutionContext = {
   // Assembled once per approval, not per step: reading it opens a real connection to each
   // connected source, and the answer cannot change while a plan is being executed.
   dataSources: QueryableDataSource[];
+  // Ticket #77 / ADR-0042: the same SSE response approvePrd already streams step-progress
+  // events on — an external CreateTable step's confirmation gate sends its
+  // step-awaiting-confirmation event through this, not a parallel channel.
+  response: Response;
 };
 
 @Injectable()
@@ -844,6 +888,14 @@ export class AiService implements IAiService {
 
   ];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
+
+  // Ticket #77 / ADR-0042: the external CreateTable confirmation gate is checkpoint-based
+  // like ADR-0021's Skip, not event-driven — the SSE connection stays open (the existing
+  // beginActiveRun heartbeat keeps it alive) while this polls the Step row for the decision
+  // the confirm-step endpoint records. Not `readonly`: tests override both to keep the poll
+  // loop fast without waiting on real wall-clock time.
+  private CONFIRMATION_POLL_INTERVAL_MS = 3000;
+  private CONFIRMATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
   constructor(
     private readonly aiUtilService: AiUtilService,
@@ -1140,6 +1192,7 @@ export class AiService implements IAiService {
         appVersionId,
         priorResults: [],
         dataSources,
+        response,
       };
 
       for (let index = 0; index < filteredSteps.length; index++) {
@@ -1372,6 +1425,15 @@ export class AiService implements IAiService {
       ...(step.phase && { phase: step.phase }),
       ...(step.plannedTable && { table: step.plannedTable }),
       ...(step.plannedSeedRows && { seed_rows: step.plannedSeedRows }),
+      // Ticket #77 / ADR-0042: present only when this CreateTable step targets a connected
+      // PostgreSQL source instead of ToolJet DB — the schema preview (ADR-0020) uses this to
+      // show the target connection alongside the table definition.
+      ...(step.targetDataSourceId && {
+        target_data_source_id: step.targetDataSourceId,
+      }),
+      ...(step.props?.collisionError && {
+        collision_error: step.props.collisionError,
+      }),
     }));
   }
 
@@ -1492,6 +1554,7 @@ export class AiService implements IAiService {
         type: StepType;
         description: string;
         table?: TableDefinition;
+        data_source_id?: string;
         seed_rows?: any[];
         phase?: string;
       }>;
@@ -1526,6 +1589,12 @@ export class AiService implements IAiService {
         areSeedRowsConsistentWithTable(proposed.seed_rows, proposed.table)
           ? proposed.seed_rows
           : undefined;
+      // Ticket #77 / ADR-0042: only a well-formed planned table can be checked for a name
+      // collision or actually targeted externally — the per-step LLM fallback path (no
+      // planned table) always stays on ToolJet DB, same as before this ticket.
+      const targetResolution = plannedTable
+        ? resolveCreateTableTarget(proposed.data_source_id, plannedTable.table_name, dataSources)
+        : { kind: "tjdb" as const };
       // Ticket #21: the planner-assigned phase name, trimmed; an absent/blank one persists
       // as null so the client's fallback grouping sees a consistent shape.
       const phase = proposed.phase?.trim() || null;
@@ -1535,8 +1604,20 @@ export class AiService implements IAiService {
         order: index,
         type: proposed.type,
         description: proposed.description,
-        ...(plannedTable && { plannedTable }),
-        ...(plannedSeedRows && { plannedSeedRows }),
+        // A collision is a terminal, plan-time-decided failure (ADR-0042): the step is
+        // persisted without its planned table so executeCreateTableStep never takes the
+        // deterministic create path, and props.collisionError is what it throws on
+        // instead — surfaced through the normal step-failed channel, not a silent drop.
+        ...(targetResolution.kind !== "collision" &&
+          plannedTable && { plannedTable }),
+        ...(targetResolution.kind !== "collision" &&
+          plannedSeedRows && { plannedSeedRows }),
+        ...(targetResolution.kind === "collision" && {
+          props: { collisionError: targetResolution.message },
+        }),
+        ...(targetResolution.kind === "external" && {
+          targetDataSourceId: targetResolution.dataSource.id,
+        }),
         ...(phase && { phase }),
         status: "pending",
       });
@@ -1803,11 +1884,79 @@ export class AiService implements IAiService {
     }
   }
 
+  /**
+   * Ticket #77 / ADR-0042: the execution-time confirmation gate for a CreateTable step whose
+   * resolved target is external — new execution-loop state, not a new terminal Step status,
+   * distinct from ADR-0021's Skip. Sits between the step becoming 'running' and the DDL call
+   * itself. Blocks (polling the Step row, not the event loop) until the confirm-step endpoint
+   * records a decision, or throws on decline/timeout — either way, no DDL is ever issued
+   * before this returns normally.
+   *
+   * Re-entrant on retry: a second/third attempt (executeStepWithRetry) calls this again: if
+   * the step is already 'confirmed' it returns immediately without re-sending the SSE event;
+   * if already 'skipped' (declined) it throws immediately, cheaply, without polling again.
+   */
+  private async awaitExternalTableConfirmation(
+    step: Step,
+    context: StepExecutionContext,
+    targetDataSource: QueryableDataSource,
+  ): Promise<void> {
+    const current = await this.stepRepository.findById(step.id);
+    if (current?.status === "skipped") {
+      throw new Error(
+        "This CreateTable step targeting an external PostgreSQL source was declined — no DDL was issued.",
+      );
+    }
+    if (current?.status === "confirmed") return;
+
+    if (current?.status !== "awaiting_confirmation") {
+      await this.stepRepository.updateOne(step.id, {
+        status: "awaiting_confirmation",
+      });
+      this.aiUtilService.sendSSE(context.response, "step-awaiting-confirmation", {
+        stepId: step.id,
+        tableName: step.plannedTable?.table_name,
+        columns: step.plannedTable?.columns ?? [],
+        targetConnection: { id: targetDataSource.id, name: targetDataSource.name },
+        seedRowCount: Array.isArray(step.plannedSeedRows)
+          ? step.plannedSeedRows.length
+          : 0,
+      });
+    }
+
+    const deadline = Date.now() + this.CONFIRMATION_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.CONFIRMATION_POLL_INTERVAL_MS),
+      );
+      const polled = await this.stepRepository.findById(step.id);
+      if (polled?.status === "confirmed") return;
+      if (polled?.status === "skipped") {
+        throw new Error(
+          "This CreateTable step targeting an external PostgreSQL source was declined — no DDL was issued.",
+        );
+      }
+    }
+    throw new Error(
+      "Timed out waiting for confirmation on a CreateTable step targeting an external PostgreSQL source.",
+    );
+  }
+
   async executeCreateTableStep(
     step: Step,
     context: StepExecutionContext,
     previousError?: string,
   ): Promise<{ content: any; identifier: string; props: any }> {
+    // Ticket #77 / ADR-0042: a plan-time name collision against an external PostgreSQL
+    // target is a terminal, retryable-guard-shaped failure decided once in generateStepPlan —
+    // this step never had a plannedTable persisted, so it would otherwise fall through to the
+    // per-step LLM path below and build against ToolJet DB instead, silently ignoring the
+    // collision the plan already found. Thrown here so it surfaces through the normal
+    // step-failed SSE/message channel every other retryable guard already uses.
+    if (step.props?.collisionError) {
+      throw new Error(step.props.collisionError);
+    }
+
     // Ticket #20: a planned table persisted by the planner is the contract — it is created
     // verbatim with no LLM call, so what the pre-approval schema preview showed is exactly
     // what gets created. Steps without a well-formed planned table (plans persisted before
@@ -1815,6 +1964,46 @@ export class AiService implements IAiService {
     if (isWellFormedTableDefinition(step.plannedTable)) {
       const tableParams = this.buildTableParams(step.plannedTable);
       await this.validateForeignKeys(tableParams, context);
+
+      // Ticket #77 / ADR-0042: a CreateTable step whose plan-time resolution picked a
+      // connected PostgreSQL source over ToolJet DB. Confirmation gate first, DDL only after.
+      if (step.targetDataSourceId) {
+        const targetDataSource = context.dataSources.find(
+          (source) => source.id === step.targetDataSourceId,
+        );
+        if (!targetDataSource) {
+          throw new Error(
+            `This step's target data source (${step.targetDataSourceId}) is no longer connected`,
+          );
+        }
+        await this.awaitExternalTableConfirmation(step, context, targetDataSource);
+
+        const created = await this.agentsService.CreateExternalTable(
+          context.organizationId,
+          targetDataSource.id,
+          tableParams,
+        );
+        let seed: SeedTableReport | undefined;
+        if (isWellFormedSeedRows(step.plannedSeedRows)) {
+          seed = await this.agentsService.SeedExternalTable(
+            context.organizationId,
+            targetDataSource.id,
+            created.table_name,
+            step.plannedSeedRows,
+          );
+        }
+        return {
+          content: {
+            ...created,
+            columns: tableParams.columns,
+            targetDataSourceId: targetDataSource.id,
+            ...(seed && { seed }),
+          },
+          identifier: created.table_name,
+          props: tableParams,
+        };
+      }
+
       const created = await this.agentsService.CreateTable(
         context.organizationId,
         tableParams,
@@ -3228,14 +3417,53 @@ export class AiService implements IAiService {
     if (!step || step.conversationId !== conversationId) {
       throw new NotFoundException("Step not found in this conversation");
     }
-    if (step.status !== "pending" && step.status !== "running") {
+    // Ticket #77 / ADR-0042: 'awaiting_confirmation' is also skippable — declining an
+    // external CreateTable step's confirmation gate is surfaced through this same endpoint
+    // (the ADR's "same run-UI channel Skip already uses"), not a parallel decline path.
+    // executeCreateTableStep's poll loop is what turns this into "declined, no DDL issued".
+    if (
+      step.status !== "pending" &&
+      step.status !== "running" &&
+      step.status !== "awaiting_confirmation"
+    ) {
       throw new BadRequestException(
-        "Only a pending or running step can be skipped",
+        "Only a pending, running, or awaiting-confirmation step can be skipped",
       );
     }
 
     await this.stepRepository.updateOne(step.id, { status: "skipped" });
     return { skipped: step.id };
+  }
+
+  /**
+   * Ticket #77 / ADR-0042: records the user's explicit go-ahead on an external CreateTable
+   * step's confirmation gate. Not SSE — the execution loop's poll (inside
+   * awaitExternalTableConfirmation) picks the new status up on its next check, the same
+   * checkpoint shape skipStep already uses for Skip.
+   */
+  async confirmStep(
+    conversationId: string,
+    stepId: string,
+    userId: string,
+  ): Promise<any> {
+    if (!conversationId || !stepId) {
+      throw new BadRequestException("conversationId and stepId are required");
+    }
+
+    await this.loadConversationOfType(conversationId, "generate", userId);
+
+    const step = await this.stepRepository.findById(stepId);
+    if (!step || step.conversationId !== conversationId) {
+      throw new NotFoundException("Step not found in this conversation");
+    }
+    if (step.status !== "awaiting_confirmation") {
+      throw new BadRequestException(
+        "Only a step awaiting confirmation can be confirmed",
+      );
+    }
+
+    await this.stepRepository.updateOne(step.id, { status: "confirmed" });
+    return { confirmed: step.id };
   }
 
   /**

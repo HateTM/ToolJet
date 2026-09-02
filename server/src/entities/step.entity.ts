@@ -19,7 +19,22 @@ export type StepType =
   | 'UpdateComponent'
   | 'UpdateQuery'
   | 'GenerateEvent';
-export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+// 'awaiting_confirmation' (ticket #77 / ADR-0042): the execution-loop pause state a
+// CreateTable step sits in between 'running' and the DDL call itself, only when its
+// resolved target is an external PostgreSQL source — never a new terminal status, and
+// distinct from 'skipped' (ADR-0021's checkpoint-based Skip).
+// 'confirmed' (ticket #77 / ADR-0042): the decision the confirm-step endpoint records for an
+// 'awaiting_confirmation' step when the user goes ahead — executeCreateTableStep's poll loop
+// treats it as "gate passed, proceed to the DDL call", then the normal succeeded/failed
+// transition (executeStepWithRetry) takes over from there.
+export type StepStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped'
+  | 'awaiting_confirmation'
+  | 'confirmed';
 
 @Entity('steps')
 export class Step {
@@ -76,6 +91,13 @@ export class Step {
   // the preview stays truthful.
   @Column({ name: 'planned_seed_rows', type: 'jsonb', nullable: true })
   plannedSeedRows: any;
+
+  // The connected PostgreSQL data source this CreateTable step targets instead of ToolJet DB
+  // (ticket #77 / ADR-0042). Null on every other Step, and on a ToolJet DB CreateTable step —
+  // its presence is exactly what makes executeCreateTableStep take the external DDL path and
+  // pause for the ADR-0042 confirmation gate before issuing it.
+  @Column({ name: 'target_data_source_id', type: 'uuid', nullable: true })
+  targetDataSourceId: string;
 
   @Column({ type: 'int', nullable: false, default: 0 })
   attempts: number;

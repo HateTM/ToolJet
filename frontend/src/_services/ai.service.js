@@ -22,6 +22,7 @@ export const aiService = {
   previewPlan,
   rewindStep,
   skipStep,
+  confirmStep,
   regenerateMessage,
   promoteConversation,
 };
@@ -151,6 +152,16 @@ async function rewindStep(body) {
 async function skipStep(body) {
   const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
   return fetch(`${config.apiUrl}/ai/conversation/skip-step`, requestOptions).then(handleResponse);
+}
+
+// body: { conversationId, stepId }. Ticket #77 / ADR-0025: records the user's explicit
+// go-ahead on a CreateTable step targeting a connected PostgreSQL source (a
+// 'step-awaiting-confirmation' SSE event on the approve-prd stream). Not SSE itself — the
+// backend's execution loop poll picks the new status up (see AiService.confirmStep).
+// TODO(#77 follow-up): no run-UI affordance calls this yet — see the ticket's PR body.
+async function confirmStep(body) {
+  const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
+  return fetch(`${config.apiUrl}/ai/conversation/confirm-step`, requestOptions).then(handleResponse);
 }
 
 // body: { parentMessageId }. Not SSE — the backend generates the full reply before

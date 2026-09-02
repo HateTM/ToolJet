@@ -13,6 +13,24 @@ export interface SeedTableReport {
 export interface IAgentsService {
   CreateTable(organizationId: string, tables: any): Promise<any>;
 
+  // Ticket #77 / ADR-0042: creates a table in a connected PostgreSQL data source instead of
+  // ToolJet DB. Only reached after the plan-time collision check and the execution-time
+  // confirmation gate have both passed.
+  CreateExternalTable(
+    organizationId: string,
+    dataSourceId: string,
+    tableParams: any
+  ): Promise<{ id: string; table_name: string }>;
+
+  // Ticket #77 / ADR-0042: the external-target analogue of SeedTable — same per-row report
+  // shape, reused verbatim.
+  SeedExternalTable(
+    organizationId: string,
+    dataSourceId: string,
+    tableName: string,
+    rows: Record<string, any>[]
+  ): Promise<SeedTableReport>;
+
   // Inserts planner-proposed seed rows into an already-created ToolJet DB table
   // (ticket #48). Each row runs as its own query and gets its own report entry
   // (ticket #62); a failed row does not abort the others. Throws only when every
