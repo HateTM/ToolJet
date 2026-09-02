@@ -432,7 +432,9 @@ const SUPPORTED_COMPONENT_TYPES = [
   "PhoneInput",
   "Datepicker",
   // Wave 2 (plan increment 3) — more complex widgets. Placed standalone/empty, same as
-  // Container/Modal above: nesting children into them isn't wired up yet (increment 4).
+  // Container/Modal above: nesting children into them isn't wired up yet (increment 4),
+  // except ModalV2 — its body/header/footer slots accept parentComponentId (increment 4
+  // follow-up, see executeComponentStep's parentComponentId validation below).
   "Tabs",
   "Listview",
   "IFrame",
@@ -484,14 +486,14 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - Listview: reference a Page id, and optionally the name of a query already created in this plan whose rows it should list (omit for stock demo rows). Its items cannot hold other widgets yet.
 - IFrame: reference a Page id and the URL to embed.
 - FilePicker: reference a Page id (optional label). Upload UI only — files are not wired to any query yet.
-- ModalV2: reference a Page id (optional trigger button label); it renders with a default trigger button. Its body cannot be filled with other widgets yet — it opens empty.
+- ModalV2: reference a Page id (optional trigger button label); it renders with a default trigger button. Other widgets can nest into its body, header, or footer — see parentComponentId below.
 - TreeSelect: reference a Page id (optional label). Keeps its own stock demo tree — a real hierarchy from arbitrary data isn't supported yet.
 - Html: reference a Page id and raw HTML to render.
 - PopoverMenu: reference a Page id, give it a label, and optionally a list of short option strings (default 3 stock options).
 - ButtonGroupV2: reference a Page id, give it a label, and optionally a list of short button labels (default 3 stock buttons).
 - DatePickerV2: reference a Page id, give it a label (optional default value, placeholder, and format).
 - Chat (EXPERIMENTAL — decorative only): reference a Page id (optional chat title). No query or event is wired to actually send/receive messages; use only when the PRD explicitly wants a chat UI mockup, not a working chat feature.
-Any widget type (except Page itself) accepts an optional parentComponentId: the id of a Container or Form already created in this plan on the same page, to nest this widget inside it instead of placing it directly on the page. Tabs, Listview and ModalV2 cannot yet hold nested children (their panes/items/body still render empty) — don't reference them as a parentComponentId.
+Any widget type (except Page itself) accepts an optional parentComponentId: the id of a Container or Form already created in this plan on the same page, to nest this widget inside it instead of placing it directly on the page. For a ModalV2 already created in this plan, use its id for the body slot, "<modalId>-header" for the header slot, or "<modalId>-footer" for the footer slot — keep header/footer children small (a label, a button, an icon), they render in a thin strip. Tabs and Listview cannot yet hold nested children (their panes/items still render empty) — don't reference them as a parentComponentId.
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
@@ -519,7 +521,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -534,7 +536,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -549,7 +551,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -565,7 +567,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -580,7 +582,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -612,7 +614,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -637,7 +639,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -653,7 +655,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -672,7 +674,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -695,7 +697,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -714,7 +716,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -731,7 +733,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -747,7 +749,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -764,7 +766,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -780,7 +782,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -800,7 +802,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -818,7 +820,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -833,7 +835,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -853,7 +855,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -876,7 +878,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -896,7 +898,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -913,7 +915,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -929,7 +931,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -952,7 +954,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -970,7 +972,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -990,7 +992,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1005,7 +1007,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1020,7 +1022,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1038,7 +1040,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1053,7 +1055,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1068,7 +1070,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1087,7 +1089,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1106,7 +1108,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1130,7 +1132,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
     z.object({
@@ -1150,7 +1152,7 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe(
-          "id of an already-created Container or Form (from context) to nest this widget inside; omit to place it directly on the page",
+          'id of an already-created Container or Form (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; omit to place it directly on the page',
         ),
     }),
   ]),
@@ -2918,26 +2920,40 @@ export class AiService implements IAiService {
     }
 
     // Increment 4 (create-time nesting): parentComponentId, when given, must reference a
-    // Container or Form already created earlier in THIS plan on the SAME page — Tabs,
-    // Listview and ModalV2 aren't valid nesting targets yet (their children need a
-    // slot-qualified parent id, not a bare component id; out of scope for this pass).
+    // Container or Form already created earlier in THIS plan on the SAME page — Tabs and
+    // Listview aren't valid nesting targets yet (their children need a slot-qualified
+    // parent id this plan doesn't support). ModalV2 IS slot-qualified: its own id is the
+    // body slot, "<id>-header"/"<id>-footer" the header/footer slots (see
+    // frontend/src/AppBuilder/Widgets/ModalV2/Components/{Modal,Header,Footer}.jsx —
+    // those are the literal sub-container ids the canvas renders children under).
     // Retryable, same reasoning as the pageId check above.
     if (props.parentComponentId) {
+      const rawParentId: string = props.parentComponentId;
+      const slotMatch = /^(.+)-(header|footer)$/.exec(rawParentId);
+      const baseParentId = slotMatch ? slotMatch[1] : rawParentId;
+      const slot = slotMatch ? slotMatch[2] : null;
+
       const parentWidget = context.priorResults.find(
         (result) =>
           result.type === "CreateComponent" &&
-          result.artifact.content?.id === props.parentComponentId &&
+          result.artifact.content?.id === baseParentId &&
           result.artifact.content?.pageId === props.pageId,
       );
       if (!parentWidget) {
         throw new Error(
-          `parentComponentId "${props.parentComponentId}" does not match any Container or Form created earlier in this plan on the same page`,
+          `parentComponentId "${rawParentId}" does not match any Container, Form or ModalV2 created earlier in this plan on the same page`,
         );
       }
       const parentType = parentWidget.artifact.content?.type;
-      if (parentType !== "Container" && parentType !== "Form") {
+      if (parentType === "ModalV2") {
+        // Body slot (no suffix) is valid; header/footer are only valid via their suffix.
+      } else if (slot) {
         throw new Error(
-          `parentComponentId "${props.parentComponentId}" refers to a ${parentType}, which cannot hold nested children yet — only Container and Form can`,
+          `parentComponentId "${rawParentId}" refers to a ${parentType}, which has no header/footer slots — only ModalV2 does`,
+        );
+      } else if (parentType !== "Container" && parentType !== "Form") {
+        throw new Error(
+          `parentComponentId "${rawParentId}" refers to a ${parentType}, which cannot hold nested children yet — only Container, Form and ModalV2 can`,
         );
       }
     }

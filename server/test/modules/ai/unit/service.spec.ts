@@ -1536,6 +1536,122 @@ describe('AiService.approvePrd', () => {
     );
   });
 
+  it('rejects a header/footer suffix on a real Container, then succeeds once the retry targets the real ModalV2 header slot', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateComponent', description: 'Add a container to the page' },
+        { type: 'CreateComponent', description: 'Add a modal to the page' },
+        { type: 'CreateComponent', description: 'Add a text into the modal header' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Container', pageId: 'page-1', title: 'Sidebar' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'ModalV2', pageId: 'page-1', triggerButtonLabel: 'Open' }))
+      // Attempt 1: "-header" on a real Container is invalid — Container has no slots.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Details', parentComponentId: 'container-1-header' })
+      )
+      // Attempt 2 (retry): the real ModalV2's header slot.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Details', parentComponentId: 'modal-1-header' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Add a container to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a modal to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-4',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 3,
+        type: 'CreateComponent',
+        description: 'Add a text into the modal header',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' })
+      .mockResolvedValueOnce({ id: 'container-1', pageId: 'page-1', type: 'Container' })
+      .mockResolvedValueOnce({ id: 'modal-1', pageId: 'page-1', type: 'ModalV2' })
+      .mockResolvedValueOnce({ id: 'component-1', pageId: 'page-1', type: 'Text' });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'container-1', pageId: 'page-1', type: 'Container' },
+        identifier: 'container-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'modal-1', pageId: 'page-1', type: 'ModalV2' },
+        identifier: 'modal-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
+        content: { id: 'component-1', pageId: 'page-1', type: 'Text' },
+        identifier: 'component-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(4);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(4, 'version-1', 'org-1', 'Text', {
+      pageId: 'page-1',
+      text: 'Details',
+      parentComponentId: 'modal-1-header',
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-4',
+      expect.objectContaining({
+        attempts: 1,
+        errorMessage: expect.stringContaining('which has no header/footer slots — only ModalV2 does'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-4',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
   it('builds a working page end to end: CreateTable → CreateComponent(Page) → CreateQuery → CreateComponent(Table), each step referencing the real prior artifacts', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();

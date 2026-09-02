@@ -239,6 +239,43 @@ describe('AgentsService.CreateComponent', () => {
     expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
   });
 
+  it('nests into a ModalV2 header slot, clamping the child height to fit the strip (increment 4 follow-up)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    componentsService.getAllComponents.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Table', {
+      pageId: 'page-1',
+      title: 'Orders',
+      queryName: 'list_orders',
+      parentComponentId: 'modal-1-header',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.parent).toBe('modal-1-header');
+    // Table's own default height (460) would blow out a ~56px header strip — clamped down.
+    expect(definition.layouts.desktop.height).toBe(30);
+  });
+
+  it('does not clamp height when nesting into a ModalV2 body slot (bare id, not header/footer)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    componentsService.getAllComponents.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Table', {
+      pageId: 'page-1',
+      title: 'Orders',
+      queryName: 'list_orders',
+      parentComponentId: 'modal-1',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.parent).toBe('modal-1');
+    expect(definition.layouts.desktop.height).toBe(460);
+  });
+
   it('fails the creation instead of overlapping when sibling compaction is rejected (ticket #63)', async () => {
     const { service, componentsService } = buildAgentsService();
     componentsService.create.mockResolvedValue({});

@@ -612,6 +612,14 @@ export class AgentsService implements IAgentsService {
     const componentId = uuidv4();
     const sanitized = this.sanitizeWidgetDefinition(type, properties, styles);
 
+    // ModalV2's header/footer are thin strips (~56px), unlike Container/Form/modal-body
+    // whose own default footprint (450px+) already comfortably fits typical children.
+    // A widget's stock default height (e.g. Table's 460) would blow out the slot, so it's
+    // clamped here to a small footprint — deliberately tighter than the grid clamp in
+    // generateComponentLayout, which knows nothing about the parent's own size.
+    const isModalSlot = parentId?.endsWith('-header') || parentId?.endsWith('-footer');
+    const effectiveLayout = isModalSlot ? { width: layout.width, height: Math.min(layout.height, 30) } : layout;
+
     const existingComponents = await this.componentsService.getAllComponents(pageId);
     const siblings: SiblingRect[] = Object.entries(existingComponents ?? {})
       .map(([id, entry]) => ({
@@ -639,7 +647,7 @@ export class AgentsService implements IAgentsService {
         height,
       }));
 
-    const { layout: placedLayout, siblingUpdates } = generateComponentLayout(type, siblings, layout);
+    const { layout: placedLayout, siblingUpdates } = generateComponentLayout(type, siblings, effectiveLayout);
 
     if (siblingUpdates) {
       const layoutDiff = Object.fromEntries(
@@ -1219,8 +1227,10 @@ export class AgentsService implements IAgentsService {
   }
 
   // Wave 2 (plan increment 3) — more complex widgets, still standalone/empty like Container
-  // and Modal above: nesting children into them (Tabs panes, Listview items, ModalV2 body)
-  // isn't wired up yet — that's increment 4's `parentComponentId` work, not this ticket's.
+  // above: nesting children into them (Tabs panes, Listview items) isn't wired up yet.
+  // ModalV2 is the exception — its body/header/footer slots accept parentComponentId
+  // (increment 4 follow-up), see the "Increment 4" comment in service.ts's
+  // executeComponentStep and createModalV2Component's own doc comment below.
 
   // defaultSize per tabs.js: { width: 15, height: 450 }, but generateComponentLayout special-
   // cases 'Tabs' to TABS_FIXED_LAYOUT regardless of the size passed here (one Tabs per page).
@@ -1309,7 +1319,10 @@ export class AgentsService implements IAgentsService {
 
   // defaultSize per modalV2.js: { width: 10, height: 40 }. Newer sibling of the legacy Modal
   // builder above; unlike it, ModalV2 has no `title` property of its own — its header content
-  // is a child slot, which (like every widget here) isn't nestable yet.
+  // is a child slot. showHeader/showFooter default true on the widget itself (modalV2.js),
+  // so slot children created via parentComponentId are visible without any extra property
+  // override here. parentComponentId here is the modal's own id (body slot); pass
+  // "<id>-header"/"<id>-footer" as another step's parentComponentId to target those slots.
   private async createModalV2Component(appVersionId: string, props: any) {
     const { pageId, triggerButtonLabel, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
