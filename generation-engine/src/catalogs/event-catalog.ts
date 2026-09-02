@@ -1,4 +1,3 @@
-// transit copy from PR #92 (feature/92-generation-engine-catalogs @ fc192cb7db) — dedupe at merge
 // Sourced from frontend/src/AppBuilder/RightSideBar/Inspector/ActionTypes.js -- the platform's
 // real event-action vocabulary, confirmed as the persisted shape by
 // server/src/modules/ai/services/agents.service.ts's `eventsService.createEvent(...)` call, which

@@ -1,4 +1,3 @@
-// transit copy from PR #94 (feature/94-generation-engine-llm-config @ 60754490ca) — dedupe at merge
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
