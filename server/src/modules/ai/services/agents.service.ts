@@ -471,6 +471,74 @@ export class AgentsService implements IAgentsService {
     };
   }
 
+  /**
+   * DeleteComponent (increment 4 / ADR-0027): removes one existing component. Snapshots the
+   * full component (definition + layouts) and every event attached to it before deleting, so
+   * undoDeleteComponent can recreate both — `ComponentsService.delete` cascade-deletes the
+   * component's events unless `is_component_cut` is set, so those events would otherwise be
+   * unrecoverable on rewind.
+   */
+  async DeleteComponent(appVersionId: string, componentId: string): Promise<any> {
+    let current: any;
+    try {
+      current = await this.componentsService.findOneWithLayouts(componentId);
+    } catch {
+      throw new Error(`Component "${componentId}" does not exist`);
+    }
+
+    const events = await this.eventsService.findAllEventsWithSourceId(componentId);
+
+    const snapshot = {
+      id: componentId,
+      name: current.name,
+      type: current.type,
+      pageId: current.pageId,
+      parent: current.parent,
+      properties: current.properties,
+      styles: current.styles,
+      layouts: Object.fromEntries(
+        (current.layouts ?? []).map((layout: any) => [
+          layout.type,
+          { top: layout.top, left: layout.left, width: layout.width, height: layout.height },
+        ])
+      ),
+      events: events.map((event) => ({
+        name: event.name,
+        event: event.event,
+        eventType: event.target,
+        index: event.index,
+      })),
+    };
+
+    await this.componentsService.delete([componentId], appVersionId, false);
+
+    return snapshot;
+  }
+
+  /**
+   * DeleteQuery (increment 4 / ADR-0027): removes one query created earlier in the same plan.
+   * Snapshots the full query row so undoDeleteQuery can recreate it verbatim.
+   */
+  async DeleteQuery(queryId: string): Promise<any> {
+    const query = await this.dataQueryRepository.findOne({ where: { id: queryId } });
+    if (!query) {
+      throw new Error(`Query "${queryId}" does not exist`);
+    }
+
+    const snapshot = {
+      id: query.id,
+      name: query.name,
+      options: query.options,
+      dataSourceId: query.dataSourceId,
+      appVersionId: query.appVersionId,
+    };
+
+    await this.dataQueryRepository.deleteDataQueryEvents(queryId);
+    await this.dataQueryRepository.deleteOne(queryId);
+
+    return snapshot;
+  }
+
   private async createPageComponent(appVersionId: string, organizationId: string, props: any) {
     const name = (props?.name || 'Page').slice(0, 32);
     const handle =
@@ -1582,8 +1650,12 @@ export class AgentsService implements IAgentsService {
         return this.undoCreateComponent(appVersionId, organizationId, content);
       case 'UpdateComponent':
         return this.undoUpdateComponent(appVersionId, content);
+      case 'DeleteComponent':
+        return this.undoDeleteComponent(appVersionId, content);
       case 'UpdateQuery':
         return this.undoUpdateQuery(content);
+      case 'DeleteQuery':
+        return this.undoDeleteQuery(content);
       case 'GenerateEvent':
         return this.undoGenerateEvent(appVersionId, content);
 
@@ -1684,6 +1756,50 @@ export class AgentsService implements IAgentsService {
     if (!Object.keys(definition).length) return;
 
     await this.componentsService.update({ [content.id]: { component: { definition } } }, appVersionId);
+  }
+
+  /**
+   * Compensating undo for DeleteComponent: recreates the component verbatim from
+   * DeleteComponent's snapshot (same id, so anything else in the app still referencing it by
+   * id resolves again), then replays its events in their original order.
+   */
+  private async undoDeleteComponent(appVersionId: string, content: any): Promise<void> {
+    const componentDiff = {
+      [content.id]: {
+        name: content.name,
+        type: content.type,
+        parent: content.parent ?? null,
+        properties: content.properties,
+        styles: content.styles,
+        layouts: content.layouts,
+      },
+    };
+    await this.componentsService.create(componentDiff, content.pageId, appVersionId);
+
+    for (const event of content.events ?? []) {
+      await this.eventsService.createEvent(
+        {
+          name: event.name,
+          event: event.event,
+          eventType: event.eventType,
+          attachedTo: content.id,
+          index: event.index,
+        } as any,
+        appVersionId,
+        true
+      );
+    }
+  }
+
+  /** Compensating undo for DeleteQuery: recreates the query row verbatim from the snapshot. */
+  private async undoDeleteQuery(content: any): Promise<void> {
+    await this.dataQueryRepository.createOne({
+      id: content.id,
+      name: content.name,
+      options: content.options,
+      dataSourceId: content.dataSourceId,
+      appVersionId: content.appVersionId,
+    });
   }
 
   async docs(prompt: string, organizationId: string, previousMessages?: any[]): Promise<any> {

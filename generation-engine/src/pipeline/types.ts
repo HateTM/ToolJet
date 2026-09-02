@@ -96,7 +96,16 @@ export interface EvaluationVerdict {
  * `server/src/modules/ai/service.ts`. Step-plan (ADR-0040) proposes from this list and
  * nothing else.
  */
-export const STEP_TYPES = ['CreateTable', 'CreateQuery', 'CreateComponent', 'UpdateQuery', 'GenerateEvent'] as const;
+export const STEP_TYPES = [
+  'CreateTable',
+  'CreateQuery',
+  'CreateComponent',
+  'UpdateComponent',
+  'DeleteComponent',
+  'UpdateQuery',
+  'DeleteQuery',
+  'GenerateEvent',
+] as const;
 
 export type StepType = (typeof STEP_TYPES)[number];
 

@@ -17,7 +17,9 @@ export type StepType =
   | 'CreateQuery'
   | 'CreateComponent'
   | 'UpdateComponent'
+  | 'DeleteComponent'
   | 'UpdateQuery'
+  | 'DeleteQuery'
   | 'GenerateEvent';
 // 'awaiting_confirmation' (ticket #77 / ADR-0042): the execution-loop pause state a
 // CreateTable step sits in between 'running' and the DDL call itself, only when its

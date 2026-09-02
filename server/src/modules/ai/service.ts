@@ -88,7 +88,9 @@ const STEP_TYPES = [
   "CreateQuery",
   "CreateComponent",
   "UpdateComponent",
+  "DeleteComponent",
   "UpdateQuery",
+  "DeleteQuery",
   "GenerateEvent",
 ] as const;
 
@@ -100,7 +102,9 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
 - UpdateComponent: changes a component that already exists in this app (its text, a property, or a style) — never a component this same plan is about to create with CreateComponent (give that component its final properties directly instead). Reference the target by the id/name given in "Existing components already in this app" below; never invent one. Use this only when the PRD is asking to edit something that's already there.
+- DeleteComponent: removes a component that already exists in this app. Reference it by the id/name given in "Existing components already in this app" below; never invent one, and never target a component this same plan is about to create.
 - UpdateQuery: changes an existing query the plan (or an earlier step) created — e.g. different columns, a filter, a limit. The model at execution time returns only the option keys that change; nothing else on the query is touched. Use this instead of a second CreateQuery for the same table.
+- DeleteQuery: removes a query this same plan created earlier — never a query outside this plan.
 - GenerateEvent: wires one event on a component or query the plan has already created (e.g. "the button opens the modal" is a GenerateEvent on the Button, not a new component). It never creates components or queries itself.
 
 
@@ -965,6 +969,40 @@ const updateComponentTool = tool({
   }),
 });
 
+// Ticket #4 / increment 4: removes one existing component. Kept deliberately narrow (id
+// only, no confirmation text) — the planner already decided this step is a delete when it
+// proposed it; re-asking the model to justify it here would just be more ways to hallucinate.
+const DELETE_COMPONENT_SYSTEM_PROMPT = `You remove ONE existing component for this step, based on the PRD and the "Existing components already in this app" list below.
+
+Call deleteComponent exactly once with componentId set to the real id of the target component, copied verbatim from the list below. Never invent one, and never target a component this same plan is about to create with CreateComponent.`;
+
+const deleteComponentTool = tool({
+  description: "Delete one existing component, along with any events attached to it.",
+  parameters: z.object({
+    componentId: z
+      .string()
+      .describe(
+        "id of the existing component to delete, copied from the 'Existing components already in this app' list",
+      ),
+  }),
+});
+
+// Mirrors UpdateQuery's scope on purpose (ADR-0027): only a query this same plan created
+// earlier can be targeted, never an arbitrary pre-existing query — deleting something outside
+// the plan's own blast radius is a much larger footgun than editing it.
+const DELETE_QUERY_SYSTEM_PROMPT = `You remove ONE existing query for this step, based on the PRD and the "Existing queries" list below.
+
+Call deleteQuery exactly once with queryName set to the exact name of the target query, copied verbatim from the list below.`;
+
+const deleteQueryTool = tool({
+  description: "Delete one query this plan created earlier.",
+  parameters: z.object({
+    queryName: z
+      .string()
+      .describe("name of an already-created query (from this plan) to delete"),
+  }),
+});
+
 // Opening line sourced from the ported EE prompt library (prompt-library/generateQuery.ts);
 // the tool contract below is the fork's own (ADR-0006 v1 vocabulary): the model picks a
 // narrow createQuery call, it never writes a full runjs/runpy query config the way EE's
@@ -1223,7 +1261,9 @@ export class AiService implements IAiService {
     "CreateComponent",
     "CreateQuery",
     "UpdateComponent",
+    "DeleteComponent",
     "UpdateQuery",
+    "DeleteQuery",
     "GenerateEvent",
 
   ];
@@ -2096,10 +2136,14 @@ export class AiService implements IAiService {
         return this.executeComponentStep(step, context, previousError);
       case "UpdateComponent":
         return this.executeUpdateComponentStep(step, context, previousError);
+      case "DeleteComponent":
+        return this.executeDeleteComponentStep(step, context, previousError);
       case "CreateQuery":
         return this.executeQueryStep(step, context, previousError);
       case "UpdateQuery":
         return this.executeUpdateQueryStep(step, context, previousError);
+      case "DeleteQuery":
+        return this.executeDeleteQueryStep(step, context, previousError);
       case "GenerateEvent":
         return this.executeEventStep(step, context, previousError);
       default:
@@ -2763,6 +2807,125 @@ export class AiService implements IAiService {
       content: updated,
       identifier: updated.id,
       props: { componentId, properties, styles },
+    };
+  }
+
+  private async executeDeleteComponentStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const componentIndex = await this.appInventoryService.renderComponentIndex(
+      context.appVersionId,
+    );
+    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: DELETE_COMPONENT_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeDeleteComponentStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-delete-component",
+      {
+        ...prompt,
+        tools: { deleteComponent: deleteComponentTool },
+        toolChoice: { type: "tool", toolName: "deleteComponent" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "deleteComponent") {
+      throw new Error("The assistant did not produce a component to delete");
+    }
+
+    const { componentId } = call.args as { componentId: string };
+    if (!componentIndex.includes(`(id: ${componentId},`)) {
+      throw new Error(
+        `componentId "${componentId}" does not match any existing component in this app`,
+      );
+    }
+
+    const snapshot = await this.agentsService.DeleteComponent(
+      context.appVersionId,
+      componentId,
+    );
+
+    return {
+      content: snapshot,
+      identifier: snapshot.id,
+      props: { componentId },
+    };
+  }
+
+  private async executeDeleteQueryStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const existingQueries = context.priorResults.filter(
+      (result) => result.type === "CreateQuery",
+    );
+    if (!existingQueries.length) {
+      throw new Error(
+        "There is no query to delete — a DeleteQuery step needs a CreateQuery step before it",
+      );
+    }
+
+    const stepContext = [
+      this.buildStepContextLines(step, context, previousError),
+      `Existing queries (delete exactly one of these, by name):\n${existingQueries
+        .map((result) => `- ${result.artifact.content.name} (id ${result.artifact.content.id})`)
+        .join("\n")}`,
+    ].join("\n\n");
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: DELETE_QUERY_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeDeleteQueryStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-delete-query",
+      {
+        ...prompt,
+        tools: { deleteQuery: deleteQueryTool },
+        toolChoice: { type: "tool", toolName: "deleteQuery" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "deleteQuery") {
+      throw new Error("The assistant did not produce a query to delete");
+    }
+
+    const { queryName } = call.args as { queryName: string };
+    const existing = existingQueries.find(
+      (entry) => entry.artifact.content?.name === queryName,
+    );
+    if (!existing) {
+      throw new Error(
+        `queryName "${queryName}" does not match any query created earlier in this plan. Available: ${existingQueries
+          .map((entry) => entry.artifact.content?.name)
+          .join(", ")}`,
+      );
+    }
+
+    const snapshot = await this.agentsService.DeleteQuery(existing.artifact.content.id);
+
+    return {
+      content: snapshot,
+      identifier: snapshot.name,
+      props: { queryName },
     };
   }
 
