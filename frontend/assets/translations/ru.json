@@ -1122,6 +1122,17 @@
       "run": "Запустить",
       "openInWorkflowEditor": "Открыть в редакторе воркфлоу"
     },
+    "page": {
+      "title": "Воркфлоу",
+      "created": "Создан",
+      "edited": "Изменён"
+    },
+    "editor": {
+      "backToWorkflows": "Назад к воркфлоу",
+      "canvasComingSoon": "Холст воркфлоу находится в разработке и появится в ближайшем релизе.",
+      "versions": "Версии",
+      "noVersions": "Версий пока нет"
+    },
     "blankPage": {
       "welcomeToToolJet": "Добро пожаловать в ваше новое рабочее пространство ToolJet",
       "getStartedCreateNewApp": "Вы можете начать с создания нового приложения или из шаблона в библиотеке ToolJet.",
@@ -1141,6 +1152,7 @@
     },
     "header": {
       "createNewApplication": "Создать новый воркфлоу",
+      "untitledWorkflow": "Воркфлоу без названия",
       "import": "Импорт",
       "chooseFromTemplate": "Выбрать из шаблона"
     },

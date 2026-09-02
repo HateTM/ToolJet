@@ -19,8 +19,8 @@ const fetchEdition = () => {
 };
 
 const isWorkflowsFeatureEnabled = () => {
-  const edition = fetchEdition();
-  return edition === 'ee';
+  /* ADR-0047: Workflows ship fully in CE — no edition or license gating. */
+  return true;
 };
 
 export { processErrorMessage, clearPageHistory, fetchEdition, isWorkflowsFeatureEnabled };
