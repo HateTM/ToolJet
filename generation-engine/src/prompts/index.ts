@@ -13,4 +13,5 @@ export * from './update-query';
 export * from './update-table';
 export * from './update-component';
 export * from './delete-component';
+export * from './move-component';
 export * from './evaluate';

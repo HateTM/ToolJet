@@ -104,4 +104,8 @@ describe('ported non-table step prompts (ADR-0048)', () => {
   it('exports the DeleteComponent prompt with the forced tool-call contract', () => {
     expect(promptsIndex.DELETE_COMPONENT_SYSTEM_PROMPT).toContain('Call deleteComponent exactly once');
   });
+
+  it('exports the MoveComponent prompt with the forced tool-call contract', () => {
+    expect(promptsIndex.MOVE_COMPONENT_SYSTEM_PROMPT).toContain('Call moveComponent exactly once');
+  });
 });
