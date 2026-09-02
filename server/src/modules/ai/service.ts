@@ -41,6 +41,7 @@ import {
   renderConnectedDataSources,
 } from "./services/data-source-inventory.service";
 import { AiActiveRunService } from "./services/ai-active-run.service";
+import { generateQuery as generateQueryPrompts } from "./prompt-library";
 import { AiFeasibilityService } from "./services/ai-feasibility.service";
 import { GenerationEngineClient } from "./services/generation-engine-client";
 import { VersionRepository } from "@modules/versions/repository";
@@ -632,13 +633,20 @@ const updateComponentTool = tool({
   }),
 });
 
-const CREATE_QUERY_SYSTEM_PROMPT = `You create one data query for this step, based on the PRD, the table(s) already created earlier in this plan, and the connected data sources listed below (if any).
+// Opening line sourced from the ported EE prompt library (prompt-library/generateQuery.ts);
+// the tool contract below is the fork's own (ADR-0006 v1 vocabulary): the model picks a
+// narrow createQuery call, it never writes a full runjs/runpy query config the way EE's
+// flow did.
+const CREATE_QUERY_SYSTEM_PROMPT = [
+  generateQueryPrompts.systemPrompt(),
+  `You create one data query for this step, based on the PRD, the table(s) already created earlier in this plan, and the connected data sources listed below (if any).
 
 Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the query itself:
 - source "tooljetdb" — the default. Give the real id of a ToolJet DB table created earlier in this plan to list rows from.
 - source "sql" — only when this step is meant to read from a data source the user has already connected. Give that source's real id and one SQL SELECT statement against a table that source actually has.
 
-Every id must come from the context below, never invented. Prefer ToolJet DB unless the PRD or this step clearly asks for data that lives in a connected source.`;
+Every id must come from the context below, never invented. Prefer ToolJet DB unless the PRD or this step clearly asks for data that lives in a connected source.`,
+].join("\n\n");
 
 // Discriminated on `source` rather than left as one loose object, for the same reason
 // createComponentTool is: the two branches share only a name, and a single flat schema would
