@@ -102,6 +102,7 @@ export const STEP_TYPES = [
   'CreateComponent',
   'UpdateComponent',
   'DeleteComponent',
+  'MoveComponent',
   'UpdateQuery',
   'DeleteQuery',
   'GenerateEvent',

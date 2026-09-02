@@ -18,6 +18,7 @@ export type StepType =
   | 'CreateComponent'
   | 'UpdateComponent'
   | 'DeleteComponent'
+  | 'MoveComponent'
   | 'UpdateQuery'
   | 'DeleteQuery'
   | 'GenerateEvent';

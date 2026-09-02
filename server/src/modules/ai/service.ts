@@ -91,6 +91,7 @@ const STEP_TYPES = [
   "CreateComponent",
   "UpdateComponent",
   "DeleteComponent",
+  "MoveComponent",
   "UpdateQuery",
   "DeleteQuery",
   "GenerateEvent",
@@ -105,6 +106,7 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
 - CreateComponent: creates a UI element (a page or a widget on a page).
 - UpdateComponent: changes a component that already exists in this app (its text, a property, or a style) — never a component this same plan is about to create with CreateComponent (give that component its final properties directly instead). Reference the target by the id/name given in "Existing components already in this app" below; never invent one. Use this only when the PRD is asking to edit something that's already there.
 - DeleteComponent: removes a component that already exists in this app. Reference it by the id/name given in "Existing components already in this app" below; never invent one, and never target a component this same plan is about to create.
+- MoveComponent: reparents a component that already exists in this app into a different Container, Form or Listview (or back to the page root). Reference both by the id/name given in "Existing components already in this app" below; never invent one, never target a component this same plan is about to create, and never move into a ModalV2 or Tabs (not supported by this step — nest into those at create time with CreateComponent's parentComponentId instead).
 - UpdateQuery: changes an existing query the plan (or an earlier step) created — e.g. different columns, a filter, a limit. The model at execution time returns only the option keys that change; nothing else on the query is touched. Use this instead of a second CreateQuery for the same table.
 - DeleteQuery: removes a query this same plan created earlier — never a query outside this plan.
 - GenerateEvent: wires one event on a component or query the plan has already created (e.g. "the button opens the modal" is a GenerateEvent on the Button, not a new component). It never creates components or queries itself.
@@ -1215,6 +1217,31 @@ const deleteComponentTool = tool({
   }),
 });
 
+// MoveComponent (ADR-0043 follow-up): reparents one existing component. Bare-id targets
+// only (Container/Form/Listview body) — ModalV2 header/footer and Tabs panes are create-time
+// nesting only in this pass, not a Move target (see ADR-0043's "Follow-up 3").
+const MOVE_COMPONENT_SYSTEM_PROMPT = `You reparent ONE existing component for this step, based on the PRD and the "Existing components already in this app" list below.
+
+Call moveComponent exactly once with componentId set to the real id of the component to move, copied verbatim from the list below. Set newParentComponentId to the real id of the Container, Form or Listview to move it into (also copied verbatim), or omit it to move the component back to its page's root — outside any container. Never invent an id, never target a component this same plan is about to create or delete, and never target a ModalV2 or Tabs as the new parent (moving into a specific slot/pane isn't supported by this step).`;
+
+const moveComponentTool = tool({
+  description:
+    "Reparent one existing component into a different Container, Form or Listview, or back to the page root.",
+  parameters: z.object({
+    componentId: z
+      .string()
+      .describe(
+        "id of the existing component to move, copied from the 'Existing components already in this app' list",
+      ),
+    newParentComponentId: z
+      .string()
+      .optional()
+      .describe(
+        "id of the existing Container, Form or Listview to move it into, copied from the same list; omit to move it to the page root",
+      ),
+  }),
+});
+
 // Mirrors UpdateQuery's scope on purpose (ADR-0027): only a query this same plan created
 // earlier can be targeted, never an arbitrary pre-existing query — deleting something outside
 // the plan's own blast radius is a much larger footgun than editing it.
@@ -1527,6 +1554,7 @@ export class AiService implements IAiService {
     "CreateQuery",
     "UpdateComponent",
     "DeleteComponent",
+    "MoveComponent",
     "UpdateQuery",
     "DeleteQuery",
     "GenerateEvent",
@@ -2413,6 +2441,8 @@ export class AiService implements IAiService {
         return this.executeUpdateComponentStep(step, context, previousError);
       case "DeleteComponent":
         return this.executeDeleteComponentStep(step, context, previousError);
+      case "MoveComponent":
+        return this.executeMoveComponentStep(step, context, previousError);
       case "CreateQuery":
         return this.executeQueryStep(step, context, previousError);
       case "UpdateQuery":
@@ -3352,6 +3382,80 @@ export class AiService implements IAiService {
       content: snapshot,
       identifier: snapshot.id,
       props: { componentId },
+    };
+  }
+
+  /**
+   * MoveComponent (ADR-0043 follow-up): grounds both componentId and newParentComponentId
+   * against the live component index the same way UpdateComponent/DeleteComponent do — the
+   * target and the new parent can be anything already in the app, not just this plan's own
+   * priorResults, unlike create-time parentComponentId nesting (which only reaches
+   * components this same plan created). Cycle safety and the actual reparent live in
+   * AgentsService.MoveComponent (componentsService.componentLayoutChange's own
+   * assertNoParentCycle) — this method only checks that both ids are real.
+   */
+  private async executeMoveComponentStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const componentIndex = await this.appInventoryService.renderComponentIndex(
+      context.appVersionId,
+    );
+    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: MOVE_COMPONENT_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeMoveComponentStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-move-component",
+      {
+        ...prompt,
+        tools: { moveComponent: moveComponentTool },
+        toolChoice: { type: "tool", toolName: "moveComponent" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "moveComponent") {
+      throw new Error("The assistant did not produce a component to move");
+    }
+
+    const { componentId, newParentComponentId } = call.args as {
+      componentId: string;
+      newParentComponentId?: string;
+    };
+    if (!componentIndex.includes(`(id: ${componentId},`)) {
+      throw new Error(
+        `componentId "${componentId}" does not match any existing component in this app`,
+      );
+    }
+    if (
+      newParentComponentId &&
+      !componentIndex.includes(`(id: ${newParentComponentId},`)
+    ) {
+      throw new Error(
+        `newParentComponentId "${newParentComponentId}" does not match any existing component in this app`,
+      );
+    }
+
+    const snapshot = await this.agentsService.MoveComponent(
+      context.appVersionId,
+      componentId,
+      newParentComponentId,
+    );
+
+    return {
+      content: snapshot,
+      identifier: snapshot.id,
+      props: { componentId, newParentComponentId },
     };
   }
 

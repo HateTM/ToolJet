@@ -517,6 +517,124 @@ export class AgentsService implements IAgentsService {
   }
 
   /**
+   * MoveComponent (increment 3/4 follow-up): reparents an existing component into a
+   * different Container/Form/Listview (bare id — body slot only; ModalV2 header/footer and
+   * Tabs panes are out of scope for Move in this pass, same narrowing precedent as the
+   * `plugin` query branch and Tabs/Listview slots before this one) already in the app, or
+   * back to its page's root when `newParentComponentId` is omitted/null.
+   *
+   * Unlike create-time nesting (a brand-new child has no descendants, so no cycle is
+   * possible) an existing component can have its own subtree — moving it into one of its own
+   * descendants would produce an unrenderable loop. `componentsService.componentLayoutChange`
+   * already guards this server-side via `assertNoParentCycle` (the same primitive
+   * `createWidgetComponent`'s own sibling-compaction calls for pure-layout diffs), so this
+   * method doesn't re-implement cycle detection — it surfaces that guard's rejection as a
+   * plain retryable Error, the same as every other hallucinated-target check in this file.
+   *
+   * Deliberately does NOT recompact the old parent's remaining siblings to fill the gap the
+   * move leaves — `DeleteComponent` above has the identical gap today and it has never been
+   * treated as a defect, so Move isn't introducing a new one. The new parent's siblings ARE
+   * compacted if the moved component's layout doesn't fit, exactly like a freshly created
+   * widget would be (`createWidgetComponent`'s own `generateComponentLayout` call) — and, like
+   * that path, this compaction is not itself undone; only the moved component's own previous
+   * parent/layout is restored by `undoMoveComponent`.
+   */
+  async MoveComponent(appVersionId: string, componentId: string, newParentComponentId?: string | null): Promise<any> {
+    const moving = await this.componentsService.findOneWithLayouts(componentId).catch(() => null);
+    if (!moving) {
+      throw new Error(`Component "${componentId}" does not exist`);
+    }
+
+    const targetParentId = newParentComponentId || null;
+    if (targetParentId === componentId) {
+      throw new Error(`A component cannot be moved into itself ("${componentId}")`);
+    }
+
+    if (targetParentId) {
+      const targetParent = await this.componentsService.findOneWithLayouts(targetParentId).catch(() => null);
+      if (!targetParent) {
+        throw new Error(`newParentComponentId "${targetParentId}" does not exist`);
+      }
+      if (!['Container', 'Form', 'Listview'].includes(targetParent.type)) {
+        throw new Error(
+          `newParentComponentId "${targetParentId}" refers to a ${targetParent.type}, which cannot hold nested children — only Container, Form and Listview can (via Move)`
+        );
+      }
+      if (targetParent.pageId !== moving.pageId) {
+        throw new Error(
+          `newParentComponentId "${targetParentId}" is on a different page than the component being moved`
+        );
+      }
+    }
+
+    const previousLayout = (moving.layouts ?? []).find((layout: any) => layout.type === 'desktop');
+    const previousParent = moving.parent ?? null;
+    if (previousParent === targetParentId) {
+      // Already there — a no-op move, same shape as UpdateComponent's `noop` snapshot.
+      return { id: componentId, pageId: moving.pageId, noop: true, previousParent, newParent: targetParentId };
+    }
+
+    const existingComponents = await this.componentsService.getAllComponents(moving.pageId);
+    const siblings: SiblingRect[] = Object.entries(existingComponents ?? {})
+      .filter(([id]) => id !== componentId)
+      .map(([id, entry]: [string, any]) => ({
+        id,
+        type: entry?.component?.component,
+        parent: entry?.component?.parent,
+        left: entry?.layouts?.desktop?.left,
+        top: entry?.layouts?.desktop?.top,
+        width: entry?.layouts?.desktop?.width,
+        height: entry?.layouts?.desktop?.height,
+      }))
+      .filter(
+        (rect) =>
+          (targetParentId ? rect.parent === targetParentId : !rect.parent) &&
+          [rect.left, rect.top, rect.width, rect.height].every(
+            (value) => typeof value === 'number' && Number.isFinite(value)
+          )
+      )
+      .map(({ id, type, left, top, width, height }) => ({ id, type, left, top, width, height }));
+
+    const { layout: placedLayout, siblingUpdates } = generateComponentLayout(moving.type, siblings, {
+      width: previousLayout?.width,
+      height: previousLayout?.height,
+    });
+
+    if (siblingUpdates) {
+      const layoutDiff = Object.fromEntries(
+        Object.entries(siblingUpdates).map(([id, update]) => [id, { layouts: { desktop: update } }])
+      );
+      const compactionResult = await this.componentsService.componentLayoutChange(layoutDiff, appVersionId);
+      if (compactionResult?.error) {
+        throw new Error(`Sibling layout compaction failed: ${compactionResult.error.message}`);
+      }
+    }
+
+    const result = await this.componentsService.componentLayoutChange(
+      {
+        [componentId]: {
+          layouts: { desktop: placedLayout },
+          component: { parent: targetParentId },
+        },
+      },
+      appVersionId
+    );
+    if (result?.error) {
+      throw new Error(result.error.message);
+    }
+
+    return {
+      id: componentId,
+      pageId: moving.pageId,
+      previousParent,
+      previousLayout: previousLayout
+        ? { top: previousLayout.top, left: previousLayout.left, width: previousLayout.width, height: previousLayout.height }
+        : undefined,
+      newParent: targetParentId,
+    };
+  }
+
+  /**
    * DeleteQuery (increment 4 / ADR-0027): removes one query created earlier in the same plan.
    * Snapshots the full query row so undoDeleteQuery can recreate it verbatim.
    */
@@ -1742,6 +1860,8 @@ export class AgentsService implements IAgentsService {
         return this.undoUpdateComponent(appVersionId, content);
       case 'DeleteComponent':
         return this.undoDeleteComponent(appVersionId, content);
+      case 'MoveComponent':
+        return this.undoMoveComponent(appVersionId, content);
       case 'UpdateQuery':
         return this.undoUpdateQuery(content);
       case 'DeleteQuery':
@@ -1846,6 +1966,26 @@ export class AgentsService implements IAgentsService {
     if (!Object.keys(definition).length) return;
 
     await this.componentsService.update({ [content.id]: { component: { definition } } }, appVersionId);
+  }
+
+  /**
+   * Compensating undo for MoveComponent: restores the moved component's own parent and
+   * layout to what they were before the move. Deliberately does not touch either parent's
+   * siblings (neither the old parent's gap nor the new parent's compaction) — MoveComponent
+   * itself doesn't undo those either, see its own docstring.
+   */
+  private async undoMoveComponent(appVersionId: string, content: any): Promise<void> {
+    if (content?.noop) return;
+
+    await this.componentsService.componentLayoutChange(
+      {
+        [content.id]: {
+          layouts: content.previousLayout ? { desktop: content.previousLayout } : {},
+          component: { parent: content.previousParent ?? null },
+        },
+      },
+      appVersionId
+    );
   }
 
   /**
