@@ -11,7 +11,7 @@
 ## 2. Промпт-библиотека из EE
 
 - [x] 26 файлов `ee-extract/server-ee-assets/ai/assets/prompt-library/` → `server/src/modules/ai/prompt-library/` + `index.ts` + `README.md` (подключено / ждёт задачу / deep-agent-only). Deep-agent payload не переносим: в источнике 27 файлов, `translationprompt.ts` зависит от payload `agents.constants` — не перенесён.
-- [x] Подключение по семействам (коммит на семейство): updateQuery → query-update.ts; generateQuery/generateTJDBQuery → CREATE_QUERY_SYSTEM_PROMPT; generateEvent/updateEvent → GenerateEvent; fixWithAi → proposeFix; generateTablesPrompt/generateTJDBTables → CreateTable; generatePrd → планировщик. Тул-контракты не меняем; валидаторы форка — арбитры. Без поломки контрактов подключены только updateQuery и generateQuery; остальные расходятся с контрактурами форка и помечены «ждёт задачу» в `prompt-library/README.md`.
+- [x] Подключение по семействам (коммит на семейство): updateQuery → query-update.ts; generateQuery/generateTJDBQuery → CREATE_QUERY_SYSTEM_PROMPT; generateEvent/updateEvent → GenerateEvent; fixWithAi → proposeFix; generateTablesPrompt/generateTJDBTables → CreateTable; generatePrd → планировщик. Тул-контракты не меняем; валидаторы форка — арбитры. Без поломки контрактов подключены только updateQuery и generateQuery; остальные расходятся с контрактами форка и помечены «ждёт задачу» в `prompt-library/README.md`.
 - [x] Smoke-тест импорта библиотеки (`server/test/modules/ai/unit/prompt-library.spec.ts`).
 
 ## 3. Все виджеты платформы (~40 типов)
