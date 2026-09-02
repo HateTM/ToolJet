@@ -931,4 +931,53 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
     expect(result.props).toEqual({ queryName: 'fetchOrders' });
     expect(result.identifier).toBe('fetchOrders');
   });
+
+  it('GenerateEvent consumes the payload without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        FindEventsBySource: jest.fn().mockResolvedValue([]),
+        CreateEvent: jest.fn().mockResolvedValue({ id: 'e1' }),
+      },
+    });
+    const prior = {
+      type: 'CreateComponent',
+      artifact: { content: { name: 'SaveButton', id: 'comp-1', type: 'Button', pageId: 'page-1' } },
+    };
+
+    const result = await service.executeEventStep(
+      {
+        type: 'GenerateEvent',
+        description: 'alert on click',
+        props: {
+          generatedStep: {
+            targetName: 'SaveButton',
+            eventId: 'click',
+            actionId: 'show-modal',
+            params: { modal: 'detailsModal' },
+          },
+        },
+      } as any,
+      { ...execContext, priorResults: [prior] },
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.CreateEvent).toHaveBeenCalledWith(
+      'v1',
+      expect.objectContaining({
+        name: 'onClick',
+        event: { eventId: 'onClick', actionId: 'show-modal', modal: 'detailsModal' },
+        eventType: 'component',
+        attachedTo: 'comp-1',
+        index: 0,
+      }),
+    );
+    expect(result.props).toEqual({
+      targetName: 'SaveButton',
+      eventId: 'onClick',
+      actionId: 'show-modal',
+      modal: 'detailsModal',
+    });
+    expect(result.identifier).toBe('SaveButton.onClick');
+  });
 });

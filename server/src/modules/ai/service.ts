@@ -3784,36 +3784,44 @@ export class AiService implements IAiService {
       );
     }
 
-    const stepContext = [
-      this.buildStepContextLines(step, context, previousError),
-      `Attachable targets (use the exact name):\n${targets
-        .map(
-          (target) =>
-            `- ${target.name} (${target.componentType ? `${target.componentType}, id ${target.id}` : `data query, id ${target.id}`})`,
-        )
-        .join("\n")}`,
-    ].join("\n\n");
+    // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "generateEvent", args: generatedArgs };
+    } else {
+      const stepContext = [
+        this.buildStepContextLines(step, context, previousError),
+        `Attachable targets (use the exact name):\n${targets
+          .map(
+            (target) =>
+              `- ${target.name} (${target.componentType ? `${target.componentType}, id ${target.id}` : `data query, id ${target.id}`})`,
+          )
+          .join("\n")}`,
+      ].join("\n\n");
 
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: `${GENERATE_EVENT_SYSTEM_PROMPT}\n\n${renderEventCatalogForPrompt()}`,
-        messages: [{ role: "user", content: stepContext }],
-      },
-      "executeEventStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-generate-event",
-      {
-        ...prompt,
-        tools: { generateEvent: generateEventTool },
-        toolChoice: { type: "tool", toolName: "generateEvent" },
-      },
-      context.organizationId,
-    );
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: `${GENERATE_EVENT_SYSTEM_PROMPT}\n\n${renderEventCatalogForPrompt()}`,
+          messages: [{ role: "user", content: stepContext }],
+        },
+        "executeEventStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-generate-event",
+        {
+          ...prompt,
+          tools: { generateEvent: generateEventTool },
+          toolChoice: { type: "tool", toolName: "generateEvent" },
+        },
+        context.organizationId,
+      );
 
-    const call = result?.toolCalls?.[0];
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "generateEvent") {
       throw new Error("The assistant did not produce an event definition");
     }
