@@ -248,6 +248,73 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
 
     await expect(service.listQueryableSources(USER, PERMISSIONS)).resolves.toEqual([]);
   });
+
+  // Increment 5 follow-up (ADR-0045): a plugin source is queryable when its manifest exposes
+  // a real operation dropdown — derived from the manifest, never a hardcoded kind list.
+  it('offers a plugin source whose manifest has a real operation dropdown, carrying the operations list', async () => {
+    const { service, dataSourcesRepository } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        plugin: {
+          operationsFile: {
+            data: {
+              properties: {
+                operation: {
+                  list: [
+                    { name: 'List members', value: 'list_users' },
+                    { name: 'Send message', value: 'send_message' },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    const sources = await service.listQueryableSources(USER, PERMISSIONS);
+
+    expect(sources).toEqual([
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        tables: [],
+        operations: [
+          { name: 'List members', value: 'list_users' },
+          { name: 'Send message', value: 'send_message' },
+        ],
+      },
+    ]);
+  });
+
+  // Notion's real operations.json has no flat `operation` dropdown (a resource/database/page
+  // tree instead) — there is nothing to ground a tool call in, so it's silently excluded,
+  // the same tolerant drop an unreadable SQL schema already gets.
+  it('excludes a plugin source whose manifest has no flat operation dropdown to ground a tool call in', async () => {
+    const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([
+      {
+        id: 'ds-notion',
+        name: 'Notion',
+        kind: 'notion',
+        plugin: { operationsFile: { data: { properties: { resource: {}, database: {}, page: {} } } } },
+      },
+    ]);
+
+    await expect(service.listQueryableSources(USER, PERMISSIONS)).resolves.toEqual([]);
+    expect(dataQueriesUtilService.listTables).not.toHaveBeenCalled();
+  });
+
+  it('excludes a plugin source with no plugin/operationsFile data at all, without throwing', async () => {
+    const { service, dataSourcesRepository } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([{ id: 'ds-mystery', name: 'Mystery', kind: 'mystery' }]);
+
+    await expect(service.listQueryableSources(USER, PERMISSIONS)).resolves.toEqual([]);
+  });
 });
 
 describe('renderConnectedDataSources (increment 5)', () => {
@@ -264,5 +331,22 @@ describe('renderConnectedDataSources (increment 5)', () => {
 
   it('renders nothing when there are no connected sources', () => {
     expect(renderConnectedDataSources([])).toBe('');
+  });
+
+  it('renders a plugin source by its operations, not a table list or "give a request path"', () => {
+    const rendered = renderConnectedDataSources([
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        tables: [],
+        operations: [
+          { name: 'List members', value: 'list_users' },
+          { name: 'Send message', value: 'send_message' },
+        ],
+      },
+    ]);
+
+    expect(rendered).toContain('Team Slack (slack), id ds-slack — a plugin; operations: list_users, send_message');
   });
 });

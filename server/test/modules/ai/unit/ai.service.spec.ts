@@ -577,3 +577,84 @@ describe('AiService.buildRestApiQueryProps (increment 5)', () => {
     ).rejects.toThrow(/does not match any connected data source.*Petstore \(ds-1\)/s);
   });
 });
+
+// ADR-0045: createQuery's plugin branch — flat, unwrapped options matching what a plugin's
+// own run(sourceOptions, queryOptions, ...) reads, an operation validated against the
+// resolved source's real operations list, and per-operation field keys left unvalidated
+// (operations.json's per-operation properties are UI descriptors, not a value schema).
+describe('AiService.buildPluginQueryProps (ADR-0045)', () => {
+  const { service } = buildAiService();
+
+  const context = {
+    dataSources: [
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        tables: [],
+        operations: [
+          { name: 'List members', value: 'list_users' },
+          { name: 'Send message', value: 'send_message' },
+        ],
+      },
+    ],
+  } as any;
+
+  it('builds flat, unwrapped options — operation plus the given fields, nothing wrapped in .value', async () => {
+    const props = await (service as any).buildPluginQueryProps(
+      {
+        name: 'notify_team',
+        data_source_id: 'ds-slack',
+        operation: 'send_message',
+        options: [
+          { key: 'channel', value: '#general' },
+          { key: 'message', value: 'Deploy finished' },
+        ],
+      },
+      context
+    );
+
+    expect(props).toEqual({
+      name: 'notify_team',
+      dataSourceId: 'ds-slack',
+      options: { operation: 'send_message', channel: '#general', message: 'Deploy finished' },
+    });
+  });
+
+  it('builds options with just the operation when no fields are given', async () => {
+    const props = await (service as any).buildPluginQueryProps(
+      { name: 'members', data_source_id: 'ds-slack', operation: 'list_users' },
+      context
+    );
+
+    expect(props).toEqual({
+      name: 'members',
+      dataSourceId: 'ds-slack',
+      options: { operation: 'list_users' },
+    });
+  });
+
+  it('rejects a missing operation', async () => {
+    await expect(
+      (service as any).buildPluginQueryProps({ name: 'x', data_source_id: 'ds-slack' }, context)
+    ).rejects.toThrow(/needs an operation/);
+  });
+
+  it('rejects an operation not in the resolved source\'s real operations list, naming what was available (retryable)', async () => {
+    await expect(
+      (service as any).buildPluginQueryProps(
+        { name: 'x', data_source_id: 'ds-slack', operation: 'delete_workspace' },
+        context
+      )
+    ).rejects.toThrow(/"delete_workspace" is not one of Team Slack's operations.*list_users, send_message/s);
+  });
+
+  it('rejects a data_source_id that is not among the connected sources, naming what was available (retryable)', async () => {
+    await expect(
+      (service as any).buildPluginQueryProps(
+        { name: 'x', data_source_id: 'not-real', operation: 'send_message' },
+        context
+      )
+    ).rejects.toThrow(/does not match any connected data source.*Team Slack \(ds-slack\)/s);
+  });
+});

@@ -497,7 +497,7 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - ButtonGroupV2: reference a Page id, give it a label, and optionally a list of short button labels (default 3 stock buttons).
 - DatePickerV2: reference a Page id, give it a label (optional default value, placeholder, and format).
 - Chat (EXPERIMENTAL — decorative only): reference a Page id (optional chat title). No query or event is wired to actually send/receive messages; use only when the PRD explicitly wants a chat UI mockup, not a working chat feature.
-Any widget type (except Page itself) accepts an optional parentComponentId: the id of a Container, Form or Listview already created in this plan on the same page, to nest this widget inside it instead of placing it directly on the page (a Listview has a single row template shared by every row it renders — you cannot address individual rows). For a ModalV2 already created in this plan, use its id for the body slot, "<modalId>-header" for the header slot, or "<modalId>-footer" for the footer slot — keep header/footer children small (a label, a button, an icon), they render in a thin strip. For a Tabs already created in this plan, use "<tabsId>-<tabIndex>" (0-based — the first tab is index 0, whether or not you gave tabs custom titles) to nest into that specific pane; a bare Tabs id is not valid on its own.
+Any widget type (except Page itself) accepts an optional parentComponentId: the id of a Container, Form or Listview already created in this plan on the same page, to nest this widget inside it instead of placing it directly on the page. A Listview has a single row template shared by every row it renders — you cannot address individual rows, so a widget nested there must bind its data-bearing property to {{listItem.<key>}} (using a key from the query the Listview displays), never a static value, or every rendered row will show identical content. For a ModalV2 already created in this plan, use its id for the body slot, "<modalId>-header" for the header slot, or "<modalId>-footer" for the footer slot — keep header/footer children small (a label, a button, an icon), they render in a thin strip. For a Tabs already created in this plan, use "<tabsId>-<tabIndex>" (0-based — the first tab is index 0, whether or not you gave tabs custom titles) to nest into that specific pane; a bare Tabs id is not valid on its own.
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
@@ -1270,6 +1270,7 @@ Call createQuery exactly once with a short snake_case query name (components wil
 - source "tooljetdb" — the default. Give the real id of a ToolJet DB table created earlier in this plan to list rows from.
 - source "sql" — only when this step is meant to read from a connected SQL data source the user has already connected. Give that source's real id and one SQL SELECT statement against a table that source actually has.
 - source "restapi" — only when this step is meant to call a connected REST API data source the user has already connected. Give that source's real id, the HTTP method, and a request path relative to that source's base URL (e.g. "/users/{{components.userId.value}}"). Headers, query params, and a request body are optional.
+- source "plugin" — only when this step is meant to call a connected plugin data source (Slack, Airtable, Google Sheets, and similar) the user has already connected. Give that source's real id, the exact operation value from its "operations" list in the connected data sources below, and any fields that operation needs as key/value pairs — the fields are plugin-specific and not listed here, so infer them from the operation's name and the PRD (e.g. Slack's "send_message" needs a channel and a message).
 
 Every id must come from the context below, never invented. Prefer ToolJet DB unless the PRD or this step clearly asks for data that lives in a connected source.`,
 ].join("\n\n");
@@ -1279,7 +1280,7 @@ Every id must come from the context below, never invented. Prefer ToolJet DB unl
 // let the model return an SQL string with a ToolJet DB table id, which is unbuildable.
 const createQueryTool = tool({
   description:
-    "Create a query against an existing ToolJet DB table, or against a connected SQL data source.",
+    "Create a query against an existing ToolJet DB table, or against a connected SQL, REST API, or plugin data source.",
   parameters: z.discriminatedUnion("source", [
     z.object({
       source: z.literal("tooljetdb"),
@@ -1339,6 +1340,28 @@ const createQueryTool = tool({
         .string()
         .optional()
         .describe("Optional raw request body, e.g. a JSON string, for post/put/patch"),
+    }),
+    z.object({
+      source: z.literal("plugin"),
+      name: z
+        .string()
+        .describe(
+          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
+        ),
+      data_source_id: z
+        .string()
+        .describe("id of a connected plugin data source (from the list in context)"),
+      operation: z
+        .string()
+        .describe(
+          "one of that data source's operation values, copied verbatim from its \"operations\" list in context",
+        ),
+      options: z
+        .array(z.object({ key: z.string(), value: z.string() }))
+        .optional()
+        .describe(
+          "the operation's own fields as key/value pairs (plugin- and operation-specific, e.g. channel/message for Slack's send_message)",
+        ),
     }),
   ]),
 });
@@ -3581,6 +3604,8 @@ export class AiService implements IAiService {
       headers?: Array<{ key: string; value: string }>;
       params?: Array<{ key: string; value: string }>;
       body?: string;
+      operation?: string;
+      options?: Array<{ key: string; value: string }>;
     };
     // Absent `source` lands on tooljetdb (see buildTooljetDbQueryProps) — a plan written
     // without one is a ToolJet DB plan, exactly as it always was.
@@ -3591,6 +3616,9 @@ export class AiService implements IAiService {
         break;
       case "restapi":
         props = await this.buildRestApiQueryProps(args, context);
+        break;
+      case "plugin":
+        props = await this.buildPluginQueryProps(args, context);
         break;
       default:
         props = this.buildTooljetDbQueryProps(args);
@@ -3997,6 +4025,57 @@ export class AiService implements IAiService {
         body: [],
         cookies: [],
       },
+    };
+  }
+
+  /**
+   * A query against a connected plugin data source (increment 5's `plugin` branch, initially
+   * deferred — see ADR-0045, `docs/adr/0045-plugin-query-branch.md`). Unlike
+   * restapi/sql, there is no single fixed option shape across plugins: each one's runtime
+   * `run()` reads whatever flat fields its own `operations.json` describes for the chosen
+   * operation (Slack's `send_message` wants `channel`/`message`; Airtable's `create_record`
+   * wants different fields entirely) — the same "options stored flat, unwrapped, exactly as
+   * `run()` reads them" convention `buildRestApiQueryProps` already established, just with a
+   * `plugin`-supplied key set instead of a fixed one.
+   */
+  private async buildPluginQueryProps(
+    args: {
+      name: string;
+      data_source_id?: string;
+      operation?: string;
+      options?: Array<{ key: string; value: string }>;
+    },
+    context: StepExecutionContext,
+  ) {
+    if (!args.operation?.trim()) {
+      throw new Error(
+        "A plugin query needs an operation, but none was given",
+      );
+    }
+
+    const dataSource = await this.resolveExternalDataSource(
+      args.data_source_id,
+      context,
+    );
+
+    const validOperations = dataSource.operations ?? [];
+    if (!validOperations.some((op) => op.value === args.operation)) {
+      const available = validOperations.length
+        ? validOperations.map((op) => op.value).join(", ")
+        : "none — this source has no usable operations";
+      throw new Error(
+        `operation "${args.operation}" is not one of ${dataSource.name}'s operations. Available: ${available}`,
+      );
+    }
+
+    const fields = Object.fromEntries(
+      (args.options ?? []).map(({ key, value }) => [key, value]),
+    );
+
+    return {
+      name: args.name,
+      dataSourceId: dataSource.id,
+      options: { operation: args.operation, ...fields },
     };
   }
 
