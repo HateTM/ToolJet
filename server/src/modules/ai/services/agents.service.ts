@@ -280,8 +280,8 @@ export class AgentsService implements IAgentsService {
    *  - 'Button':     { pageId, text }
    *  - 'Text':       { pageId, text }
    *  - 'TextInput':  { pageId, label, placeholder? }
-   *  - 'Container':  { pageId, title } — an empty container; nesting children into it is not
-   *    supported yet (out of this ticket's scope, no acceptance criterion asks for it)
+   *  - 'Container':  { pageId, title, parentComponentId? } — other widgets can nest inside it
+   *    (plan increment 4) by passing this Container's own id as their parentComponentId
    *  - 'Form':       { pageId, title, tableId, columns } — see createFormComponent's doc
    *    comment and ADR-0007. `pageId` is an earlier CreateComponent(Page) step's Artifact id,
    *    `queryName`/`tableId` reference earlier CreateQuery/CreateTable steps' real ids/names.
@@ -293,7 +293,8 @@ export class AgentsService implements IAgentsService {
    *  - 'Dropdown':   { pageId, label, options: string[], placeholder? } — options become the
    *    widget's static option list in display order
    *  - 'Modal':      { pageId, title, triggerButtonLabel? } — an empty modal with its default
-   *    trigger button; nesting children inside it is not supported (same as Container)
+   *    trigger button; nesting children inside it is still not supported (its slot needs a
+   *    dedicated modal-body layout this ticket doesn't cover — unlike Container/Form above)
    * Callers should treat an unrecognized `type` as retryable (unlike an unsupported Step
    * type, which can never succeed): the model chooses `type` per attempt, so a later retry
    * may pick a supported one.
@@ -605,7 +606,8 @@ export class AgentsService implements IAgentsService {
     name: string,
     properties: Record<string, any>,
     styles: Record<string, any>,
-    layout: { width: number; height: number }
+    layout: { width: number; height: number },
+    parentId?: string
   ): Promise<{ id: string; pageId: string; type: string; warnings?: string[] }> {
     const componentId = uuidv4();
     const sanitized = this.sanitizeWidgetDefinition(type, properties, styles);
@@ -623,7 +625,7 @@ export class AgentsService implements IAgentsService {
       }))
       .filter(
         (rect) =>
-          !rect.parent &&
+          (parentId ? rect.parent === parentId : !rect.parent) &&
           [rect.left, rect.top, rect.width, rect.height].every(
             (value) => typeof value === 'number' && Number.isFinite(value)
           )
@@ -656,7 +658,7 @@ export class AgentsService implements IAgentsService {
       [componentId]: {
         name,
         type,
-        parent: null,
+        parent: parentId ?? null,
         properties: sanitized.properties,
         styles: sanitized.styles,
         layouts: {
@@ -679,7 +681,7 @@ export class AgentsService implements IAgentsService {
    * `layouts.desktop` uses that widget's own `defaultSize` ({ width: 25, height: 460 }).
    */
   private async createTableComponent(appVersionId: string, props: any) {
-    const { pageId, title, queryName } = props ?? {};
+    const { pageId, title, queryName, parentComponentId } = props ?? {};
     const name = title || 'Table';
     const created = await this.createWidgetComponent(
       appVersionId,
@@ -707,6 +709,8 @@ export class AgentsService implements IAgentsService {
         tableType: { value: 'table-classic' },
       },
       { width: 25, height: 460 }
+    ,
+      parentComponentId
     );
     // `name` is the widget's component name (== its title) — surfaced here so the plan
     // context shows it to the model, letting an edit-mode Form reference this Table's
@@ -716,7 +720,7 @@ export class AgentsService implements IAgentsService {
 
   // defaultSize per button.js: { width: 4, height: 40 }.
   private async createButtonComponent(appVersionId: string, props: any) {
-    const { pageId, text } = props ?? {};
+    const { pageId, text, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -730,12 +734,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 4, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per text.js: { width: 6, height: 40 }.
   private async createTextComponent(appVersionId: string, props: any) {
-    const { pageId, text } = props ?? {};
+    const { pageId, text, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -748,12 +754,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 6, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per textinput.js: { width: 10, height: 40 }.
   private async createTextInputComponent(appVersionId: string, props: any) {
-    const { pageId, label, placeholder } = props ?? {};
+    const { pageId, label, placeholder, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -767,13 +775,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
-  // defaultSize per container.js: { width: 15, height: 450 }. Standalone/empty — nesting
-  // children into a Container isn't wired up yet (not asked for by this ticket).
+  // defaultSize per container.js: { width: 15, height: 450 }. Other widgets can nest inside
+  // it (plan increment 4) via their own parentComponentId referencing this Container's id.
   private async createContainerComponent(appVersionId: string, props: any) {
-    const { pageId, title } = props ?? {};
+    const { pageId, title, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -785,6 +795,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 15, height: 450 }
+    ,
+      parentComponentId
     );
   }
 
@@ -793,7 +805,7 @@ export class AgentsService implements IAgentsService {
   // widget renders with its own default empty data set. `type` is chart.js's own property
   // name for the rendering style ('line' | 'bar' | 'pie').
   private async createChartComponent(appVersionId: string, props: any) {
-    const { pageId, title, queryName, chartType = 'line' } = props ?? {};
+    const { pageId, title, queryName, chartType = 'line', parentComponentId } = props ?? {};
     const name = title || 'Chart';
     const created = await this.createWidgetComponent(
       appVersionId,
@@ -808,6 +820,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 20, height: 400 }
+    ,
+      parentComponentId
     );
     // Same surface as the Table builder: the plan context shows the query name, so a later
     // step (or edit-mode Form) can reference this chart's data source.
@@ -816,7 +830,7 @@ export class AgentsService implements IAgentsService {
 
   // defaultSize per image.js: { width: 10, height: 240 }.
   private async createImageComponent(appVersionId: string, props: any) {
-    const { pageId, source, alternativeText } = props ?? {};
+    const { pageId, source, alternativeText, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -830,13 +844,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 240 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per checkbox.js: { width: 6, height: 30 }. `defaultValue` is the widget's
   // own property name for the initial checked state (its switch options are {{true}}/{{false}}).
   private async createCheckboxComponent(appVersionId: string, props: any) {
-    const { pageId, label, defaultChecked = false } = props ?? {};
+    const { pageId, label, defaultChecked = false, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -849,6 +865,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 6, height: 30 }
+    ,
+      parentComponentId
     );
   }
 
@@ -856,7 +874,7 @@ export class AgentsService implements IAgentsService {
   // static (non-advanced) option list; each entry needs the per-field wrapper shape
   // ({ value: ... }) dropdownV2.js's own definition.defaults uses for disable/visible/default.
   private async createDropdownComponent(appVersionId: string, props: any) {
-    const { pageId, label, options, placeholder } = props ?? {};
+    const { pageId, label, options, placeholder, parentComponentId } = props ?? {};
     const list = (options || []).map((option: string, index: number) => ({
       label: String(option),
       value: String(option),
@@ -879,6 +897,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
@@ -887,7 +907,7 @@ export class AgentsService implements IAgentsService {
   // config's display name 'ModalLegacy'). Standalone/empty — like Container, placing
   // children inside isn't wired up; the default trigger button keeps it openable.
   private async createModalComponent(appVersionId: string, props: any) {
-    const { pageId, title, triggerButtonLabel } = props ?? {};
+    const { pageId, title, triggerButtonLabel, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -903,12 +923,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 34 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per textarea.js: { width: 10, height: 100 }.
   private async createTextAreaComponent(appVersionId: string, props: any) {
-    const { pageId, label, placeholder, value } = props ?? {};
+    const { pageId, label, placeholder, value, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -922,12 +944,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 100 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per passwordinput.js: { width: 10, height: 40 }.
   private async createPasswordInputComponent(appVersionId: string, props: any) {
-    const { pageId, label, placeholder } = props ?? {};
+    const { pageId, label, placeholder, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -941,12 +965,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per numberinput.js: { width: 10, height: 40 }.
   private async createNumberInputComponent(appVersionId: string, props: any) {
-    const { pageId, label, placeholder, defaultValue } = props ?? {};
+    const { pageId, label, placeholder, defaultValue, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -960,12 +986,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per emailinput.js: { width: 10, height: 40 }.
   private async createEmailInputComponent(appVersionId: string, props: any) {
-    const { pageId, label, placeholder } = props ?? {};
+    const { pageId, label, placeholder, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -979,12 +1007,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per link.js: { width: 6, height: 30 }.
   private async createLinkComponent(appVersionId: string, props: any) {
-    const { pageId, text, url, openInNewTab = true } = props ?? {};
+    const { pageId, text, url, openInNewTab = true, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -998,12 +1028,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 6, height: 30 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per divider.js: { width: 10, height: 10 }.
   private async createDividerComponent(appVersionId: string, props: any) {
-    const { pageId, label } = props ?? {};
+    const { pageId, label, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1015,13 +1047,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 10 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per icon.js: { width: 5, height: 48 }. `icon` is a Tabler icon name
   // (e.g. "IconHome2") — no catalog validated here, an unknown name just renders blank.
   private async createIconComponent(appVersionId: string, props: any) {
-    const { pageId, icon } = props ?? {};
+    const { pageId, icon, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1033,13 +1067,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 5, height: 48 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per starrating.js: { width: 10, height: 30 }. Meta carries this widget's
   // legacy `visible` property name (not `visibility`, unlike every other widget here).
   private async createStarRatingComponent(appVersionId: string, props: any) {
-    const { pageId, label, maxRating = 5, defaultSelected = 0 } = props ?? {};
+    const { pageId, label, maxRating = 5, defaultSelected = 0, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1053,12 +1089,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 30 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per statistics.js: { width: 10, height: 152 }.
   private async createStatisticsComponent(appVersionId: string, props: any) {
-    const { pageId, primaryLabel, primaryValue, secondaryLabel, secondaryValue } = props ?? {};
+    const { pageId, primaryLabel, primaryValue, secondaryLabel, secondaryValue, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1073,6 +1111,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 152 }
+    ,
+      parentComponentId
     );
   }
 
@@ -1087,7 +1127,7 @@ export class AgentsService implements IAgentsService {
   ];
 
   private async createTagsComponent(appVersionId: string, props: any) {
-    const { pageId, tags } = props ?? {};
+    const { pageId, tags, parentComponentId } = props ?? {};
     const list = (tags?.length ? tags : ['success', 'info', 'warning', 'danger']).map(
       (title: string, index: number) => ({
         title,
@@ -1107,12 +1147,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 9, height: 30 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per currencyinput.js: { width: 10, height: 40 }.
   private async createCurrencyInputComponent(appVersionId: string, props: any) {
-    const { pageId, label, placeholder, defaultValue } = props ?? {};
+    const { pageId, label, placeholder, defaultValue, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1126,12 +1168,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per phoneinput.js: { width: 10, height: 40 }.
   private async createPhoneInputComponent(appVersionId: string, props: any) {
-    const { pageId, label, placeholder } = props ?? {};
+    const { pageId, label, placeholder, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1145,6 +1189,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
@@ -1152,7 +1198,7 @@ export class AgentsService implements IAgentsService {
   // Meta carries `visibility`/`disabledState` under styles, not properties — a quirk of this
   // legacy widget's own definition, not a bug here.
   private async createDatepickerComponent(appVersionId: string, props: any) {
-    const { pageId, defaultValue, placeholder, format } = props ?? {};
+    const { pageId, defaultValue, placeholder, format, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1167,6 +1213,8 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       { width: 5, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
@@ -1177,7 +1225,7 @@ export class AgentsService implements IAgentsService {
   // defaultSize per tabs.js: { width: 15, height: 450 }, but generateComponentLayout special-
   // cases 'Tabs' to TABS_FIXED_LAYOUT regardless of the size passed here (one Tabs per page).
   private async createTabsComponent(appVersionId: string, props: any) {
-    const { pageId, tabs } = props ?? {};
+    const { pageId, tabs, parentComponentId } = props ?? {};
     const titles = tabs?.length ? tabs : ['Home', 'Profile', 'Settings'];
     const tabsLiteral = titles
       .map((title: string, index: number) => `{ title: '${String(title).replace(/'/g, "\\'")}', id: '${index}' }`)
@@ -1194,13 +1242,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 15, height: 450 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per listview.js: { width: 15, height: 450 }. Binds to a query's data when
   // one is referenced, otherwise keeps the widget's own stock demo rows.
   private async createListviewComponent(appVersionId: string, props: any) {
-    const { pageId, queryName } = props ?? {};
+    const { pageId, queryName, parentComponentId } = props ?? {};
     const created = await this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1213,13 +1263,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 15, height: 450 }
+    ,
+      parentComponentId
     );
     return { ...created, queryName };
   }
 
   // defaultSize per iframe.js: { width: 10, height: 310 }.
   private async createIFrameComponent(appVersionId: string, props: any) {
-    const { pageId, source } = props ?? {};
+    const { pageId, source, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1231,12 +1283,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 310 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per filepicker.js: { width: 15, height: 140 }.
   private async createFilePickerComponent(appVersionId: string, props: any) {
-    const { pageId, label } = props ?? {};
+    const { pageId, label, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1248,6 +1302,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 15, height: 140 }
+    ,
+      parentComponentId
     );
   }
 
@@ -1255,7 +1311,7 @@ export class AgentsService implements IAgentsService {
   // builder above; unlike it, ModalV2 has no `title` property of its own — its header content
   // is a child slot, which (like every widget here) isn't nestable yet.
   private async createModalV2Component(appVersionId: string, props: any) {
-    const { pageId, triggerButtonLabel } = props ?? {};
+    const { pageId, triggerButtonLabel, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1268,13 +1324,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per treeSelect.js: { width: 12, height: 200 }. Keeps the widget's own stock
   // demo tree — building a real hierarchy from a flat prop list is out of this ticket's scope.
   private async createTreeSelectComponent(appVersionId: string, props: any) {
-    const { pageId, label } = props ?? {};
+    const { pageId, label, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1285,12 +1343,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 12, height: 200 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per html.js: { width: 10, height: 310 }.
   private async createHtmlComponent(appVersionId: string, props: any) {
-    const { pageId, html } = props ?? {};
+    const { pageId, html, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1301,6 +1361,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 310 }
+    ,
+      parentComponentId
     );
   }
 
@@ -1308,7 +1370,7 @@ export class AgentsService implements IAgentsService {
   // list shape (createDropdownComponent), plus the icon/disable wrappers PopoverMenu itself
   // stores per entry.
   private async createPopoverMenuComponent(appVersionId: string, props: any) {
-    const { pageId, label, options } = props ?? {};
+    const { pageId, label, options, parentComponentId } = props ?? {};
     const list = (options?.length ? options : ['option1', 'option2', 'option3']).map(
       (option: string, index: number) => ({
         format: 'plain',
@@ -1333,12 +1395,14 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 6, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per buttonGroupV2.js: { width: 12, height: 80 }.
   private async createButtonGroupComponent(appVersionId: string, props: any) {
-    const { pageId, label, options } = props ?? {};
+    const { pageId, label, options, parentComponentId } = props ?? {};
     const list = (options?.length ? options : ['Button1', 'Button2', 'Button3']).map(
       (option: string, index: number) => ({
         label: String(option),
@@ -1361,13 +1425,15 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 12, height: 80 }
+    ,
+      parentComponentId
     );
   }
 
   // defaultSize per datepickerV2.js: { width: 10, height: 40 }. Unlike the legacy Datepicker
   // builder above, visibility lives under properties here (matches the current widget).
   private async createDatePickerV2Component(appVersionId: string, props: any) {
-    const { pageId, label, defaultValue, placeholder, format } = props ?? {};
+    const { pageId, label, defaultValue, placeholder, format, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1382,6 +1448,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 40 }
+    ,
+      parentComponentId
     );
   }
 
@@ -1389,7 +1457,7 @@ export class AgentsService implements IAgentsService {
   // wired to actually send or receive messages (that needs increment 5/6 machinery this
   // ticket doesn't build); the tool description flags it experimental for the same reason.
   private async createChatComponent(appVersionId: string, props: any) {
-    const { pageId, chatTitle } = props ?? {};
+    const { pageId, chatTitle, parentComponentId } = props ?? {};
     return this.createWidgetComponent(
       appVersionId,
       pageId,
@@ -1401,6 +1469,8 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 15, height: 400 }
+    ,
+      parentComponentId
     );
   }
 
@@ -1439,7 +1509,7 @@ export class AgentsService implements IAgentsService {
    *    to also have created a Table widget (named `tableName`) bound to the same table.
    */
   private async createFormComponent(appVersionId: string, organizationId: string, props: any) {
-    const { pageId, title, tableId, columns, mode = 'create', tableName } = props ?? {};
+    const { pageId, title, tableId, columns, mode = 'create', tableName, parentComponentId } = props ?? {};
     const formName = this.buildSafeFormName(title);
     const isEdit = mode === 'edit';
     const writableColumns = (columns || []).filter((column: any) => !column?.constraints_type?.is_primary_key);
@@ -1491,7 +1561,8 @@ export class AgentsService implements IAgentsService {
         borderColor: { value: 'var(--cc-weak-border)' },
         borderRadius: { value: '6' },
       },
-      { width: 15, height: 450 }
+      { width: 15, height: 450 },
+      parentComponentId
     );
 
     // Column bindings are identical across modes: each writable column's value template-binds

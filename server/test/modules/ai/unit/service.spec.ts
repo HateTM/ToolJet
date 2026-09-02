@@ -1430,6 +1430,112 @@ describe('AiService.approvePrd', () => {
     );
   });
 
+  it('rejects a component step whose parentComponentId does not match a Container/Form created in this plan, then succeeds once the retry references the real one (increment 4)', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateComponent', description: 'Add a container to the page' },
+        { type: 'CreateComponent', description: 'Add a text input inside the container' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Container', pageId: 'page-1', title: 'Sidebar' }))
+      // Attempt 1: hallucinated parentComponentId that doesn't match the real Container below.
+      .mockResolvedValueOnce(
+        componentToolCall({
+          type: 'TextInput',
+          pageId: 'page-1',
+          label: 'Name',
+          parentComponentId: 'made-up-container-id',
+        })
+      )
+      // Attempt 2 (retry): the real Container id.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'TextInput', pageId: 'page-1', label: 'Name', parentComponentId: 'container-1' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Add a container to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a text input inside the container',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' })
+      .mockResolvedValueOnce({ id: 'container-1', pageId: 'page-1', type: 'Container' })
+      .mockResolvedValueOnce({ id: 'component-1', pageId: 'page-1', type: 'TextInput' });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'container-1', pageId: 'page-1', type: 'Container' },
+        identifier: 'container-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'component-1', pageId: 'page-1', type: 'TextInput' },
+        identifier: 'component-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    // CreateComponent is called three times total: Page, Container, and the TextInput's
+    // successful (second) attempt — the hallucinated-parentComponentId attempt never reached it.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(3);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(3, 'version-1', 'org-1', 'TextInput', {
+      pageId: 'page-1',
+      label: 'Name',
+      parentComponentId: 'container-1',
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-3',
+      expect.objectContaining({
+        attempts: 1,
+        errorMessage: expect.stringContaining('parentComponentId "made-up-container-id" does not match'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-3',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
   it('builds a working page end to end: CreateTable → CreateComponent(Page) → CreateQuery → CreateComponent(Table), each step referencing the real prior artifacts', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
@@ -4963,7 +5069,10 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
     const { service, aiUtilService } = buildService();
     aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
     aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
-      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'trimmed' },
+      ],
       truncated: [
         { role: 'user', originalTokens: 100, keptTokens: 50, droppedTokens: 50, reason: 'content-truncated' },
       ],
@@ -5012,7 +5121,10 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
       toolCalls: [{ toolName: 'writeCode', args: { code: 'x', explanation: 'ok' } }],
     });
     aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
-      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'trimmed' },
+      ],
       truncated: [],
     });
 
@@ -5041,9 +5153,17 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
     aiUtilService.AIGatewayGenerate.mockResolvedValue({
       toolCalls: [{ toolName: 'proposeStepPlan', args: { steps: [{ type: 'createTable', description: 't' }] } }],
     });
-    stepRepository.createOne.mockResolvedValue({ id: 'step-1', type: 'CreateTable', description: 't', status: 'pending' });
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      type: 'CreateTable',
+      description: 't',
+      status: 'pending',
+    });
     aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
-      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'trimmed' },
+      ],
       truncated: [],
     });
 
@@ -5055,10 +5175,7 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
 
     expect(aiUtilService.fitMessagesToContextWindowForOrg).toHaveBeenCalledWith(
       'org-1',
-      expect.arrayContaining([
-        expect.objectContaining({ role: 'system' }),
-        expect.objectContaining({ role: 'user' }),
-      ])
+      expect.arrayContaining([expect.objectContaining({ role: 'system' }), expect.objectContaining({ role: 'user' })])
     );
     expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
       'openai',

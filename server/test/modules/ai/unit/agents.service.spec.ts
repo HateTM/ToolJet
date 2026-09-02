@@ -210,6 +210,35 @@ describe('AgentsService.CreateComponent', () => {
     expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
   });
 
+  it('nests a new component inside a Container via parentComponentId, scoping siblings to that parent (increment 4)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    componentsService.getAllComponents.mockResolvedValue({
+      'root-sibling': {
+        component: { name: 'Header', component: 'Text', parent: null },
+        layouts: { desktop: { left: 1, top: 5, width: 6, height: 40 } },
+      },
+      'child-in-container': {
+        component: { name: 'Field', component: 'TextInput', parent: 'container-1' },
+        layouts: { desktop: { left: 1, top: 5, width: 10, height: 40 } },
+      },
+    });
+
+    await service.CreateComponent('version-1', 'org-1', 'Button', {
+      pageId: 'page-1',
+      text: 'Save',
+      parentComponentId: 'container-1',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.parent).toBe('container-1');
+    // Placed below the existing child of the SAME parent (45 + 10 gap), ignoring the
+    // page-level 'root-sibling' entirely — nested children live in their own coordinate space.
+    expect(definition.layouts.desktop).toEqual({ left: 1, top: 55, width: 4, height: 40 });
+    expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
+  });
+
   it('fails the creation instead of overlapping when sibling compaction is rejected (ticket #63)', async () => {
     const { service, componentsService } = buildAgentsService();
     componentsService.create.mockResolvedValue({});
@@ -839,9 +868,9 @@ describe('AgentsService.UpdateComponent (ticket #66)', () => {
     const { service, componentsService } = buildAgentsService();
     componentsService.findOneWithLayouts.mockRejectedValue(new Error('Component with id ghost not found'));
 
-    await expect(
-      service.UpdateComponent('version-1', 'org-1', 'ghost', { properties: { text: 'x' } })
-    ).rejects.toThrow('Component "ghost" does not exist');
+    await expect(service.UpdateComponent('version-1', 'org-1', 'ghost', { properties: { text: 'x' } })).rejects.toThrow(
+      'Component "ghost" does not exist'
+    );
     expect(componentsService.update).not.toHaveBeenCalled();
   });
 });
