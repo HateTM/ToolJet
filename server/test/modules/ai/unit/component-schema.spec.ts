@@ -231,26 +231,42 @@ describe('component schema validation (ticket #60)', () => {
   // Each of AgentsService's Wave 1 builders sets exactly these properties — a dropped one here
   // would mean the widget renders with a property missing.
   describe('Wave 1 widget meta (plan increment 3)', () => {
-    const wave1Properties: Record<string, string[]> = {
-      TextArea: ['label', 'placeholder', 'value', 'visibility'],
-      PasswordInput: ['label', 'placeholder', 'value', 'visibility'],
-      NumberInput: ['label', 'placeholder', 'value', 'visibility'],
-      EmailInput: ['label', 'placeholder', 'value', 'visibility'],
-      Link: ['linkText', 'linkTarget', 'targetType', 'visibility'],
-      Divider: ['label', 'visibility'],
-      Icon: ['icon', 'visibility'],
-      StarRating: ['label', 'maxRating', 'defaultSelected', 'visible'],
-      Statistics: ['primaryValueLabel', 'primaryValue', 'visibility'],
-      Tags: ['data'],
-      CurrencyInput: ['label', 'placeholder', 'value', 'visibility'],
-      PhoneInput: ['label', 'placeholder', 'value', 'visibility'],
+    // Mirrors exactly what each AgentsService builder passes (agents.service.ts) — real
+    // per-property types, not a placeholder string, so a type mismatch (e.g. StarRating's
+    // maxRating expecting a number) is caught here rather than only at runtime.
+    const wave1PropertyInputs: Record<string, Record<string, any>> = {
+      TextArea: { label: { value: 'Label' }, placeholder: { value: '' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      PasswordInput: { label: { value: 'Label' }, placeholder: { value: 'Password' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      NumberInput: { label: { value: 'Label' }, placeholder: { value: '' }, value: { value: 0 }, visibility: { value: '{{true}}' } },
+      EmailInput: { label: { value: 'Label' }, placeholder: { value: 'Enter email' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      Link: {
+        linkText: { value: 'Click here' },
+        linkTarget: { value: 'https://dev.to/' },
+        targetType: { value: 'new' },
+        visibility: { value: '{{true}}' },
+      },
+      Divider: { label: { value: '' }, visibility: { value: '{{true}}' } },
+      Icon: { icon: { value: 'IconHome2' }, visibility: { value: '{{true}}' } },
+      StarRating: {
+        label: { value: 'Select your rating' },
+        maxRating: { value: '5' },
+        defaultSelected: { value: '0' },
+        visible: { value: '{{true}}' },
+      },
+      Statistics: {
+        primaryValueLabel: { value: 'This months earnings' },
+        primaryValue: { value: '682.3' },
+        visibility: { value: '{{true}}' },
+      },
+      Tags: { data: { value: "{{ [ { title: 'success', color: '#34A94733', textColor: '#34A947' } ] }}" } },
+      CurrencyInput: { label: { value: 'Label' }, placeholder: { value: 'Enter your number' }, value: { value: 0 }, visibility: { value: '{{true}}' } },
+      PhoneInput: { label: { value: 'Label' }, placeholder: { value: 'Enter your input' }, value: { value: '' }, visibility: { value: '{{true}}' } },
     };
 
-    it.each(Object.entries(wave1Properties))('%s: builder properties all pass sanitization', (type, props) => {
-      const input = Object.fromEntries(props.map((prop) => [prop, { value: 'x' }]));
+    it.each(Object.entries(wave1PropertyInputs))('%s: builder properties all pass sanitization', (type, input) => {
       const { result, warnings } = sanitizeComponentSection(type, 'properties', input);
 
-      expect(Object.keys(result)).toEqual(props);
+      expect(Object.keys(result)).toEqual(Object.keys(input));
       expect(warnings).toHaveLength(0);
     });
 
