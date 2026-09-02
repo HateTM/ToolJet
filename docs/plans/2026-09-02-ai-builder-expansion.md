@@ -36,10 +36,13 @@
 
 ## 5. REST/plugin запросы
 
-- [ ] `createQueryTool`: ветка `source: "restapi"` (url/method/headers/params/body) + generic `source: "plugin"` (pluginId + options по манифесту).
-- [ ] Grounding: REST/plugin источники в connected-sources блоке (kind + подсказки манифеста).
-- [ ] SQL read-only гейт не распространяется на REST/plugin; опции валидируются по манифесту.
-- [ ] Промпты из библиотеки (`generateQuery`).
+- [x] `createQueryTool`: ветка `source: "restapi"` (method/url/headers/params/body). Реализовано: `buildRestApiQueryProps` (`server/src/modules/ai/service.ts`) собирает options в формате, который реально читает раннер плагина (`plugins/packages/restapi/lib/index.ts`) и редактор запроса (`frontend/.../QueryEditors/Restapi/index.jsx`) — `url_params`/`headers` как массивы пар, `body_toggle`/`raw_body`. Общий `resolveExternalDataSource` вынесен из `buildExternalQueryProps`, чтобы обе внешние ветки давали идентичный retryable-текст на галлюцинированный `data_source_id`.
+- [x] Grounding: restapi-источники теперь проходят `DataSourceInventoryService.listQueryableSources` (раньше отфильтровывались `SQL_QUERYABLE_KINDS`, а затем — что важнее — падали бы под правило «нет таблиц»: у REST-источника схемы нет). `renderConnectedDataSources` рендерит отдельную строку для restapi-кинда без списка таблиц.
+- [x] SQL read-only гейт (`isSingleReadOnlyStatement`/`validateMergedQueryOptions`) не трогает restapi-опции — гейт условен на `mode === 'sql'`, у restapi-опций такого поля нет; `resolveCreateTableTarget` уже игнорирует не-postgresql источники, так что расширение inventory не открывает CreateTable против REST. Проверено без изменений кода.
+- [ ] `source: "plugin"` (pluginId + generic options по манифесту) — отложено в этом инкременте: манифест-driven валидация не по чему собирать без дополнительной прокладки (см. `server/data-migrations/1784790000000-BackfillAiPluginManifestType.ts` как отправную точку для следующего прохода). Та же практика сужения скоупа, что и DropdownV2/Tabs-Listview-slots/layout-in-patch.
+- [ ] Промпты из библиотеки (`generateQuery`) для restapi/plugin — не переносились, промпт остаётся форк-специфичным (как и было решено для СУБД-ветки).
+
+Тесты: `data-source-inventory.service.spec.ts` (restapi выживает без таблиц, кинды в `renderConnectedDataSources`), `ai.service.spec.ts` (`buildRestApiQueryProps` — happy path/дефолты/ошибки, включая hallucinated id).
 
 ## 6. Interrupt-модель
 
