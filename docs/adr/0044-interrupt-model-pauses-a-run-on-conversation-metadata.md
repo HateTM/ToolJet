@@ -2,7 +2,7 @@
 
 Date: 2026-09-02
 Ticket: plan increment 6 (Interrupt model)
-Status: Accepted (transport + `select_datasource`; `clarify_prd` deferred — see Scope)
+Status: Accepted (transport + `select_datasource`; `clarify_prd` closed as not required — see Scope)
 
 ## Context
 
@@ -29,7 +29,8 @@ An `Interrupt` is a pause point inside a step-execution or PRD flow that needs a
 The plan names two V1 interrupt types. They are not equally cheap:
 
 - **`select_datasource`** has a real, already-existing ambiguity point: `resolveExternalDataSource` (used by both the SQL and REST API `CreateQuery` branches) throws today whenever `data_source_id` is missing or doesn't match a connected source. When it's missing specifically *and there is more than one connected data source* (`context.dataSources.length > 1`), that isn't a model mistake to retry — it's a genuine question only the user can answer, since the prompt's connected-sources block cannot force the model to always guess right. This ADR changes exactly that branch: instead of throwing, it raises a `select_datasource` interrupt with the candidate list as payload and uses the answered id. An invalid (non-matching) id is left as a retryable model error, unchanged — that's a hallucination, not ambiguity.
-- **`clarify_prd`** would need the *model* to signal ambiguity during PRD generation (a new prompt/structured-output surface, a new suspend point inside `sendUserMessage`'s flow rather than inside `approvePrd`'s step loop), which is design work beyond wiring the transport. Following this plan's own established practice for narrowing scope (DropdownV2, Tabs/Listview slots, layout-in-Update, the `plugin` query branch), it is deferred rather than half-built. The transport (`raiseInterrupt`/`interrupt-answer`) is written generically so `clarify_prd` is a second call site, not a second protocol, once that design work happens.
+- **`clarify_prd` is not built, and — on closer look at `sendUserMessage` — not needed as an `Interrupt` at all.** The plan named it as a second V1 type on the assumption that PRD ambiguity needed the same pause-and-resume shape as `select_datasource`. It doesn't: `PRD_SYSTEM_PROMPT` already instructs the model to "ask clarifying questions if the request is ambiguous or underspecified", and `sendUserMessage` is turn-based, not a single long-lived connection — each user message is its own HTTP request that either returns a PRD or returns an AI message asking a clarifying question, then `response.end()`s. The user's next message is an entirely separate `sendUserMessage` call, not an answer picked up by a poll on a paused connection. There is no live run to suspend before a PRD is even proposed, and no live run to resume into — the ordinary chat loop already *is* the pause-and-resume. `approvePrd` (the only call site an `Interrupt` could suspend) never runs until the user has seen and approved a PRD, so an approved plan is never ambiguous at the PRD level by construction.
+  Retrofitting `clarify_prd` as a structured `Interrupt` would mean inventing a suspended state for `sendUserMessage` across separate HTTP requests — a materially different (and unproven, unlike `select_datasource`'s reuse of ADR-0042's mechanism) shape than everything else in this ADR — solely to duplicate free-text Q&A that already works. This is closed as **not required**, not deferred: nothing about the transport built here would carry over to a different mechanism. If PRD clarification later wants a nicer UX (e.g. quick-reply chips instead of typed answers), that is a presentation-layer change to the existing AI message rendering, not an `Interrupt` type.
 
 ## Consequences
 
