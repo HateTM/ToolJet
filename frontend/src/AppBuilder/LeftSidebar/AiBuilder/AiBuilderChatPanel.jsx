@@ -20,11 +20,47 @@ import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
 import SchemaPreview from './SchemaPreview';
 import useAiBuilderStore from '@/_stores/aiBuilderStore';
+import { aiService } from '@/_services/ai.service';
 import PromptEditor from '@/modules/AiBuilder/components/CreateAppWithPrompt/PromptEditor/PromptEditor';
 import { useMentionCatalog } from './mentionCatalog';
 import { mentionCompletion } from './mentionCompletion';
 
 const tAiBuilder = (t, key, fallback) => t(`leftSidebar.AI Builder.${key}`, fallback);
+
+// Cumulative LLM token spend of the current thread (conversation metadata). Fetches when the
+// thread changes and refreshes as messages complete; hidden until there is anything to show.
+const TokenUsageIndicator = () => {
+  const conversationId = useAiBuilderStore((state) => state.currentConversationId);
+  const messages = useAiBuilderStore((state) => state.messages);
+  const [usage, setUsage] = useState(null);
+
+  useEffect(() => {
+    if (!conversationId) {
+      setUsage(null);
+      return undefined;
+    }
+    let cancelled = false;
+    aiService
+      .getTokenUsage(conversationId)
+      .then((data) => {
+        if (!cancelled) setUsage(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, messages?.length]);
+
+  if (!usage?.totalTokens) return null;
+  return (
+    <div
+      className="tw-px-3 tw-pt-1 tw-text-right tw-text-xxs tw-text-text-placeholder"
+      data-cy="ai-builder-token-usage"
+    >
+      {usage.totalTokens.toLocaleString()} tokens
+    </div>
+  );
+};
 
 const ConversationHistory = ({ conversations, onSelect, onClose }) => {
   const { t } = useTranslation();
@@ -824,6 +860,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
         </div>
       )}
 
+      <TokenUsageIndicator />
       <div className="tw-flex tw-items-end tw-gap-2 tw-border-0 tw-border-t tw-border-solid tw-border-border-weak tw-p-3">
         {/* Ticket #27: the composer is the CodeMirror PromptEditor (same editor as the
             homepage prompt) extended with @-mention autocomplete over the app's
