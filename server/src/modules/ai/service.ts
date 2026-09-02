@@ -2889,6 +2889,7 @@ export class AiService implements IAiService {
     budgetedMessages: Array<{ role: string; content: string }>,
     organizationId: string,
     abortSignal: AbortSignal,
+    usageSink?: { usage?: Promise<any> | any },
   ): AsyncGenerator<string> {
     if (this.generationEngineClient.isConfigured()) {
       for await (const event of this.generationEngineClient.streamPrd(
@@ -2912,6 +2913,10 @@ export class AiService implements IAiService {
       { messages: budgetedMessages },
       organizationId,
     );
+
+    if (usageSink) {
+      usageSink.usage = result.usage;
+    }
 
     for await (const chunk of result.textStream) {
       yield chunk;
@@ -3038,16 +3043,18 @@ export class AiService implements IAiService {
     response.once("close", () => abortController.abort());
 
     try {
+      const usageSink: { usage?: Promise<any> | any } = {};
       for await (const chunk of this.streamPrdText(
         budgetedMessages,
         organizationId,
         abortController.signal,
+        usageSink,
       )) {
         fullText += chunk;
         this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
       }
 
-      const metadata = await this.captureUsageMetadata(result);
+      const metadata = await this.captureUsageMetadata(usageSink);
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
