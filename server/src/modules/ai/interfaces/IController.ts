@@ -20,6 +20,7 @@ export interface IAiController {
   skipStep(user: User, body: any): Promise<any>;
 
   confirmStep(user: User, body: any): Promise<any>;
+  interruptAnswer(user: User, body: any): Promise<any>;
 
   regenerateAiMessage(user: User, body: any): Promise<any>;
 

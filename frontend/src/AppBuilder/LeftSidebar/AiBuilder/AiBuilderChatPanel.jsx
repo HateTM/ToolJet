@@ -509,6 +509,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     rewindingStepId,
     skippingStepId,
     undoingBuild,
+    interrupt,
+    isAnsweringInterrupt,
     votes,
     regeneratingMessageId,
     promotingMessageId,
@@ -528,6 +530,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     rewindStep,
     skipStep,
     undoBuild,
+    answerInterrupt,
     voteMessage,
     regenerateMessage,
     promoteConversation,
@@ -549,6 +552,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.rewindingStepId,
       state.skippingStepId,
       state.undoingBuild,
+      state.interrupt,
+      state.isAnsweringInterrupt,
       state.votes,
       state.regeneratingMessageId,
       state.promotingMessageId,
@@ -568,6 +573,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.rewindStep,
       state.skipStep,
       state.undoBuild,
+      state.answerInterrupt,
       state.voteMessage,
       state.regenerateMessage,
       state.promoteConversation,
@@ -834,6 +840,33 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       {/* Steps (and the rewind control on each) belong to an approved PRD's execution — a
           Learn conversation never produces one, so the whole strip stays out of that mode.
           Skip (ticket #21) is only offered while the plan is actually executing. */}
+      {/* ADR-0044: a `select_datasource` interrupt pauses the run on the backend's own
+          poll — this card is the only UI, there is no fallback if it's ignored other than
+          the 30-minute interrupt timeout failing the run. */}
+      {!isLearnMode && interrupt?.type === 'select_datasource' && (
+        <div
+          data-cy="ai-builder-interrupt-select-datasource"
+          className="tw-flex tw-flex-col tw-gap-2 tw-border tw-border-border-weak tw-bg-background-surface-layer02 tw-px-3 tw-py-2 tw-text-xs"
+        >
+          <span className="tw-text-text-secondary">
+            {tAiBuilder(t, 'interruptSelectDatasource', 'Which data source should this query use?')}
+          </span>
+          <div className="tw-flex tw-flex-wrap tw-gap-2">
+            {(interrupt.payload?.candidates || []).map((candidate) => (
+              <Button
+                key={candidate.id}
+                size="small"
+                variant="secondary"
+                disabled={isAnsweringInterrupt}
+                onClick={() => answerInterrupt({ dataSourceId: candidate.id })}
+              >
+                {candidate.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!isLearnMode && steps.length > 0 && (
         <StepProgressList
           steps={steps}

@@ -46,12 +46,13 @@
 
 ## 6. Interrupt-модель
 
-- [ ] ADR-0028 + термины `Interrupt`/`Resume` в `CONTEXT.md`.
-- [ ] SSE `interrupt` `{interruptId, type, payload, suggestions}`; V1: `clarify_prd`, `select_datasource`.
-- [ ] Пауза — `conversation.metadata.interrupt` + suspend-точка в `approvePrd` (await/promise); ранн не снимается.
-- [ ] `POST /ai/conversation/:id/interrupt-answer` — валидация, снятие паузы, ответ в LLM-контекст; повтор/чужой → 409.
-- [ ] Фронт: обработка `interrupt` в `aiBuilderStore.js`, карточка вопроса (текст+чипы; пикер дата-сорсов), `interruptAnswer()` в `ai.service.js`.
-- [ ] approve-prd сохраняется (ADR-0001).
+- [x] ADR-0044 (не 0028 — номер занят увеличением 4/5) + термины `Interrupt`/`Resume` в `CONTEXT.md`. `docs/adr/0044-interrupt-model-pauses-a-run-on-conversation-metadata.md`.
+- [x] SSE `interrupt` `{interruptId, type, payload}`. V1 сужен до `select_datasource` (реальная точка неоднозначности: `data_source_id` не задан И подключено больше одного источника — `resolveExternalDataSource`); `clarify_prd` отложен — требует, чтобы сама модель сигнализировала неоднозначность при генерации PRD (другая точка приостановки, до плана), это отдельная задача на промпт/structured-output, а не довешивание транспорта.
+- [x] Пауза — `conversation.metadata.interrupt` + suspend-точка в `resolveExternalDataSource` (`raiseInterrupt` в `service.ts`), checkpoint-poll по образцу `awaitExternalTableConfirmation` (ADR-0042), не in-memory promise — ответ приходит с отдельного HTTP-запроса. Ранн не снимается (`ai_active_runs`/heartbeat живут поверх паузы). Таймаут — 30 минут (как у confirmation-гейта), по истечении шаг падает retryable-ошибкой.
+- [x] `POST /ai/conversation/:id/interrupt-answer` (`AiService.interruptAnswer`) — владение через `loadConversationOfType`, 409 (`ConflictException`) на чужой/устаревший/уже отвеченный `interruptId`. Без SSE — паузу снимает опрос самого `approvePrd`.
+- [x] Фронт: `interrupt`/`isAnsweringInterrupt` в `aiBuilderStore.js` (SSE-кейс `interrupt`, экшен `answerInterrupt`), `interruptAnswer()` в `ai.service.js`, карточка выбора источника данных в `AiBuilderChatPanel.jsx` (первый реальный потребитель этой SSE-формы — `step-awaiting-confirmation` тоже без UI, см. ADR-0044).
+- [x] approve-prd остаётся единственным гейтом сборки (ADR-0001) — интеррапт только приостанавливает уже одобренный ранн, не подменяет approve.
+- Тесты: `server/test/modules/ai/unit/interrupt-model.spec.ts` (raise/resume/409×2); `ai.service.spec.ts`'s `buildRestApiQueryProps` тесты переведены на async (сигнатура изменилась).
 
 ## Не делаем
 

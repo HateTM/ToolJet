@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import { Response } from "express";
 import { tool } from "ai";
 import { z } from "zod";
@@ -1508,6 +1510,10 @@ type StepExecutionContext = {
   // events on — an external CreateTable step's confirmation gate sends its
   // step-awaiting-confirmation event through this, not a parallel channel.
   response: Response;
+  // ADR-0044: raiseInterrupt reads/writes this conversation's metadata to pause on, and
+  // needs the id to do it — nothing else in the context identifies which conversation a
+  // step belongs to.
+  conversationId: string;
 };
 
 @Injectable()
@@ -1534,6 +1540,12 @@ export class AiService implements IAiService {
   // loop fast without waiting on real wall-clock time.
   private CONFIRMATION_POLL_INTERVAL_MS = 3000;
   private CONFIRMATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+  // ADR-0044: same checkpoint-poll shape as the confirmation gate above, generalized onto
+  // conversation.metadata.interrupt instead of a Step's status column. Not `readonly`, for
+  // the same reason as the pair above — tests override both to avoid real wall-clock waits.
+  private INTERRUPT_POLL_INTERVAL_MS = 3000;
+  private INTERRUPT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
   constructor(
     private readonly aiUtilService: AiUtilService,
@@ -1831,6 +1843,7 @@ export class AiService implements IAiService {
         priorResults: [],
         dataSources,
         response,
+        conversationId,
       };
 
       for (let index = 0; index < filteredSteps.length; index++) {
@@ -2595,6 +2608,115 @@ export class AiService implements IAiService {
     );
   }
 
+  /**
+   * ADR-0044: generic pause point. Writes conversation.metadata.interrupt, sends the
+   * `interrupt` SSE event on the same response `awaitExternalTableConfirmation` streams on,
+   * then polls conversation.metadata for an `answer` written by `interruptAnswer` (a
+   * separate HTTP request) — the confirmation gate's checkpoint shape, generalized off of
+   * a Step's status column onto conversation metadata (see ADR-0044's storage rationale).
+   */
+  private async raiseInterrupt(
+    context: StepExecutionContext,
+    type: string,
+    payload: Record<string, any>,
+  ): Promise<any> {
+    const conversation = await this.aiConversationRepository.findById(
+      context.conversationId,
+    );
+    const existing = conversation?.metadata?.interrupt;
+    if (existing?.type === type && existing?.answer !== undefined) {
+      const answer = existing.answer;
+      await this.aiConversationRepository.updateOne(context.conversationId, {
+        metadata: { ...(conversation.metadata || {}), interrupt: undefined },
+      });
+      return answer;
+    }
+
+    const interruptId = existing?.id ?? randomUUID();
+    if (!existing) {
+      await this.aiConversationRepository.updateOne(context.conversationId, {
+        metadata: {
+          ...(conversation.metadata || {}),
+          interrupt: {
+            id: interruptId,
+            type,
+            payload,
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+      this.aiUtilService.sendSSE(context.response, "interrupt", {
+        interruptId,
+        type,
+        payload,
+      });
+    }
+
+    const deadline = Date.now() + this.INTERRUPT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.INTERRUPT_POLL_INTERVAL_MS),
+      );
+      const polled = await this.aiConversationRepository.findById(
+        context.conversationId,
+      );
+      const interrupt = polled?.metadata?.interrupt;
+      if (interrupt?.id === interruptId && interrupt?.answer !== undefined) {
+        await this.aiConversationRepository.updateOne(
+          context.conversationId,
+          { metadata: { ...(polled.metadata || {}), interrupt: undefined } },
+        );
+        return interrupt.answer;
+      }
+    }
+    // Clear the stale record before throwing — otherwise a retry of this same step (or a
+    // later step's own interrupt) finds `existing` still set, skips re-sending the SSE
+    // event (silent hang for a reconnected/late client), and a stale interruptId could
+    // still 409-match a genuinely new pause. Re-read rather than reusing the pre-poll
+    // `conversation` so an unrelated metadata write during the 30-minute wait isn't clobbered.
+    const latest = await this.aiConversationRepository.findById(
+      context.conversationId,
+    );
+    await this.aiConversationRepository.updateOne(context.conversationId, {
+      metadata: { ...(latest?.metadata || {}), interrupt: undefined },
+    });
+    throw new Error(`Timed out waiting for an answer to a "${type}" interrupt.`);
+  }
+
+  /**
+   * ADR-0044: the side channel `raiseInterrupt`'s poll picks up on its next tick. 409s on a
+   * stale or repeated answer (no live interrupt, or a different one) — the same shape
+   * `confirmStep` uses to reject a step that isn't `awaiting_confirmation`.
+   */
+  async interruptAnswer(
+    conversationId: string,
+    interruptId: string,
+    answer: any,
+    userId: string,
+  ): Promise<any> {
+    if (!conversationId || !interruptId || answer === undefined) {
+      throw new BadRequestException(
+        "conversationId, interruptId and answer are required",
+      );
+    }
+    await this.loadConversationOfType(conversationId, "generate", userId);
+    const conversation =
+      await this.aiConversationRepository.findById(conversationId);
+    const interrupt = conversation?.metadata?.interrupt;
+    if (!interrupt || interrupt.id !== interruptId) {
+      throw new ConflictException(
+        "This interrupt is no longer awaiting an answer",
+      );
+    }
+    await this.aiConversationRepository.updateOne(conversationId, {
+      metadata: {
+        ...(conversation.metadata || {}),
+        interrupt: { ...interrupt, answer, answeredAt: new Date().toISOString() },
+      },
+    });
+    return { answered: interruptId };
+  }
+
   async executeCreateTableStep(
     step: Step,
     context: StepExecutionContext,
@@ -3321,10 +3443,10 @@ export class AiService implements IAiService {
     let props: any;
     switch (args.source) {
       case "sql":
-        props = this.buildExternalQueryProps(args, context);
+        props = await this.buildExternalQueryProps(args, context);
         break;
       case "restapi":
-        props = this.buildRestApiQueryProps(args, context);
+        props = await this.buildRestApiQueryProps(args, context);
         break;
       default:
         props = this.buildTooljetDbQueryProps(args);
@@ -3615,10 +3737,32 @@ export class AiService implements IAiService {
    * attempt can correct itself. Shared by every external-source query branch (sql, restapi)
    * so the hallucinated-id retry text is identical regardless of which branch was picked.
    */
-  private resolveExternalDataSource(
+  private async resolveExternalDataSource(
     dataSourceId: string | undefined,
     context: StepExecutionContext,
-  ): QueryableDataSource {
+  ): Promise<QueryableDataSource> {
+    // ADR-0044: a missing id with more than one connected source is genuine ambiguity, not
+    // a model mistake — the prompt's connected-sources block cannot force a correct guess,
+    // so this asks the user instead of retrying the model against the same information.
+    // An id that IS given but doesn't match stays a retryable model error, unchanged below.
+    if (!dataSourceId && context.dataSources.length > 1) {
+      const answer = await this.raiseInterrupt(context, "select_datasource", {
+        candidates: context.dataSources.map((candidate) => ({
+          id: candidate.id,
+          name: candidate.name,
+        })),
+      });
+      const chosen = context.dataSources.find(
+        (candidate) => candidate.id === answer?.dataSourceId,
+      );
+      if (!chosen) {
+        throw new Error(
+          `Interrupt answer "${answer?.dataSourceId}" does not match any connected data source.`,
+        );
+      }
+      return chosen;
+    }
+
     const dataSource = context.dataSources.find(
       (candidate) => candidate.id === dataSourceId,
     );
@@ -3635,7 +3779,7 @@ export class AiService implements IAiService {
     return dataSource;
   }
 
-  private buildExternalQueryProps(
+  private async buildExternalQueryProps(
     args: { name: string; data_source_id?: string; sql?: string },
     context: StepExecutionContext,
   ) {
@@ -3650,7 +3794,7 @@ export class AiService implements IAiService {
       );
     }
 
-    const dataSource = this.resolveExternalDataSource(
+    const dataSource = await this.resolveExternalDataSource(
       args.data_source_id,
       context,
     );
@@ -3669,7 +3813,7 @@ export class AiService implements IAiService {
    * key-value pair arrays, `body_toggle` gating whether `body` is even sent — so a query
    * this step creates runs identically to one a user built by hand.
    */
-  private buildRestApiQueryProps(
+  private async buildRestApiQueryProps(
     args: {
       name: string;
       data_source_id?: string;
@@ -3687,7 +3831,7 @@ export class AiService implements IAiService {
       );
     }
 
-    const dataSource = this.resolveExternalDataSource(
+    const dataSource = await this.resolveExternalDataSource(
       args.data_source_id,
       context,
     );

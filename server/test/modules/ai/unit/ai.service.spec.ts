@@ -522,8 +522,8 @@ describe('AiService.buildRestApiQueryProps (increment 5)', () => {
     dataSources: [{ id: 'ds-1', name: 'Petstore', kind: 'restapi', tables: [] }],
   } as any;
 
-  it('builds options matching the restapi plugin runtime shape (method/url/headers/params/body)', () => {
-    const props = (service as any).buildRestApiQueryProps(
+  it('builds options matching the restapi plugin runtime shape (method/url/headers/params/body)', async () => {
+    const props = await (service as any).buildRestApiQueryProps(
       {
         name: 'get_pet',
         data_source_id: 'ds-1',
@@ -553,8 +553,8 @@ describe('AiService.buildRestApiQueryProps (increment 5)', () => {
     });
   });
 
-  it('defaults to GET and leaves body_toggle off when no body is given', () => {
-    const props = (service as any).buildRestApiQueryProps(
+  it('defaults to GET and leaves body_toggle off when no body is given', async () => {
+    const props = await (service as any).buildRestApiQueryProps(
       { name: 'list_pets', data_source_id: 'ds-1', url: '/pets' },
       context
     );
@@ -565,15 +565,15 @@ describe('AiService.buildRestApiQueryProps (increment 5)', () => {
     expect(props.options.headers).toEqual([]);
   });
 
-  it('rejects a missing url', () => {
-    expect(() => (service as any).buildRestApiQueryProps({ name: 'x', data_source_id: 'ds-1' }, context)).toThrow(
-      /request path\/URL/
-    );
+  it('rejects a missing url', async () => {
+    await expect(
+      (service as any).buildRestApiQueryProps({ name: 'x', data_source_id: 'ds-1' }, context)
+    ).rejects.toThrow(/request path\/URL/);
   });
 
-  it('rejects a data_source_id that is not among the connected sources, naming what was available (retryable)', () => {
-    expect(() =>
+  it('rejects a data_source_id that is not among the connected sources, naming what was available (retryable)', async () => {
+    await expect(
       (service as any).buildRestApiQueryProps({ name: 'x', data_source_id: 'not-real', url: '/pets' }, context)
-    ).toThrow(/does not match any connected data source.*Petstore \(ds-1\)/s);
+    ).rejects.toThrow(/does not match any connected data source.*Petstore \(ds-1\)/s);
   });
 });
