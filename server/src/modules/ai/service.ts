@@ -2858,12 +2858,15 @@ export class AiService implements IAiService {
         this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
       }
 
+      const metadata = await this.captureUsageMetadata(result);
+
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
         messageType: "ai",
         content: fullText,
         parentId: userMessage.id,
         isLatest: true,
+        metadata,
       });
 
       this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
@@ -2998,12 +3001,15 @@ export class AiService implements IAiService {
         this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
       }
 
+      const metadata = await this.captureUsageMetadata(result);
+
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
         messageType: "ai",
         content: fullText,
         parentId: userMessage.id,
         isLatest: true,
+        metadata,
       });
 
       this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
@@ -3415,8 +3421,77 @@ export class AiService implements IAiService {
     return this.aiUtilService.getConversationById(conversationId, userId);
   }
 
+  /**
+   * Sums prompt/completion/total tokens across a thread's messages. Ownership is enforced the
+   * same way as `getActiveRun` — a caller cannot probe another user's conversation.
+   *
+   * Usage is read from `message.metadata.usage` (ticket #64), populated at persist time on the
+   * conversational send paths (`sendUserMessage`, `sendUserDocsMessage` — see
+   * `captureUsageMetadata`). A message with no usage recorded (no provider figure, or one of
+   * the call sites that doesn't yet capture it) is simply excluded from the sums rather than
+   * treated as an error, per the ticket's acceptance criteria.
+   */
   async getThreadTokenUsage(conversationId: string, user: any): Promise<any> {
-    throw new Error("Method not implemented.");
+    const conversation = await this.aiConversationRepository.findById(conversationId);
+    if (!conversation || conversation.userId !== user.id) {
+      throw new NotFoundException("Conversation not found");
+    }
+
+    const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    // Only "ai" messages can ever carry usage (it comes from a provider response) — counting
+    // user turns here would make aiMessagesWithUsage read as "N messages are missing data"
+    // when some of those N are simply the wrong message type to have any.
+    const aiMessages = messages.filter((message) => message.messageType === "ai");
+
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let aiMessagesWithUsage = 0;
+
+    for (const message of aiMessages) {
+      const usage = message.metadata?.usage;
+      if (!usage) {
+        continue;
+      }
+      promptTokens += Number(usage.promptTokens) || 0;
+      completionTokens += Number(usage.completionTokens) || 0;
+      aiMessagesWithUsage += 1;
+    }
+
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+      aiMessageCount: aiMessages.length,
+      aiMessagesWithUsage,
+    };
+  }
+
+  /**
+   * Reads the token usage off a `streamText`/`generateText` result (AI SDK v4's `.usage`,
+   * a promise resolving once generation is done) into the shape `getThreadTokenUsage` sums.
+   * Never throws: a provider that omits usage (or an SDK version mismatch) should not break
+   * message persistence, it should just leave this message out of the aggregation.
+   */
+  private async captureUsageMetadata(result: { usage?: Promise<any> | any }): Promise<Record<string, any> | undefined> {
+    try {
+      const usage = await result.usage;
+      if (!usage) {
+        return undefined;
+      }
+      const promptTokens = Number(usage.promptTokens);
+      const completionTokens = Number(usage.completionTokens);
+      if (!Number.isFinite(promptTokens) && !Number.isFinite(completionTokens)) {
+        return undefined;
+      }
+      return {
+        usage: {
+          promptTokens: Number.isFinite(promptTokens) ? promptTokens : 0,
+          completionTokens: Number.isFinite(completionTokens) ? completionTokens : 0,
+        },
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /**

@@ -281,6 +281,51 @@ describe('AiService.sendUserMessage', () => {
     expect(aiUtilService.startHeartbeat).toHaveBeenCalledWith(response);
   });
 
+  // Ticket #64: the persisted AI message carries the provider's token usage so
+  // getThreadTokenUsage has real numbers to sum.
+  it('captures the AI SDK usage promise into the persisted message metadata', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+    async function* chunks() {
+      yield 'Hi';
+    }
+    aiUtilService.AIGateway.mockResolvedValue({
+      textStream: chunks(),
+      usage: Promise.resolve({ promptTokens: 12, completionTokens: 4, totalTokens: 16 }),
+    });
+
+    const response = buildMockResponse();
+
+    await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+    expect(messageRepo.createOne).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        metadata: { usage: { promptTokens: 12, completionTokens: 4 } },
+      })
+    );
+  });
+
+  it('does not fail message persistence when the provider result has no usage', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+    async function* chunks() {
+      yield 'Hi';
+    }
+    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+
+    const response = buildMockResponse();
+
+    await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+    expect(messageRepo.createOne).toHaveBeenNthCalledWith(2, expect.objectContaining({ metadata: undefined }));
+    expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
   it('registers an active run at stream start and ends it when the stream finishes', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, aiActiveRunService } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
@@ -692,6 +737,83 @@ describe('AiService conversation delegation', () => {
 
     expect(aiUtilService.getConversationById).toHaveBeenCalledWith('conv-1', 'user-1');
     expect(result).toEqual({ id: 'conv-1', messages: [] });
+  });
+});
+
+/** @group platform */
+describe('AiService.getThreadTokenUsage (ticket #64)', () => {
+  const usageMessage = (id: string, usage: { promptTokens: number; completionTokens: number }) => ({
+    id,
+    messageType: 'ai',
+    metadata: { usage },
+  });
+
+  it('sums prompt/completion/total tokens across AI messages that carry usage', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      usageMessage('m-1', { promptTokens: 100, completionTokens: 20 }),
+      usageMessage('m-2', { promptTokens: 50, completionTokens: 10 }),
+    ]);
+
+    const result = await service.getThreadTokenUsage('conv-1', { id: 'user-1' } as any);
+
+    expect(result).toEqual({
+      promptTokens: 150,
+      completionTokens: 30,
+      totalTokens: 180,
+      aiMessageCount: 2,
+      aiMessagesWithUsage: 2,
+    });
+  });
+
+  it('excludes AI messages without usage from the sums, and user messages entirely, without throwing', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      usageMessage('m-1', { promptTokens: 100, completionTokens: 20 }),
+      { id: 'm-2', messageType: 'ai', metadata: null },
+      { id: 'm-3', messageType: 'ai', metadata: {} },
+      { id: 'm-4', messageType: 'ai' },
+      { id: 'm-5', messageType: 'user', content: 'hi' },
+    ]);
+
+    const result = await service.getThreadTokenUsage('conv-1', { id: 'user-1' } as any);
+
+    expect(result).toEqual({
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+      aiMessageCount: 4,
+      aiMessagesWithUsage: 1,
+    });
+  });
+
+  it('returns all-zero totals for a conversation with no usage anywhere', async () => {
+    const { service, messageRepo } = buildService();
+    messageRepo.findLatestByConversationId.mockResolvedValue([{ id: 'm-1', messageType: 'ai', metadata: null }]);
+
+    const result = await service.getThreadTokenUsage('conv-1', { id: 'user-1' } as any);
+
+    expect(result).toEqual({
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      aiMessageCount: 1,
+      aiMessagesWithUsage: 0,
+    });
+  });
+
+  it('rejects a conversation the caller does not own', async () => {
+    const { service, conversationRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'someone-else' });
+
+    await expect(service.getThreadTokenUsage('conv-1', { id: 'user-1' } as any)).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects when the conversation does not exist', async () => {
+    const { service, conversationRepo } = buildService();
+    conversationRepo.findById.mockResolvedValue(null);
+
+    await expect(service.getThreadTokenUsage('conv-1', { id: 'user-1' } as any)).rejects.toThrow(NotFoundException);
   });
 });
 
@@ -3654,6 +3776,37 @@ describe('AiService.sendUserDocsMessage', () => {
       expect.objectContaining({ messageType: 'ai', content: 'Your app has 2 pages.', parentId: 'user-msg-1' })
     );
     expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  // Ticket #64: sendUserDocsMessage is the other AIGateway (streaming) path — usage capture
+  // has to be wired here too, not just on sendUserMessage.
+  it('captures the AI SDK usage promise into the persisted Learn-conversation reply', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, appInventoryService } = buildService();
+
+    conversationRepo.findById.mockResolvedValue(buildLearnConversation());
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+    appInventoryService.assemble.mockResolvedValue('App: CRM');
+
+    async function* chunks() {
+      yield 'ok';
+    }
+    aiUtilService.AIGateway.mockResolvedValue({
+      textStream: chunks(),
+      usage: Promise.resolve({ promptTokens: 30, completionTokens: 8, totalTokens: 38 }),
+    });
+
+    await service.sendUserDocsMessage(
+      { conversationId: 'conv-1', content: 'What pages do I have?' },
+      buildMockResponse() as any,
+      'user-1',
+      'org-1'
+    );
+
+    expect(messageRepo.createOne).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ metadata: { usage: { promptTokens: 30, completionTokens: 8 } } })
+    );
   });
 
   it('tells the assistant it cannot build here, and to point at Promote instead', async () => {
