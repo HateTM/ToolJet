@@ -309,6 +309,28 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
     expect(dataQueriesUtilService.listTables).not.toHaveBeenCalled();
   });
 
+  // The pre-loop filter admits any source with a `plugin` relation, which includes SQL-family
+  // marketplace plugins too — the loop's kind-ordering (SQL check before the operation-dropdown
+  // check) is what keeps a SQL source on the schema-introspection path instead of being
+  // (mis)treated as a plugin source.
+  it('still reads a SQL source through listTables even when it also carries a plugin relation', async () => {
+    const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([
+      {
+        id: 'ds-pg',
+        name: 'Warehouse',
+        kind: 'postgresql',
+        plugin: { operationsFile: { data: { properties: { operation: { list: [{ value: 'noop' }] } } } } },
+      },
+    ]);
+    dataQueriesUtilService.listTables.mockResolvedValue({ status: 'ok', data: [{ table_name: 'orders' }] });
+
+    const sources = await service.listQueryableSources(USER, PERMISSIONS);
+
+    expect(dataQueriesUtilService.listTables).toHaveBeenCalledTimes(1);
+    expect(sources).toEqual([{ id: 'ds-pg', name: 'Warehouse', kind: 'postgresql', tables: ['orders'] }]);
+  });
+
   it('excludes a plugin source with no plugin/operationsFile data at all, without throwing', async () => {
     const { service, dataSourcesRepository } = buildInventoryService();
     dataSourcesRepository.allGlobalDS.mockResolvedValue([{ id: 'ds-mystery', name: 'Mystery', kind: 'mystery' }]);
