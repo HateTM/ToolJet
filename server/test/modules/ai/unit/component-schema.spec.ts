@@ -224,4 +224,137 @@ describe('component schema validation (ticket #60)', () => {
       expect(warnings).toHaveLength(0);
     });
   });
+
+  // Plan increment 3, Wave 1: componentsMeta.json entries ported from the EE meta snapshot
+  // (TextArea/PasswordInput/NumberInput/Link/Divider/Icon/StarRating/Statistics/Tags/Datepicker,
+  // see ADR-0026) or hand-authored for fork-only widgets (EmailInput/CurrencyInput/PhoneInput).
+  // Each of AgentsService's Wave 1 builders sets exactly these properties — a dropped one here
+  // would mean the widget renders with a property missing.
+  describe('Wave 1 widget meta (plan increment 3)', () => {
+    // Mirrors exactly what each AgentsService builder passes (agents.service.ts) — real
+    // per-property types, not a placeholder string, so a type mismatch (e.g. StarRating's
+    // maxRating expecting a number) is caught here rather than only at runtime.
+    const wave1PropertyInputs: Record<string, Record<string, any>> = {
+      TextArea: { label: { value: 'Label' }, placeholder: { value: '' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      PasswordInput: { label: { value: 'Label' }, placeholder: { value: 'Password' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      NumberInput: { label: { value: 'Label' }, placeholder: { value: '' }, value: { value: 0 }, visibility: { value: '{{true}}' } },
+      EmailInput: { label: { value: 'Label' }, placeholder: { value: 'Enter email' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      Link: {
+        linkText: { value: 'Click here' },
+        linkTarget: { value: 'https://dev.to/' },
+        targetType: { value: 'new' },
+        visibility: { value: '{{true}}' },
+      },
+      Divider: { label: { value: '' }, visibility: { value: '{{true}}' } },
+      Icon: { icon: { value: 'IconHome2' }, visibility: { value: '{{true}}' } },
+      StarRating: {
+        label: { value: 'Select your rating' },
+        maxRating: { value: '5' },
+        defaultSelected: { value: '0' },
+        visible: { value: '{{true}}' },
+      },
+      Statistics: {
+        primaryValueLabel: { value: 'This months earnings' },
+        primaryValue: { value: '682.3' },
+        visibility: { value: '{{true}}' },
+      },
+      Tags: { data: { value: "{{ [ { title: 'success', color: '#34A94733', textColor: '#34A947' } ] }}" } },
+      CurrencyInput: { label: { value: 'Label' }, placeholder: { value: 'Enter your number' }, value: { value: 0 }, visibility: { value: '{{true}}' } },
+      PhoneInput: { label: { value: 'Label' }, placeholder: { value: 'Enter your input' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+    };
+
+    it.each(Object.entries(wave1PropertyInputs))('%s: builder properties all pass sanitization', (type, input) => {
+      const { result, warnings } = sanitizeComponentSection(type, 'properties', input);
+
+      expect(Object.keys(result)).toEqual(Object.keys(input));
+      expect(warnings).toHaveLength(0);
+    });
+
+    it('Datepicker: properties set by the builder pass sanitization', () => {
+      const { result, warnings } = sanitizeComponentSection('Datepicker', 'properties', {
+        defaultValue: { value: '01/01/2022' },
+        placeholder: { value: 'Select date' },
+        format: { value: 'DD/MM/YYYY' },
+      });
+
+      expect(Object.keys(result)).toEqual(['defaultValue', 'placeholder', 'format']);
+      expect(warnings).toHaveLength(0);
+    });
+
+    it('Datepicker: visibility lives under styles, not properties (legacy widget quirk)', () => {
+      const { result, warnings } = sanitizeComponentSection('Datepicker', 'styles', {
+        visibility: { value: '{{true}}' },
+      });
+
+      expect(result).toEqual({ visibility: { value: '{{true}}' } });
+      expect(warnings).toHaveLength(0);
+    });
+  });
+
+  // Plan increment 3, Wave 2: componentsMeta.json entries for Tabs/Listview/IFrame/
+  // FilePicker/ModalV2/TreeSelect/Html ported from the EE meta snapshot; PopoverMenu/
+  // ButtonGroupV2/DatePickerV2/Chat (no EE equivalent) hand-authored from this fork's own
+  // widget configs. Same rationale as Wave 1 (ADR-0026): a dropped property here means the
+  // widget renders with it missing.
+  describe('Wave 2 widget meta (plan increment 3)', () => {
+    const wave2PropertyInputs: Record<string, Record<string, any>> = {
+      Tabs: {
+        tabs: { value: "{{[ { title: 'Home', id: '0' } ]}}" },
+        defaultTab: { value: '0' },
+        visibility: { value: '{{true}}' },
+      },
+      Listview: { mode: { value: 'list' }, visible: { value: '{{true}}' } },
+      IFrame: { source: { value: 'https://tooljet.com' }, visible: { value: '{{true}}' } },
+      FilePicker: { label: { value: 'Upload files' }, visibility: { value: '{{true}}' } },
+      ModalV2: {
+        useDefaultButton: { value: '{{true}}' },
+        triggerButtonLabel: { value: 'Launch Modal' },
+        visibility: { value: '{{true}}' },
+      },
+      TreeSelect: { label: { value: 'Options' } },
+      Html: { rawHtml: { value: '<div>Hello world</div>' } },
+      PopoverMenu: {
+        label: { value: 'Menu' },
+        options: {
+          value: [
+            {
+              format: 'plain',
+              label: 'option1',
+              description: '',
+              value: '1',
+              icon: { value: 'IconBolt' },
+              iconVisibility: false,
+              disable: { value: false },
+              visible: { value: true },
+            },
+          ],
+        },
+        visibility: { value: '{{true}}' },
+      },
+      ButtonGroupV2: {
+        label: { value: 'Label' },
+        options: {
+          value: [
+            { label: 'Button1', value: '1', icon: { value: 'IconBolt' }, iconVisibility: false, disable: { value: false }, default: { value: true } },
+          ],
+        },
+        visibility: { value: '{{true}}' },
+      },
+      DatePickerV2: {
+        label: { value: 'Label' },
+        defaultValue: { value: '01/01/2022' },
+        placeholder: { value: 'Select date' },
+        dateFormat: { value: 'DD/MM/YYYY' },
+        visibility: { value: '{{true}}' },
+      },
+      Chat: { chatTitle: { value: 'Chat' }, visibility: { value: '{{true}}' } },
+    };
+
+    it.each(Object.entries(wave2PropertyInputs))('%s: builder properties all pass sanitization', (type, input) => {
+      const { result, warnings } = sanitizeComponentSection(type, 'properties', input);
+
+      expect(Object.keys(result)).toEqual(Object.keys(input));
+      expect(warnings).toHaveLength(0);
+    });
+  });
 });

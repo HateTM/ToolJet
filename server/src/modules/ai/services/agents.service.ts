@@ -335,6 +335,78 @@ export class AgentsService implements IAgentsService {
     if (type === 'Modal') {
       return this.createModalComponent(appVersionId, props);
     }
+    if (type === 'TextArea') {
+      return this.createTextAreaComponent(appVersionId, props);
+    }
+    if (type === 'PasswordInput') {
+      return this.createPasswordInputComponent(appVersionId, props);
+    }
+    if (type === 'NumberInput') {
+      return this.createNumberInputComponent(appVersionId, props);
+    }
+    if (type === 'EmailInput') {
+      return this.createEmailInputComponent(appVersionId, props);
+    }
+    if (type === 'Link') {
+      return this.createLinkComponent(appVersionId, props);
+    }
+    if (type === 'Divider') {
+      return this.createDividerComponent(appVersionId, props);
+    }
+    if (type === 'Icon') {
+      return this.createIconComponent(appVersionId, props);
+    }
+    if (type === 'StarRating') {
+      return this.createStarRatingComponent(appVersionId, props);
+    }
+    if (type === 'Statistics') {
+      return this.createStatisticsComponent(appVersionId, props);
+    }
+    if (type === 'Tags') {
+      return this.createTagsComponent(appVersionId, props);
+    }
+    if (type === 'CurrencyInput') {
+      return this.createCurrencyInputComponent(appVersionId, props);
+    }
+    if (type === 'PhoneInput') {
+      return this.createPhoneInputComponent(appVersionId, props);
+    }
+    if (type === 'Datepicker') {
+      return this.createDatepickerComponent(appVersionId, props);
+    }
+    if (type === 'Tabs') {
+      return this.createTabsComponent(appVersionId, props);
+    }
+    if (type === 'Listview') {
+      return this.createListviewComponent(appVersionId, props);
+    }
+    if (type === 'IFrame') {
+      return this.createIFrameComponent(appVersionId, props);
+    }
+    if (type === 'FilePicker') {
+      return this.createFilePickerComponent(appVersionId, props);
+    }
+    if (type === 'ModalV2') {
+      return this.createModalV2Component(appVersionId, props);
+    }
+    if (type === 'TreeSelect') {
+      return this.createTreeSelectComponent(appVersionId, props);
+    }
+    if (type === 'Html') {
+      return this.createHtmlComponent(appVersionId, props);
+    }
+    if (type === 'PopoverMenu') {
+      return this.createPopoverMenuComponent(appVersionId, props);
+    }
+    if (type === 'ButtonGroupV2') {
+      return this.createButtonGroupComponent(appVersionId, props);
+    }
+    if (type === 'DatePickerV2') {
+      return this.createDatePickerV2Component(appVersionId, props);
+    }
+    if (type === 'Chat') {
+      return this.createChatComponent(appVersionId, props);
+    }
     throw new Error(`Unsupported component type "${type}"`);
   }
 
@@ -763,6 +835,504 @@ export class AgentsService implements IAgentsService {
       },
       {},
       { width: 10, height: 34 }
+    );
+  }
+
+  // defaultSize per textarea.js: { width: 10, height: 100 }.
+  private async createTextAreaComponent(appVersionId: string, props: any) {
+    const { pageId, label, placeholder, value } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'TextArea',
+      label || 'Textarea',
+      {
+        label: { value: label || 'Label' },
+        placeholder: { value: placeholder || '' },
+        value: { value: value || '' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 100 }
+    );
+  }
+
+  // defaultSize per passwordinput.js: { width: 10, height: 40 }.
+  private async createPasswordInputComponent(appVersionId: string, props: any) {
+    const { pageId, label, placeholder } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'PasswordInput',
+      label || 'PasswordInput',
+      {
+        label: { value: label || 'Label' },
+        placeholder: { value: placeholder || 'Password' },
+        value: { value: '' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per numberinput.js: { width: 10, height: 40 }.
+  private async createNumberInputComponent(appVersionId: string, props: any) {
+    const { pageId, label, placeholder, defaultValue } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'NumberInput',
+      label || 'NumberInput',
+      {
+        label: { value: label || 'Label' },
+        placeholder: { value: placeholder || '' },
+        value: { value: defaultValue ?? 0 },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per emailinput.js: { width: 10, height: 40 }.
+  private async createEmailInputComponent(appVersionId: string, props: any) {
+    const { pageId, label, placeholder } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'EmailInput',
+      label || 'EmailInput',
+      {
+        label: { value: label || 'Label' },
+        placeholder: { value: placeholder || 'Enter email' },
+        value: { value: '' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per link.js: { width: 6, height: 30 }.
+  private async createLinkComponent(appVersionId: string, props: any) {
+    const { pageId, text, url, openInNewTab = true } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Link',
+      text || 'Link',
+      {
+        linkText: { value: text || 'Click here' },
+        linkTarget: { value: url || 'https://dev.to/' },
+        targetType: { value: openInNewTab ? 'new' : 'same' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 6, height: 30 }
+    );
+  }
+
+  // defaultSize per divider.js: { width: 10, height: 10 }.
+  private async createDividerComponent(appVersionId: string, props: any) {
+    const { pageId, label } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Divider',
+      label || 'Divider',
+      {
+        label: { value: label || '' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 10 }
+    );
+  }
+
+  // defaultSize per icon.js: { width: 5, height: 48 }. `icon` is a Tabler icon name
+  // (e.g. "IconHome2") — no catalog validated here, an unknown name just renders blank.
+  private async createIconComponent(appVersionId: string, props: any) {
+    const { pageId, icon } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Icon',
+      'Icon',
+      {
+        icon: { value: icon || 'IconHome2' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 5, height: 48 }
+    );
+  }
+
+  // defaultSize per starrating.js: { width: 10, height: 30 }. Meta carries this widget's
+  // legacy `visible` property name (not `visibility`, unlike every other widget here).
+  private async createStarRatingComponent(appVersionId: string, props: any) {
+    const { pageId, label, maxRating = 5, defaultSelected = 0 } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'StarRating',
+      label || 'StarRating',
+      {
+        label: { value: label || 'Select your rating' },
+        maxRating: { value: String(maxRating) },
+        defaultSelected: { value: String(defaultSelected) },
+        visible: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 30 }
+    );
+  }
+
+  // defaultSize per statistics.js: { width: 10, height: 152 }.
+  private async createStatisticsComponent(appVersionId: string, props: any) {
+    const { pageId, primaryLabel, primaryValue, secondaryLabel, secondaryValue } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Statistics',
+      primaryLabel || 'Statistics',
+      {
+        primaryValueLabel: { value: primaryLabel || 'This months earnings' },
+        primaryValue: { value: primaryValue ?? '682.3' },
+        ...(secondaryLabel ? { secondaryValueLabel: { value: secondaryLabel } } : {}),
+        ...(secondaryValue !== undefined ? { secondaryValue: { value: secondaryValue } } : {}),
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 152 }
+    );
+  }
+
+  // defaultSize per tags.js: { width: 9, height: 30 }. `data` is the widget's own binding —
+  // a templated array of { title, color, textColor } objects, cycled from a small fixed
+  // palette so an arbitrary-length tag list still renders with distinguishable colors.
+  private static readonly TAG_PALETTE = [
+    { color: '#34A94733', textColor: '#34A947' },
+    { color: '#405DE61A', textColor: '#405DE6' },
+    { color: '#F357171A', textColor: '#F35717' },
+    { color: '#EB2E3933', textColor: '#EB2E39' },
+  ];
+
+  private async createTagsComponent(appVersionId: string, props: any) {
+    const { pageId, tags } = props ?? {};
+    const list = (tags?.length ? tags : ['success', 'info', 'warning', 'danger']).map(
+      (title: string, index: number) => ({
+        title,
+        ...AgentsService.TAG_PALETTE[index % AgentsService.TAG_PALETTE.length],
+      })
+    );
+    const dataLiteral = list
+      .map((tag: any) => `{ title: '${String(tag.title).replace(/'/g, "\\'")}', color: '${tag.color}', textColor: '${tag.textColor}' }`)
+      .join(', \n\t\t');
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Tags',
+      'Tags',
+      {
+        data: { value: `{{ [ \n\t\t${dataLiteral} ] }}` },
+      },
+      {},
+      { width: 9, height: 30 }
+    );
+  }
+
+  // defaultSize per currencyinput.js: { width: 10, height: 40 }.
+  private async createCurrencyInputComponent(appVersionId: string, props: any) {
+    const { pageId, label, placeholder, defaultValue } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'CurrencyInput',
+      label || 'CurrencyInput',
+      {
+        label: { value: label || 'Label' },
+        placeholder: { value: placeholder || 'Enter your number' },
+        value: { value: defaultValue ?? 0 },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per phoneinput.js: { width: 10, height: 40 }.
+  private async createPhoneInputComponent(appVersionId: string, props: any) {
+    const { pageId, label, placeholder } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'PhoneInput',
+      label || 'PhoneInput',
+      {
+        label: { value: label || 'Label' },
+        placeholder: { value: placeholder || 'Enter your input' },
+        value: { value: '' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per datepicker.js (legacy 'Datepicker' component): { width: 5, height: 40 }.
+  // Meta carries `visibility`/`disabledState` under styles, not properties — a quirk of this
+  // legacy widget's own definition, not a bug here.
+  private async createDatepickerComponent(appVersionId: string, props: any) {
+    const { pageId, defaultValue, placeholder, format } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Datepicker',
+      'Datepicker',
+      {
+        defaultValue: { value: defaultValue || '01/01/2022' },
+        placeholder: { value: placeholder || 'Select date' },
+        format: { value: format || 'DD/MM/YYYY' },
+      },
+      {
+        visibility: { value: '{{true}}' },
+      },
+      { width: 5, height: 40 }
+    );
+  }
+
+  // Wave 2 (plan increment 3) — more complex widgets, still standalone/empty like Container
+  // and Modal above: nesting children into them (Tabs panes, Listview items, ModalV2 body)
+  // isn't wired up yet — that's increment 4's `parentComponentId` work, not this ticket's.
+
+  // defaultSize per tabs.js: { width: 15, height: 450 }, but generateComponentLayout special-
+  // cases 'Tabs' to TABS_FIXED_LAYOUT regardless of the size passed here (one Tabs per page).
+  private async createTabsComponent(appVersionId: string, props: any) {
+    const { pageId, tabs } = props ?? {};
+    const titles = tabs?.length ? tabs : ['Home', 'Profile', 'Settings'];
+    const tabsLiteral = titles
+      .map((title: string, index: number) => `{ title: '${String(title).replace(/'/g, "\\'")}', id: '${index}' }`)
+      .join(', \n\t\t');
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Tabs',
+      'Tabs',
+      {
+        tabs: { value: `{{[ \n\t\t${tabsLiteral} \n ]}}` },
+        defaultTab: { value: '0' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 450 }
+    );
+  }
+
+  // defaultSize per listview.js: { width: 15, height: 450 }. Binds to a query's data when
+  // one is referenced, otherwise keeps the widget's own stock demo rows.
+  private async createListviewComponent(appVersionId: string, props: any) {
+    const { pageId, queryName } = props ?? {};
+    const created = await this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Listview',
+      'Listview',
+      {
+        ...(queryName ? { data: { value: `{{queries.${queryName}.data}}` } } : {}),
+        mode: { value: 'list' },
+        visible: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 450 }
+    );
+    return { ...created, queryName };
+  }
+
+  // defaultSize per iframe.js: { width: 10, height: 310 }.
+  private async createIFrameComponent(appVersionId: string, props: any) {
+    const { pageId, source } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'IFrame',
+      'IFrame',
+      {
+        source: { value: source || 'https://tooljet.com' },
+        visible: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 310 }
+    );
+  }
+
+  // defaultSize per filepicker.js: { width: 15, height: 140 }.
+  private async createFilePickerComponent(appVersionId: string, props: any) {
+    const { pageId, label } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'FilePicker',
+      label || 'FilePicker',
+      {
+        label: { value: label || 'Upload files' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 140 }
+    );
+  }
+
+  // defaultSize per modalV2.js: { width: 10, height: 40 }. Newer sibling of the legacy Modal
+  // builder above; unlike it, ModalV2 has no `title` property of its own — its header content
+  // is a child slot, which (like every widget here) isn't nestable yet.
+  private async createModalV2Component(appVersionId: string, props: any) {
+    const { pageId, triggerButtonLabel } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'ModalV2',
+      'Modal',
+      {
+        useDefaultButton: { value: '{{true}}' },
+        triggerButtonLabel: { value: triggerButtonLabel || 'Launch Modal' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per treeSelect.js: { width: 12, height: 200 }. Keeps the widget's own stock
+  // demo tree — building a real hierarchy from a flat prop list is out of this ticket's scope.
+  private async createTreeSelectComponent(appVersionId: string, props: any) {
+    const { pageId, label } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'TreeSelect',
+      label || 'TreeSelect',
+      {
+        label: { value: label || 'Options' },
+      },
+      {},
+      { width: 12, height: 200 }
+    );
+  }
+
+  // defaultSize per html.js: { width: 10, height: 310 }.
+  private async createHtmlComponent(appVersionId: string, props: any) {
+    const { pageId, html } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Html',
+      'Html',
+      {
+        rawHtml: { value: html || '<div>Hello world</div>' },
+      },
+      {},
+      { width: 10, height: 310 }
+    );
+  }
+
+  // defaultSize per popoverMenu.js: { width: 6, height: 40 }. `options` mirrors DropdownV2's
+  // list shape (createDropdownComponent), plus the icon/disable wrappers PopoverMenu itself
+  // stores per entry.
+  private async createPopoverMenuComponent(appVersionId: string, props: any) {
+    const { pageId, label, options } = props ?? {};
+    const list = (options?.length ? options : ['option1', 'option2', 'option3']).map(
+      (option: string, index: number) => ({
+        format: 'plain',
+        label: String(option),
+        description: '',
+        value: String(index + 1),
+        icon: { value: 'IconBolt' },
+        iconVisibility: false,
+        disable: { value: false },
+        visible: { value: true },
+      })
+    );
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'PopoverMenu',
+      label || 'PopoverMenu',
+      {
+        label: { value: label || 'Menu' },
+        options: { value: list },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 6, height: 40 }
+    );
+  }
+
+  // defaultSize per buttonGroupV2.js: { width: 12, height: 80 }.
+  private async createButtonGroupComponent(appVersionId: string, props: any) {
+    const { pageId, label, options } = props ?? {};
+    const list = (options?.length ? options : ['Button1', 'Button2', 'Button3']).map(
+      (option: string, index: number) => ({
+        label: String(option),
+        value: String(index + 1),
+        icon: { value: 'IconBolt' },
+        iconVisibility: false,
+        disable: { value: false },
+        default: { value: index === 0 },
+      })
+    );
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'ButtonGroupV2',
+      label || 'ButtonGroup',
+      {
+        label: { value: label || 'Label' },
+        options: { value: list },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 12, height: 80 }
+    );
+  }
+
+  // defaultSize per datepickerV2.js: { width: 10, height: 40 }. Unlike the legacy Datepicker
+  // builder above, visibility lives under properties here (matches the current widget).
+  private async createDatePickerV2Component(appVersionId: string, props: any) {
+    const { pageId, label, defaultValue, placeholder, format } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'DatePickerV2',
+      label || 'DatePicker',
+      {
+        label: { value: label || 'Label' },
+        defaultValue: { value: defaultValue || '01/01/2022' },
+        placeholder: { value: placeholder || 'Select date' },
+        dateFormat: { value: format || 'DD/MM/YYYY' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 10, height: 40 }
+    );
+  }
+
+  // defaultSize per chat.js: { width: 15, height: 400 }. Decorative only — no query/event is
+  // wired to actually send or receive messages (that needs increment 5/6 machinery this
+  // ticket doesn't build); the tool description flags it experimental for the same reason.
+  private async createChatComponent(appVersionId: string, props: any) {
+    const { pageId, chatTitle } = props ?? {};
+    return this.createWidgetComponent(
+      appVersionId,
+      pageId,
+      'Chat',
+      chatTitle || 'Chat',
+      {
+        chatTitle: { value: chatTitle || 'Chat' },
+        visibility: { value: '{{true}}' },
+      },
+      {},
+      { width: 15, height: 400 }
     );
   }
 
