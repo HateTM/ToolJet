@@ -3594,36 +3594,44 @@ export class AiService implements IAiService {
       );
     }
 
-    const stepContext = [
-      this.buildStepContextLines(step, context, previousError),
-      `Existing queries (delete exactly one of these, by name):\n${existingQueries
-        .map(
-          (result) =>
-            `- ${result.artifact.content.name} (id ${result.artifact.content.id})`,
-        )
-        .join("\n")}`,
-    ].join("\n\n");
+    // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "deleteQuery", args: generatedArgs };
+    } else {
+      const stepContext = [
+        this.buildStepContextLines(step, context, previousError),
+        `Existing queries (delete exactly one of these, by name):\n${existingQueries
+          .map(
+            (result) =>
+              `- ${result.artifact.content.name} (id ${result.artifact.content.id})`,
+          )
+          .join("\n")}`,
+      ].join("\n\n");
 
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: DELETE_QUERY_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: stepContext }],
-      },
-      "executeDeleteQueryStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-delete-query",
-      {
-        ...prompt,
-        tools: { deleteQuery: deleteQueryTool },
-        toolChoice: { type: "tool", toolName: "deleteQuery" },
-      },
-      context.organizationId,
-    );
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: DELETE_QUERY_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: stepContext }],
+        },
+        "executeDeleteQueryStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-delete-query",
+        {
+          ...prompt,
+          tools: { deleteQuery: deleteQueryTool },
+          toolChoice: { type: "tool", toolName: "deleteQuery" },
+        },
+        context.organizationId,
+      );
 
-    const call = result?.toolCalls?.[0];
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "deleteQuery") {
       throw new Error("The assistant did not produce a query to delete");
     }
@@ -3656,37 +3664,41 @@ export class AiService implements IAiService {
     context: StepExecutionContext,
     previousError?: string,
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const stepContext = this.buildStepContextLines(
-      step,
-      context,
-      previousError,
-    );
+    // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "createQuery", args: generatedArgs };
+    } else {
+      const stepContext = this.buildStepContextLines(step, context, previousError);
 
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: CREATE_QUERY_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: withConnectedDataSources(stepContext, context.dataSources),
-          },
-        ],
-      },
-      "executeQueryStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-create-query",
-      {
-        ...prompt,
-        tools: { createQuery: createQueryTool },
-        toolChoice: { type: "tool", toolName: "createQuery" },
-      },
-      context.organizationId,
-    );
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: CREATE_QUERY_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: withConnectedDataSources(stepContext, context.dataSources),
+            },
+          ],
+        },
+        "executeQueryStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-create-query",
+        {
+          ...prompt,
+          tools: { createQuery: createQueryTool },
+          toolChoice: { type: "tool", toolName: "createQuery" },
+        },
+        context.organizationId,
+      );
 
-    const call = result?.toolCalls?.[0];
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "createQuery") {
       throw new Error("The assistant did not produce a query definition");
     }
@@ -3902,36 +3914,44 @@ export class AiService implements IAiService {
       );
     }
 
-    const stepContext = [
-      this.buildStepContextLines(step, context, previousError),
-      `Existing queries (update exactly one of these, by name):\n${existingQueries
-        .map(
-          (result) =>
-            `- ${result.artifact.content.name} (id ${result.artifact.content.id}), current options: ${JSON.stringify(result.artifact.content.options)}`,
-        )
-        .join("\n")}`,
-    ].join("\n\n");
+    // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "updateQuery", args: generatedArgs };
+    } else {
+      const stepContext = [
+        this.buildStepContextLines(step, context, previousError),
+        `Existing queries (update exactly one of these, by name):\n${existingQueries
+          .map(
+            (result) =>
+              `- ${result.artifact.content.name} (id ${result.artifact.content.id}), current options: ${JSON.stringify(result.artifact.content.options)}`,
+          )
+          .join("\n")}`,
+      ].join("\n\n");
 
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: UPDATE_QUERY_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: stepContext }],
-      },
-      "executeUpdateQueryStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-update-query",
-      {
-        ...prompt,
-        tools: { updateQuery: updateQueryTool },
-        toolChoice: { type: "tool", toolName: "updateQuery" },
-      },
-      context.organizationId,
-    );
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: UPDATE_QUERY_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: stepContext }],
+        },
+        "executeUpdateQueryStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-update-query",
+        {
+          ...prompt,
+          tools: { updateQuery: updateQueryTool },
+          toolChoice: { type: "tool", toolName: "updateQuery" },
+        },
+        context.organizationId,
+      );
 
-    const call = result?.toolCalls?.[0];
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "updateQuery") {
       throw new Error("The assistant did not produce a query update");
     }

@@ -846,4 +846,89 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
     expect(agentsService.CreateComponent).not.toHaveBeenCalled();
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
   });
+
+  it('CreateQuery consumes the payload (default ToolJet DB branch) without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        CreateQuery: jest.fn().mockResolvedValue({ name: 'fetchOrders' }),
+      },
+    });
+
+    const result = await service.executeQueryStep(
+      {
+        type: 'CreateQuery',
+        description: 'orders list',
+        props: { generatedStep: { name: 'fetchOrders' } },
+      } as any,
+      execContext,
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.CreateQuery).toHaveBeenCalledWith(
+      'v1',
+      'org-1',
+      expect.objectContaining({ name: 'fetchOrders' }),
+    );
+    expect(result.identifier).toBe('fetchOrders');
+  });
+
+  it('UpdateQuery consumes the payload and merges over prior CreateQuery options without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        UpdateQuery: jest.fn().mockResolvedValue({ id: 'q1' }),
+      },
+    });
+    const prior = {
+      type: 'CreateQuery',
+      artifact: {
+        content: { id: 'q1', name: 'fetchOrders', options: { operation: 'list_rows', list_rows: { limit: 100 } } },
+      },
+    };
+
+    const result = await service.executeUpdateQueryStep(
+      {
+        type: 'UpdateQuery',
+        description: 'limit to 50',
+        props: { generatedStep: { queryName: 'fetchOrders', options: { list_rows: { limit: 50 } } } },
+      } as any,
+      { ...execContext, priorResults: [prior] },
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.UpdateQuery).toHaveBeenCalledWith('q1', {
+      operation: 'list_rows',
+      list_rows: { limit: 50 },
+    });
+    // props carry the raw payload options (the diff), not the merged result — same as the LLM path
+    expect(result.props).toEqual({ queryName: 'fetchOrders', options: { list_rows: { limit: 50 } } });
+  });
+
+  it('DeleteQuery consumes the payload without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        DeleteQuery: jest.fn().mockResolvedValue({ name: 'fetchOrders' }),
+      },
+    });
+    const prior = {
+      type: 'CreateQuery',
+      artifact: { content: { id: 'q1', name: 'fetchOrders', options: {} } },
+    };
+
+    const result = await service.executeDeleteQueryStep(
+      {
+        type: 'DeleteQuery',
+        description: 'd',
+        props: { generatedStep: { queryName: 'fetchOrders' } },
+      } as any,
+      { ...execContext, priorResults: [prior] },
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    expect(agentsService.DeleteQuery).toHaveBeenCalledWith('q1');
+    expect(result.props).toEqual({ queryName: 'fetchOrders' });
+    expect(result.identifier).toBe('fetchOrders');
+  });
 });
