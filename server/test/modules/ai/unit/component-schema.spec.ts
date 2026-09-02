@@ -224,4 +224,54 @@ describe('component schema validation (ticket #60)', () => {
       expect(warnings).toHaveLength(0);
     });
   });
+
+  // Plan increment 3, Wave 1: componentsMeta.json entries ported from the EE meta snapshot
+  // (TextArea/PasswordInput/NumberInput/Link/Divider/Icon/StarRating/Statistics/Tags/Datepicker,
+  // see ADR-0026) or hand-authored for fork-only widgets (EmailInput/CurrencyInput/PhoneInput).
+  // Each of AgentsService's Wave 1 builders sets exactly these properties — a dropped one here
+  // would mean the widget renders with a property missing.
+  describe('Wave 1 widget meta (plan increment 3)', () => {
+    const wave1Properties: Record<string, string[]> = {
+      TextArea: ['label', 'placeholder', 'value', 'visibility'],
+      PasswordInput: ['label', 'placeholder', 'value', 'visibility'],
+      NumberInput: ['label', 'placeholder', 'value', 'visibility'],
+      EmailInput: ['label', 'placeholder', 'value', 'visibility'],
+      Link: ['linkText', 'linkTarget', 'targetType', 'visibility'],
+      Divider: ['label', 'visibility'],
+      Icon: ['icon', 'visibility'],
+      StarRating: ['label', 'maxRating', 'defaultSelected', 'visible'],
+      Statistics: ['primaryValueLabel', 'primaryValue', 'visibility'],
+      Tags: ['data'],
+      CurrencyInput: ['label', 'placeholder', 'value', 'visibility'],
+      PhoneInput: ['label', 'placeholder', 'value', 'visibility'],
+    };
+
+    it.each(Object.entries(wave1Properties))('%s: builder properties all pass sanitization', (type, props) => {
+      const input = Object.fromEntries(props.map((prop) => [prop, { value: 'x' }]));
+      const { result, warnings } = sanitizeComponentSection(type, 'properties', input);
+
+      expect(Object.keys(result)).toEqual(props);
+      expect(warnings).toHaveLength(0);
+    });
+
+    it('Datepicker: properties set by the builder pass sanitization', () => {
+      const { result, warnings } = sanitizeComponentSection('Datepicker', 'properties', {
+        defaultValue: { value: '01/01/2022' },
+        placeholder: { value: 'Select date' },
+        format: { value: 'DD/MM/YYYY' },
+      });
+
+      expect(Object.keys(result)).toEqual(['defaultValue', 'placeholder', 'format']);
+      expect(warnings).toHaveLength(0);
+    });
+
+    it('Datepicker: visibility lives under styles, not properties (legacy widget quirk)', () => {
+      const { result, warnings } = sanitizeComponentSection('Datepicker', 'styles', {
+        visibility: { value: '{{true}}' },
+      });
+
+      expect(result).toEqual({ visibility: { value: '{{true}}' } });
+      expect(warnings).toHaveLength(0);
+    });
+  });
 });

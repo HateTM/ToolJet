@@ -48,4 +48,19 @@ export const DEFAULT_COMPONENT_SIZES: Record<string, { width: number; height: nu
   Table: { width: 25, height: 460 },
   Text: { width: 6, height: 40 },
   TextInput: { width: 10, height: 40 },
+  // Wave 1 (plan increment 3): mirrors each widget's own defaultSize in
+  // frontend/src/AppBuilder/WidgetManager/widgets/*.js.
+  TextArea: { width: 10, height: 100 },
+  PasswordInput: { width: 10, height: 40 },
+  NumberInput: { width: 10, height: 40 },
+  EmailInput: { width: 10, height: 40 },
+  Link: { width: 6, height: 30 },
+  Divider: { width: 10, height: 10 },
+  Icon: { width: 5, height: 48 },
+  StarRating: { width: 10, height: 30 },
+  Statistics: { width: 10, height: 152 },
+  Tags: { width: 9, height: 30 },
+  CurrencyInput: { width: 10, height: 40 },
+  PhoneInput: { width: 10, height: 40 },
+  Datepicker: { width: 5, height: 40 },
 };

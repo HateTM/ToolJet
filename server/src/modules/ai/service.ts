@@ -412,6 +412,20 @@ const SUPPORTED_COMPONENT_TYPES = [
   "Checkbox",
   "Dropdown",
   "Modal",
+  // Wave 1 (plan increment 3) — simple widgets, ported from the full platform catalog.
+  "TextArea",
+  "PasswordInput",
+  "NumberInput",
+  "EmailInput",
+  "Link",
+  "Divider",
+  "Icon",
+  "StarRating",
+  "Statistics",
+  "Tags",
+  "CurrencyInput",
+  "PhoneInput",
+  "Datepicker",
 ] as const;
 
 // Component types that place a widget on an existing Page — everything except 'Page'
@@ -435,11 +449,24 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - Checkbox: reference a Page id, give it a label, and optionally set defaultChecked.
 - Dropdown: reference a Page id, give it a label, and provide its options as a list of short strings (optionally a placeholder).
 - Modal: reference a Page id, give it a title; it renders with a default trigger button (optionally set the trigger button label). Place Modal's content as separate sibling widgets on the page — widgets cannot be nested inside it.
+- TextArea: reference a Page id, give it a label (optional placeholder and default value).
+- PasswordInput: reference a Page id, give it a label (optional placeholder).
+- NumberInput: reference a Page id, give it a label (optional placeholder and default numeric value).
+- EmailInput: reference a Page id, give it a label (optional placeholder).
+- Link: reference a Page id, give it the link text and the target URL (optionally openInNewTab, default true).
+- Divider: reference a Page id (optional label shown on the divider).
+- Icon: reference a Page id and a Tabler icon name (e.g. "IconHome2").
+- StarRating: reference a Page id, give it a label, and optionally maxRating (default 5) and defaultSelected.
+- Statistics: reference a Page id, give it a primary label and value, and optionally a secondary label and value.
+- Tags: reference a Page id and optionally a list of short tag strings (default demo tags when omitted).
+- CurrencyInput: reference a Page id, give it a label (optional placeholder and default numeric value).
+- PhoneInput: reference a Page id, give it a label (optional placeholder).
+- Datepicker: reference a Page id (optional default value, placeholder, and format, e.g. "DD/MM/YYYY").
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
   description:
-    "Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal) on an existing Page.",
+    "Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal, TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker) on an existing Page.",
   parameters: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("Page"),
@@ -593,6 +620,160 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe("Label of the default trigger button that opens the modal"),
+    }),
+    z.object({
+      type: z.literal("TextArea"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this textarea on",
+        ),
+      label: z.string().describe("Textarea label"),
+      placeholder: z.string().optional().describe("Placeholder text"),
+      value: z.string().optional().describe("Default value"),
+    }),
+    z.object({
+      type: z.literal("PasswordInput"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this password input on",
+        ),
+      label: z.string().describe("Input label"),
+      placeholder: z.string().optional().describe("Placeholder text"),
+    }),
+    z.object({
+      type: z.literal("NumberInput"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this number input on",
+        ),
+      label: z.string().describe("Input label"),
+      placeholder: z.string().optional().describe("Placeholder text"),
+      defaultValue: z.number().optional().describe("Default numeric value"),
+    }),
+    z.object({
+      type: z.literal("EmailInput"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this email input on",
+        ),
+      label: z.string().describe("Input label"),
+      placeholder: z.string().optional().describe("Placeholder text"),
+    }),
+    z.object({
+      type: z.literal("Link"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this link on",
+        ),
+      text: z.string().describe("Link text"),
+      url: z.string().describe("Link target URL"),
+      openInNewTab: z
+        .boolean()
+        .optional()
+        .describe("Whether the link opens in a new tab (default true)"),
+    }),
+    z.object({
+      type: z.literal("Divider"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this divider on",
+        ),
+      label: z.string().optional().describe("Optional label shown on the divider"),
+    }),
+    z.object({
+      type: z.literal("Icon"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this icon on",
+        ),
+      icon: z
+        .string()
+        .describe('Tabler icon name, e.g. "IconHome2"'),
+    }),
+    z.object({
+      type: z.literal("StarRating"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this rating on",
+        ),
+      label: z.string().describe("Rating label"),
+      maxRating: z.number().optional().describe("Number of stars (default 5)"),
+      defaultSelected: z
+        .number()
+        .optional()
+        .describe("Number of stars selected by default"),
+    }),
+    z.object({
+      type: z.literal("Statistics"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this stat tile on",
+        ),
+      primaryLabel: z.string().describe("Primary value's label"),
+      primaryValue: z
+        .union([z.string(), z.number()])
+        .describe("Primary value to display"),
+      secondaryLabel: z.string().optional().describe("Secondary value's label"),
+      secondaryValue: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe("Secondary value to display"),
+    }),
+    z.object({
+      type: z.literal("Tags"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place these tags on",
+        ),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe("Short tag strings to display; omit for a demo set of 4 tags"),
+    }),
+    z.object({
+      type: z.literal("CurrencyInput"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this currency input on",
+        ),
+      label: z.string().describe("Input label"),
+      placeholder: z.string().optional().describe("Placeholder text"),
+      defaultValue: z.number().optional().describe("Default numeric value"),
+    }),
+    z.object({
+      type: z.literal("PhoneInput"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this phone input on",
+        ),
+      label: z.string().describe("Input label"),
+      placeholder: z.string().optional().describe("Placeholder text"),
+    }),
+    z.object({
+      type: z.literal("Datepicker"),
+      pageId: z
+        .string()
+        .describe(
+          "id of an already-created Page (from context) to place this date picker on",
+        ),
+      defaultValue: z.string().optional().describe('Default date, matching `format`, e.g. "01/01/2022"'),
+      placeholder: z.string().optional().describe("Placeholder text"),
+      format: z
+        .string()
+        .optional()
+        .describe('Date format string (default "DD/MM/YYYY")'),
     }),
   ]),
 });

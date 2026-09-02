@@ -18,10 +18,10 @@
 
 Полный каталог из `frontend/src/AppBuilder/WidgetManager/configs/widgetConfig` вместо 12 типов.
 
-- [ ] Волна 1 — простые: TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker и др.
+- [x] Волна 1 — простые: TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker. `componentsMeta.json` для EE-совпадающих типов перенесён трансформацией EE-снапшота (см. ADR-0026); EmailInput/CurrencyInput/PhoneInput (форк-специфичные, в EE их нет) собраны вручную по образцу TextInput/NumberInput.
 - [ ] Волна 2 — сложные: Tabs, Listview, IFrame, FilePicker, ModalV2, PopoverMenu, ButtonGroupV2, DropdownV2, DatePickerV2, TreeSelect, Chat, Html (при риске — пометка «экспериментальный» в промпте).
-- [ ] Для каждого: zod-вариант в `createComponentTool`, креатор в `agents.service.ts`, строка в промпте, запись в `SUPPORTED_COMPONENT_TYPES`.
-- [ ] ADR-0026 «widget allow-list v2».
+- [x] Для каждого (волна 1): zod-вариант в `createComponentTool`, креатор в `agents.service.ts`, строка в промпте, запись в `SUPPORTED_COMPONENT_TYPES`.
+- [x] ADR-0026 «widget allow-list v2» (описывает метод трансформации EE→CE meta для волны 1; волна 2 переиспользует тот же приём).
 
 ## 4. Update/Delete/Layout/Styles
 
