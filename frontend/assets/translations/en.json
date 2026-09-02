@@ -1055,6 +1055,7 @@
             "send": "Send",
             "approvePrd": "Approve and build",
             "reviewPlan": "Review build plan",
+            "interruptSelectDatasource": "Which data source should this query use?",
             "looksGoodRunIt": "Looks good, run it",
             "makeChanges": "I want to make changes",
             "rewindToStep": "Rewind to this step",

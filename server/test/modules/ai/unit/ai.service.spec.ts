@@ -510,3 +510,151 @@ describe('planned seed rows are consistent with the planned schema (ticket #48 s
     expect('plannedSeedRows' in persisted).toBe(false);
   });
 });
+
+// Increment 5: createQuery gains a "restapi" branch alongside "tooljetdb"/"sql". These pin
+// buildRestApiQueryProps and the shared id-resolution it uses (also exercised by the
+// pre-existing "sql" branch, buildExternalQueryProps) — retryable hallucinated-id failures
+// and the concrete option shape the restapi plugin's runtime actually reads.
+describe('AiService.buildRestApiQueryProps (increment 5)', () => {
+  const { service } = buildAiService();
+
+  const context = {
+    dataSources: [{ id: 'ds-1', name: 'Petstore', kind: 'restapi', tables: [] }],
+  } as any;
+
+  it('builds options matching the restapi plugin runtime shape (method/url/headers/params/body)', async () => {
+    const props = await (service as any).buildRestApiQueryProps(
+      {
+        name: 'get_pet',
+        data_source_id: 'ds-1',
+        method: 'post',
+        url: '/pets/{{components.petId.value}}',
+        headers: [{ key: 'X-Trace', value: '1' }],
+        params: [{ key: 'limit', value: '10' }],
+        body: '{"active": true}',
+      },
+      context
+    );
+
+    expect(props).toEqual({
+      name: 'get_pet',
+      dataSourceId: 'ds-1',
+      options: {
+        method: 'post',
+        url: '/pets/{{components.petId.value}}',
+        url_params: [['limit', '10']],
+        headers: [['X-Trace', '1']],
+        body_toggle: true,
+        raw_body: '{"active": true}',
+        json_body: null,
+        body: [],
+        cookies: [],
+      },
+    });
+  });
+
+  it('defaults to GET and leaves body_toggle off when no body is given', async () => {
+    const props = await (service as any).buildRestApiQueryProps(
+      { name: 'list_pets', data_source_id: 'ds-1', url: '/pets' },
+      context
+    );
+
+    expect(props.options.method).toBe('get');
+    expect(props.options.body_toggle).toBe(false);
+    expect(props.options.url_params).toEqual([]);
+    expect(props.options.headers).toEqual([]);
+  });
+
+  it('rejects a missing url', async () => {
+    await expect(
+      (service as any).buildRestApiQueryProps({ name: 'x', data_source_id: 'ds-1' }, context)
+    ).rejects.toThrow(/request path\/URL/);
+  });
+
+  it('rejects a data_source_id that is not among the connected sources, naming what was available (retryable)', async () => {
+    await expect(
+      (service as any).buildRestApiQueryProps({ name: 'x', data_source_id: 'not-real', url: '/pets' }, context)
+    ).rejects.toThrow(/does not match any connected data source.*Petstore \(ds-1\)/s);
+  });
+});
+
+// ADR-0045: createQuery's plugin branch — flat, unwrapped options matching what a plugin's
+// own run(sourceOptions, queryOptions, ...) reads, an operation validated against the
+// resolved source's real operations list, and per-operation field keys left unvalidated
+// (operations.json's per-operation properties are UI descriptors, not a value schema).
+describe('AiService.buildPluginQueryProps (ADR-0045)', () => {
+  const { service } = buildAiService();
+
+  const context = {
+    dataSources: [
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        tables: [],
+        operations: [
+          { name: 'List members', value: 'list_users' },
+          { name: 'Send message', value: 'send_message' },
+        ],
+      },
+    ],
+  } as any;
+
+  it('builds flat, unwrapped options — operation plus the given fields, nothing wrapped in .value', async () => {
+    const props = await (service as any).buildPluginQueryProps(
+      {
+        name: 'notify_team',
+        data_source_id: 'ds-slack',
+        operation: 'send_message',
+        options: [
+          { key: 'channel', value: '#general' },
+          { key: 'message', value: 'Deploy finished' },
+        ],
+      },
+      context
+    );
+
+    expect(props).toEqual({
+      name: 'notify_team',
+      dataSourceId: 'ds-slack',
+      options: { operation: 'send_message', channel: '#general', message: 'Deploy finished' },
+    });
+  });
+
+  it('builds options with just the operation when no fields are given', async () => {
+    const props = await (service as any).buildPluginQueryProps(
+      { name: 'members', data_source_id: 'ds-slack', operation: 'list_users' },
+      context
+    );
+
+    expect(props).toEqual({
+      name: 'members',
+      dataSourceId: 'ds-slack',
+      options: { operation: 'list_users' },
+    });
+  });
+
+  it('rejects a missing operation', async () => {
+    await expect(
+      (service as any).buildPluginQueryProps({ name: 'x', data_source_id: 'ds-slack' }, context)
+    ).rejects.toThrow(/needs an operation/);
+  });
+
+  it('rejects an operation not in the resolved source\'s real operations list, naming what was available (retryable)', async () => {
+    await expect(
+      (service as any).buildPluginQueryProps(
+        { name: 'x', data_source_id: 'ds-slack', operation: 'delete_workspace' },
+        context
+      )
+    ).rejects.toThrow(/"delete_workspace" is not one of Team Slack's operations.*list_users, send_message/s);
+  });
+
+  it('rejects a data_source_id that is not among the connected sources, naming what was available (retryable)', async () => {
+    await expect(
+      (service as any).buildPluginQueryProps(
+        { name: 'x', data_source_id: 'not-real', operation: 'send_message' },
+        context
+      )
+    ).rejects.toThrow(/does not match any connected data source.*Team Slack \(ds-slack\)/s);
+  });
+});

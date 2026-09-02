@@ -77,6 +77,13 @@ _Avoid_: External database, connection, datasource
 The execution-time pause a `CreateTable` `Step` sits in only when its resolved target is a connected PostgreSQL source, never ToolJet DB — between the step becoming `running` and the DDL/seed-row writes actually being issued. The run UI must show the table name, columns, target connection, and seed row count before the user's explicit go-ahead; declining leaves the step un-executed, the same as a `Skip`, but the two are distinct concepts — Skip declines to build a step at all, this gates a step the user does want built. A plan-time name collision against the target source is a separate, earlier check: it fails the step before this confirmation is ever reached. See [ADR-0042](docs/adr/0042-createtable-may-target-a-connected-postgresql-source-behind-confirmation.md).
 _Avoid_: Approval, write gate, DDL confirmation
 
+**Interrupt**:
+A pause point inside an approved plan's execution that only a human can resolve — currently `select_datasource` (`CreateQuery` against a connected source, no `data_source_id` given, and more than one is connected: a genuine ambiguity, not a model mistake to retry). Raised via an `interrupt` SSE event carrying `{interruptId, type, payload}` on the same `approvePrd` stream `External write confirmation` already pauses; the run's connection stays open and its side-channel poll (over `conversation.metadata.interrupt`, not a Step column — see [ADR-0044](docs/adr/0044-interrupt-model-pauses-a-run-on-conversation-metadata.md)) is the same checkpoint shape as that confirmation gate, generalized. `Interrupt` only applies to `approvePrd`'s single long-lived connection — PRD-time ambiguity is not an `Interrupt` (see ADR-0044's Scope): `sendUserMessage` is turn-based, and `PRD_SYSTEM_PROMPT` already asks clarifying questions as plain chat before a PRD is ever approved, so there is no live connection to pause at that stage.
+_Avoid_: Confirmation (that's the separate `External write confirmation` concept), question, prompt
+
+**Resume** (an Interrupt):
+The `POST /ai/conversation/:id/interrupt-answer` call that answers a still-live `Interrupt`: a stale or already-answered `interruptId` 409s, the same guard shape a stale `Step` confirmation gets. Resolving is a plain write to `conversation.metadata`, not SSE — the paused run's own poll notices the answer on its next tick.
+
 **Promote** (a Learn conversation):
 The user action that starts a new `Generate conversation` seeded with a `Context seed` drawn from a `Learn conversation`. The originating `Learn conversation` is untouched and stays separately accessible — `conversationType` never changes on an existing `Conversation` (see [ADR-0012](docs/adr/0012-promote-creates-a-new-conversation.md)).
 

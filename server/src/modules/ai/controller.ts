@@ -99,6 +99,15 @@ export class AiController implements IAiController {
     return await this.aiService.confirmStep(conversationId, stepId, user.id);
   }
 
+  // ADR-0044: answers a paused interrupt (e.g. `select_datasource`). Not SSE — the paused
+  // approvePrd request's poll picks the answer up on its next checkpoint.
+  @InitFeature(FEATURE_KEY.INTERRUPT_ANSWER)
+  @Post('conversation/interrupt-answer')
+  async interruptAnswer(@User() user, @Body() body) {
+    const { conversationId, interruptId, answer } = body ?? {};
+    return await this.aiService.interruptAnswer(conversationId, interruptId, answer, user.id);
+  }
+
   @InitFeature(FEATURE_KEY.REGENERATE_MESSAGE)
   @Post('conversation/regenerate-message')
   async regenerateAiMessage(@User() user, @Body() body) {

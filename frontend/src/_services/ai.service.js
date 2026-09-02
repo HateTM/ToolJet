@@ -23,6 +23,7 @@ export const aiService = {
   rewindStep,
   skipStep,
   confirmStep,
+  interruptAnswer,
   regenerateMessage,
   promoteConversation,
 };
@@ -162,6 +163,14 @@ async function skipStep(body) {
 async function confirmStep(body) {
   const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
   return fetch(`${config.apiUrl}/ai/conversation/confirm-step`, requestOptions).then(handleResponse);
+}
+
+// body: { conversationId, interruptId, answer }. ADR-0044: answers a paused interrupt (e.g.
+// `select_datasource`) raised by an `interrupt` SSE event on the approve-prd stream. Not SSE
+// itself — the backend's poll on the paused approvePrd request picks up the answer.
+async function interruptAnswer(body) {
+  const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
+  return fetch(`${config.apiUrl}/ai/conversation/interrupt-answer`, requestOptions).then(handleResponse);
 }
 
 // body: { parentMessageId }. Not SSE — the backend generates the full reply before

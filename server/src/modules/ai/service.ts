@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import { Response } from "express";
 import { tool } from "ai";
 import { z } from "zod";
@@ -88,7 +90,10 @@ const STEP_TYPES = [
   "CreateQuery",
   "CreateComponent",
   "UpdateComponent",
+  "DeleteComponent",
+  "MoveComponent",
   "UpdateQuery",
+  "DeleteQuery",
   "GenerateEvent",
 ] as const;
 
@@ -100,7 +105,10 @@ Call proposeStepPlan exactly once with the ordered list of steps needed to build
 - CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
 - CreateComponent: creates a UI element (a page or a widget on a page).
 - UpdateComponent: changes a component that already exists in this app (its text, a property, or a style) — never a component this same plan is about to create with CreateComponent (give that component its final properties directly instead). Reference the target by the id/name given in "Existing components already in this app" below; never invent one. Use this only when the PRD is asking to edit something that's already there.
+- DeleteComponent: removes a component that already exists in this app. Reference it by the id/name given in "Existing components already in this app" below; never invent one, and never target a component this same plan is about to create.
+- MoveComponent: reparents a component that already exists in this app into a different Container, Form or Listview (or back to the page root). Reference both by the id/name given in "Existing components already in this app" below; never invent one, never target a component this same plan is about to create, and never move into a ModalV2 or Tabs (not supported by this step — nest into those at create time with CreateComponent's parentComponentId instead).
 - UpdateQuery: changes an existing query the plan (or an earlier step) created — e.g. different columns, a filter, a limit. The model at execution time returns only the option keys that change; nothing else on the query is touched. Use this instead of a second CreateQuery for the same table.
+- DeleteQuery: removes a query this same plan created earlier — never a query outside this plan.
 - GenerateEvent: wires one event on a component or query the plan has already created (e.g. "the button opens the modal" is a GenerateEvent on the Button, not a new component). It never creates components or queries itself.
 
 
@@ -383,13 +391,14 @@ Rules:
 - Foreign keys and indexes are not part of this update: leave them as they are.`;
 
 export const updateTableTool = tool({
-  description: "Replace an existing ToolJet DB table's column definition with the complete desired column list.",
+  description:
+    "Replace an existing ToolJet DB table's column definition with the complete desired column list.",
   parameters: tableDefinitionObject.extend({
     renames: z
       .record(z.string())
       .optional()
       .describe(
-        "Explicit old_column_name -> new_column_name renames. A renamed column keeps its data; omitting it from columns instead drops it and loses the data. A rename's old name must be a current column and must not also appear in columns."
+        "Explicit old_column_name -> new_column_name renames. A renamed column keeps its data; omitting it from columns instead drops it and loses the data. A rename's old name must be a current column and must not also appear in columns.",
       ),
   }),
 });
@@ -427,7 +436,9 @@ const SUPPORTED_COMPONENT_TYPES = [
   "PhoneInput",
   "Datepicker",
   // Wave 2 (plan increment 3) — more complex widgets. Placed standalone/empty, same as
-  // Container/Modal above: nesting children into them isn't wired up yet (increment 4).
+  // Container/Modal above: nesting children into them isn't wired up yet (increment 4),
+  // except ModalV2 — its body/header/footer slots accept parentComponentId (increment 4
+  // follow-up, see executeComponentStep's parentComponentId validation below).
   "Tabs",
   "Listview",
   "IFrame",
@@ -455,8 +466,8 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - Button: reference a Page id, give it a short label.
 - Text: reference a Page id, give it the text to display.
 - TextInput: reference a Page id, give it a label (and an optional placeholder).
-- Container: reference a Page id, give it a short title.
-- Form: reference a Page id, the id of a ToolJet DB table already created in this plan, and a form title. By default (mode "create") this produces a working create-record form — you don't need a separate query or event step for it. When the PRD wants to edit existing records, set mode "edit" and also reference the name of a Table widget already created in this plan that is bound to the same underlying table — the form's fields then pre-fill from that Table's selected row and submitting runs an update keyed on that row.
+- Container: reference a Page id, give it a short title. Other widgets can nest inside it — see parentComponentId below.
+- Form: reference a Page id, the id of a ToolJet DB table already created in this plan, and a form title. By default (mode "create") this produces a working create-record form — you don't need a separate query or event step for it. When the PRD wants to edit existing records, set mode "edit" and also reference the name of a Table widget already created in this plan that is bound to the same underlying table — the form's fields then pre-fill from that Table's selected row and submitting runs an update keyed on that row. Other widgets can also nest inside it — see parentComponentId below.
 - Chart: reference a Page id, give it a title, and optionally reference the name of a query already created in this plan whose data it should plot (omit queryName to get an empty chart). Pick a chartType from "line", "bar", "pie" (default "line").
 - Image: reference a Page id and give the image's source URL (and an optional alt text).
 - Checkbox: reference a Page id, give it a label, and optionally set defaultChecked.
@@ -475,17 +486,18 @@ Call createComponent exactly once. Supported component types: Page, Table, Butto
 - CurrencyInput: reference a Page id, give it a label (optional placeholder and default numeric value).
 - PhoneInput: reference a Page id, give it a label (optional placeholder).
 - Datepicker: reference a Page id (optional default value, placeholder, and format, e.g. "DD/MM/YYYY").
-- Tabs: reference a Page id (optional list of tab titles, default 3 stock tabs). Only one Tabs per page. Its panes cannot be filled with other widgets yet — it renders empty.
-- Listview: reference a Page id, and optionally the name of a query already created in this plan whose rows it should list (omit for stock demo rows). Its items cannot hold other widgets yet.
+- Tabs: reference a Page id (optional list of tab titles, default 3 stock tabs). Only one Tabs per page. Other widgets can nest into a specific pane — see parentComponentId below.
+- Listview: reference a Page id, and optionally the name of a query already created in this plan whose rows it should list (omit for stock demo rows). Other widgets can nest into its single row template — see parentComponentId below.
 - IFrame: reference a Page id and the URL to embed.
 - FilePicker: reference a Page id (optional label). Upload UI only — files are not wired to any query yet.
-- ModalV2: reference a Page id (optional trigger button label); it renders with a default trigger button. Its body cannot be filled with other widgets yet — it opens empty.
+- ModalV2: reference a Page id (optional trigger button label); it renders with a default trigger button. Other widgets can nest into its body, header, or footer — see parentComponentId below.
 - TreeSelect: reference a Page id (optional label). Keeps its own stock demo tree — a real hierarchy from arbitrary data isn't supported yet.
 - Html: reference a Page id and raw HTML to render.
 - PopoverMenu: reference a Page id, give it a label, and optionally a list of short option strings (default 3 stock options).
 - ButtonGroupV2: reference a Page id, give it a label, and optionally a list of short button labels (default 3 stock buttons).
 - DatePickerV2: reference a Page id, give it a label (optional default value, placeholder, and format).
 - Chat (EXPERIMENTAL — decorative only): reference a Page id (optional chat title). No query or event is wired to actually send/receive messages; use only when the PRD explicitly wants a chat UI mockup, not a working chat feature.
+Any widget type (except Page itself) accepts an optional parentComponentId: the id of a Container, Form or Listview already created in this plan on the same page, to nest this widget inside it instead of placing it directly on the page. A Listview has a single row template shared by every row it renders — you cannot address individual rows, so a widget nested there must bind its data-bearing property to {{listItem.<key>}} (using a key from the query the Listview displays), never a static value, or every rendered row will show identical content. For a ModalV2 already created in this plan, use its id for the body slot, "<modalId>-header" for the header slot, or "<modalId>-footer" for the footer slot — keep header/footer children small (a label, a button, an icon), they render in a thin strip. For a Tabs already created in this plan, use "<tabsId>-<tabIndex>" (0-based — the first tab is index 0, whether or not you gave tabs custom titles) to nest into that specific pane; a bare Tabs id is not valid on its own.
 Only reference pages/tables/queries that actually appear in the context below — never invent an id or name.`;
 
 const createComponentTool = tool({
@@ -509,6 +521,12 @@ const createComponentTool = tool({
         .describe(
           "name of an already-created query (from context) this table should display",
         ),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Button"),
@@ -518,6 +536,12 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this button on",
         ),
       text: z.string().describe("Button label text"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Text"),
@@ -527,6 +551,12 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this text on",
         ),
       text: z.string().describe("Text content to display"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("TextInput"),
@@ -537,6 +567,12 @@ const createComponentTool = tool({
         ),
       label: z.string().describe("Input label"),
       placeholder: z.string().optional().describe("Placeholder text"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Container"),
@@ -546,6 +582,12 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this container on",
         ),
       title: z.string().describe("Short container title"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Form"),
@@ -572,6 +614,12 @@ const createComponentTool = tool({
         .describe(
           "name of an already-created Table widget (from context) whose selectedRow this form binds to — required when mode='edit'",
         ),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Chart"),
@@ -591,6 +639,12 @@ const createComponentTool = tool({
         .enum(["line", "bar", "pie"])
         .default("line")
         .describe("Chart rendering style; default 'line'"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Image"),
@@ -601,6 +655,12 @@ const createComponentTool = tool({
         ),
       source: z.string().describe("Image source URL"),
       alternativeText: z.string().optional().describe("Alt text for the image"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Checkbox"),
@@ -614,6 +674,12 @@ const createComponentTool = tool({
         .boolean()
         .optional()
         .describe("Whether the checkbox starts checked (default false)"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Dropdown"),
@@ -631,6 +697,12 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe("Placeholder shown before a choice is made"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Modal"),
@@ -644,6 +716,12 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe("Label of the default trigger button that opens the modal"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("TextArea"),
@@ -655,6 +733,12 @@ const createComponentTool = tool({
       label: z.string().describe("Textarea label"),
       placeholder: z.string().optional().describe("Placeholder text"),
       value: z.string().optional().describe("Default value"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("PasswordInput"),
@@ -665,6 +749,12 @@ const createComponentTool = tool({
         ),
       label: z.string().describe("Input label"),
       placeholder: z.string().optional().describe("Placeholder text"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("NumberInput"),
@@ -676,6 +766,12 @@ const createComponentTool = tool({
       label: z.string().describe("Input label"),
       placeholder: z.string().optional().describe("Placeholder text"),
       defaultValue: z.number().optional().describe("Default numeric value"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("EmailInput"),
@@ -686,6 +782,12 @@ const createComponentTool = tool({
         ),
       label: z.string().describe("Input label"),
       placeholder: z.string().optional().describe("Placeholder text"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Link"),
@@ -700,6 +802,12 @@ const createComponentTool = tool({
         .boolean()
         .optional()
         .describe("Whether the link opens in a new tab (default true)"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Divider"),
@@ -708,7 +816,16 @@ const createComponentTool = tool({
         .describe(
           "id of an already-created Page (from context) to place this divider on",
         ),
-      label: z.string().optional().describe("Optional label shown on the divider"),
+      label: z
+        .string()
+        .optional()
+        .describe("Optional label shown on the divider"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Icon"),
@@ -717,9 +834,13 @@ const createComponentTool = tool({
         .describe(
           "id of an already-created Page (from context) to place this icon on",
         ),
-      icon: z
+      icon: z.string().describe('Tabler icon name, e.g. "IconHome2"'),
+      parentComponentId: z
         .string()
-        .describe('Tabler icon name, e.g. "IconHome2"'),
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("StarRating"),
@@ -734,6 +855,12 @@ const createComponentTool = tool({
         .number()
         .optional()
         .describe("Number of stars selected by default"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Statistics"),
@@ -751,6 +878,12 @@ const createComponentTool = tool({
         .union([z.string(), z.number()])
         .optional()
         .describe("Secondary value to display"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Tags"),
@@ -762,7 +895,15 @@ const createComponentTool = tool({
       tags: z
         .array(z.string())
         .optional()
-        .describe("Short tag strings to display; omit for a demo set of 4 tags"),
+        .describe(
+          "Short tag strings to display; omit for a demo set of 4 tags",
+        ),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("CurrencyInput"),
@@ -774,6 +915,12 @@ const createComponentTool = tool({
       label: z.string().describe("Input label"),
       placeholder: z.string().optional().describe("Placeholder text"),
       defaultValue: z.number().optional().describe("Default numeric value"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("PhoneInput"),
@@ -784,6 +931,12 @@ const createComponentTool = tool({
         ),
       label: z.string().describe("Input label"),
       placeholder: z.string().optional().describe("Placeholder text"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Datepicker"),
@@ -792,12 +945,21 @@ const createComponentTool = tool({
         .describe(
           "id of an already-created Page (from context) to place this date picker on",
         ),
-      defaultValue: z.string().optional().describe('Default date, matching `format`, e.g. "01/01/2022"'),
+      defaultValue: z
+        .string()
+        .optional()
+        .describe('Default date, matching `format`, e.g. "01/01/2022"'),
       placeholder: z.string().optional().describe("Placeholder text"),
       format: z
         .string()
         .optional()
         .describe('Date format string (default "DD/MM/YYYY")'),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Tabs"),
@@ -810,6 +972,12 @@ const createComponentTool = tool({
         .array(z.string())
         .optional()
         .describe("Tab titles, in order; omit for 3 stock tabs"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Listview"),
@@ -824,6 +992,12 @@ const createComponentTool = tool({
         .describe(
           "name of an already-created query (from context) whose rows this list should display; omit for stock demo rows",
         ),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("IFrame"),
@@ -833,6 +1007,12 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this iframe on",
         ),
       source: z.string().describe("URL to embed"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("FilePicker"),
@@ -842,6 +1022,12 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this file picker on",
         ),
       label: z.string().optional().describe("Label shown above the picker"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("ModalV2"),
@@ -854,6 +1040,12 @@ const createComponentTool = tool({
         .string()
         .optional()
         .describe("Label of the default trigger button that opens the modal"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("TreeSelect"),
@@ -863,6 +1055,12 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this tree select on",
         ),
       label: z.string().optional().describe("Field label"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Html"),
@@ -872,6 +1070,12 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this HTML block on",
         ),
       html: z.string().describe("Raw HTML to render"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("PopoverMenu"),
@@ -885,6 +1089,12 @@ const createComponentTool = tool({
         .array(z.string())
         .optional()
         .describe("Menu option labels, in order; omit for 3 stock options"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("ButtonGroupV2"),
@@ -898,6 +1108,12 @@ const createComponentTool = tool({
         .array(z.string())
         .optional()
         .describe("Button labels, in order; omit for 3 stock buttons"),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("DatePickerV2"),
@@ -907,12 +1123,21 @@ const createComponentTool = tool({
           "id of an already-created Page (from context) to place this date picker on",
         ),
       label: z.string().describe("Field label"),
-      defaultValue: z.string().optional().describe('Default date, matching `format`, e.g. "01/01/2022"'),
+      defaultValue: z
+        .string()
+        .optional()
+        .describe('Default date, matching `format`, e.g. "01/01/2022"'),
       placeholder: z.string().optional().describe("Placeholder text"),
       format: z
         .string()
         .optional()
         .describe('Date format string (default "DD/MM/YYYY")'),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
     z.object({
       type: z.literal("Chat"),
@@ -924,7 +1149,15 @@ const createComponentTool = tool({
       chatTitle: z
         .string()
         .optional()
-        .describe("Chat panel title; experimental — decorative only, no working send/receive"),
+        .describe(
+          "Chat panel title; experimental — decorative only, no working send/receive",
+        ),
+      parentComponentId: z
+        .string()
+        .optional()
+        .describe(
+          'id of an already-created Container, Form or Listview (from context) to nest this widget inside; for a ModalV2, use its id (body), "<modalId>-header", or "<modalId>-footer"; for a Tabs, use "<tabsId>-<tabIndex>" (0-based, e.g. "<tabsId>-0" for the first tab); omit to place it directly on the page',
+        ),
     }),
   ]),
 });
@@ -965,6 +1198,66 @@ const updateComponentTool = tool({
   }),
 });
 
+// Ticket #4 / increment 4: removes one existing component. Kept deliberately narrow (id
+// only, no confirmation text) — the planner already decided this step is a delete when it
+// proposed it; re-asking the model to justify it here would just be more ways to hallucinate.
+const DELETE_COMPONENT_SYSTEM_PROMPT = `You remove ONE existing component for this step, based on the PRD and the "Existing components already in this app" list below.
+
+Call deleteComponent exactly once with componentId set to the real id of the target component, copied verbatim from the list below. Never invent one, and never target a component this same plan is about to create with CreateComponent.`;
+
+const deleteComponentTool = tool({
+  description:
+    "Delete one existing component, along with any events attached to it.",
+  parameters: z.object({
+    componentId: z
+      .string()
+      .describe(
+        "id of the existing component to delete, copied from the 'Existing components already in this app' list",
+      ),
+  }),
+});
+
+// MoveComponent (ADR-0043 follow-up): reparents one existing component. Bare-id targets
+// only (Container/Form/Listview body) — ModalV2 header/footer and Tabs panes are create-time
+// nesting only in this pass, not a Move target (see ADR-0043's "Follow-up 3").
+const MOVE_COMPONENT_SYSTEM_PROMPT = `You reparent ONE existing component for this step, based on the PRD and the "Existing components already in this app" list below.
+
+Call moveComponent exactly once with componentId set to the real id of the component to move, copied verbatim from the list below. Set newParentComponentId to the real id of the Container, Form or Listview to move it into (also copied verbatim), or omit it to move the component back to its page's root — outside any container. Never invent an id, never target a component this same plan is about to create or delete, and never target a ModalV2 or Tabs as the new parent (moving into a specific slot/pane isn't supported by this step).`;
+
+const moveComponentTool = tool({
+  description:
+    "Reparent one existing component into a different Container, Form or Listview, or back to the page root.",
+  parameters: z.object({
+    componentId: z
+      .string()
+      .describe(
+        "id of the existing component to move, copied from the 'Existing components already in this app' list",
+      ),
+    newParentComponentId: z
+      .string()
+      .optional()
+      .describe(
+        "id of the existing Container, Form or Listview to move it into, copied from the same list; omit to move it to the page root",
+      ),
+  }),
+});
+
+// Mirrors UpdateQuery's scope on purpose (ADR-0027): only a query this same plan created
+// earlier can be targeted, never an arbitrary pre-existing query — deleting something outside
+// the plan's own blast radius is a much larger footgun than editing it.
+const DELETE_QUERY_SYSTEM_PROMPT = `You remove ONE existing query for this step, based on the PRD and the "Existing queries" list below.
+
+Call deleteQuery exactly once with queryName set to the exact name of the target query, copied verbatim from the list below.`;
+
+const deleteQueryTool = tool({
+  description: "Delete one query this plan created earlier.",
+  parameters: z.object({
+    queryName: z
+      .string()
+      .describe("name of an already-created query (from this plan) to delete"),
+  }),
+});
+
 // Opening line sourced from the ported EE prompt library (prompt-library/generateQuery.ts);
 // the tool contract below is the fork's own (ADR-0006 v1 vocabulary): the model picks a
 // narrow createQuery call, it never writes a full runjs/runpy query config the way EE's
@@ -975,7 +1268,9 @@ const CREATE_QUERY_SYSTEM_PROMPT = [
 
 Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the query itself:
 - source "tooljetdb" — the default. Give the real id of a ToolJet DB table created earlier in this plan to list rows from.
-- source "sql" — only when this step is meant to read from a data source the user has already connected. Give that source's real id and one SQL SELECT statement against a table that source actually has.
+- source "sql" — only when this step is meant to read from a connected SQL data source the user has already connected. Give that source's real id and one SQL SELECT statement against a table that source actually has.
+- source "restapi" — only when this step is meant to call a connected REST API data source the user has already connected. Give that source's real id, the HTTP method, and a request path relative to that source's base URL (e.g. "/users/{{components.userId.value}}"). Headers, query params, and a request body are optional.
+- source "plugin" — only when this step is meant to call a connected plugin data source (Slack, Airtable, Google Sheets, and similar) the user has already connected. Give that source's real id, the exact operation value from its "operations" list in the connected data sources below, and any fields that operation needs as key/value pairs — the fields are plugin-specific and not listed here, so infer them from the operation's name and the PRD (e.g. Slack's "send_message" needs a channel and a message).
 
 Every id must come from the context below, never invented. Prefer ToolJet DB unless the PRD or this step clearly asks for data that lives in a connected source.`,
 ].join("\n\n");
@@ -985,7 +1280,7 @@ Every id must come from the context below, never invented. Prefer ToolJet DB unl
 // let the model return an SQL string with a ToolJet DB table id, which is unbuildable.
 const createQueryTool = tool({
   description:
-    "Create a query against an existing ToolJet DB table, or against a connected SQL data source.",
+    "Create a query against an existing ToolJet DB table, or against a connected SQL, REST API, or plugin data source.",
   parameters: z.discriminatedUnion("source", [
     z.object({
       source: z.literal("tooljetdb"),
@@ -1012,6 +1307,60 @@ const createQueryTool = tool({
         .string()
         .describe(
           "One SELECT statement against a table that data source has, e.g. SELECT * FROM orders LIMIT 100",
+        ),
+    }),
+    z.object({
+      source: z.literal("restapi"),
+      name: z
+        .string()
+        .describe(
+          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
+        ),
+      data_source_id: z
+        .string()
+        .describe("id of a connected REST API data source (from the list in context)"),
+      method: z
+        .enum(["get", "post", "put", "patch", "delete"])
+        .default("get")
+        .describe("HTTP method"),
+      url: z
+        .string()
+        .describe(
+          "Request path relative to the data source's base URL, e.g. /users/{{components.userId.value}}",
+        ),
+      headers: z
+        .array(z.object({ key: z.string(), value: z.string() }))
+        .optional()
+        .describe("Optional request headers"),
+      params: z
+        .array(z.object({ key: z.string(), value: z.string() }))
+        .optional()
+        .describe("Optional URL query parameters"),
+      body: z
+        .string()
+        .optional()
+        .describe("Optional raw request body, e.g. a JSON string, for post/put/patch"),
+    }),
+    z.object({
+      source: z.literal("plugin"),
+      name: z
+        .string()
+        .describe(
+          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
+        ),
+      data_source_id: z
+        .string()
+        .describe("id of a connected plugin data source (from the list in context)"),
+      operation: z
+        .string()
+        .describe(
+          "one of that data source's operation values, copied verbatim from its \"operations\" list in context",
+        ),
+      options: z
+        .array(z.object({ key: z.string(), value: z.string() }))
+        .optional()
+        .describe(
+          "the operation's own fields as key/value pairs (plugin- and operation-specific, e.g. channel/message for Slack's send_message)",
         ),
     }),
   ]),
@@ -1211,6 +1560,10 @@ type StepExecutionContext = {
   // events on — an external CreateTable step's confirmation gate sends its
   // step-awaiting-confirmation event through this, not a parallel channel.
   response: Response;
+  // ADR-0044: raiseInterrupt reads/writes this conversation's metadata to pause on, and
+  // needs the id to do it — nothing else in the context identifies which conversation a
+  // step belongs to.
+  conversationId: string;
 };
 
 @Injectable()
@@ -1223,9 +1576,11 @@ export class AiService implements IAiService {
     "CreateComponent",
     "CreateQuery",
     "UpdateComponent",
+    "DeleteComponent",
+    "MoveComponent",
     "UpdateQuery",
+    "DeleteQuery",
     "GenerateEvent",
-
   ];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
 
@@ -1236,6 +1591,12 @@ export class AiService implements IAiService {
   // loop fast without waiting on real wall-clock time.
   private CONFIRMATION_POLL_INTERVAL_MS = 3000;
   private CONFIRMATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+  // ADR-0044: same checkpoint-poll shape as the confirmation gate above, generalized onto
+  // conversation.metadata.interrupt instead of a Step's status column. Not `readonly`, for
+  // the same reason as the pair above — tests override both to avoid real wall-clock waits.
+  private INTERRUPT_POLL_INTERVAL_MS = 3000;
+  private INTERRUPT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
   constructor(
     private readonly aiUtilService: AiUtilService,
@@ -1533,6 +1894,7 @@ export class AiService implements IAiService {
         priorResults: [],
         dataSources,
         response,
+        conversationId,
       };
 
       for (let index = 0; index < filteredSteps.length; index++) {
@@ -1933,7 +2295,11 @@ export class AiService implements IAiService {
       // collision or actually targeted externally — the per-step LLM fallback path (no
       // planned table) always stays on ToolJet DB, same as before this ticket.
       const targetResolution = plannedTable
-        ? resolveCreateTableTarget(proposed.data_source_id, plannedTable.table_name, dataSources)
+        ? resolveCreateTableTarget(
+            proposed.data_source_id,
+            plannedTable.table_name,
+            dataSources,
+          )
         : { kind: "tjdb" as const };
       // Ticket #21: the planner-assigned phase name, trimmed; an absent/blank one persists
       // as null so the client's fallback grouping sees a consistent shape.
@@ -2096,10 +2462,16 @@ export class AiService implements IAiService {
         return this.executeComponentStep(step, context, previousError);
       case "UpdateComponent":
         return this.executeUpdateComponentStep(step, context, previousError);
+      case "DeleteComponent":
+        return this.executeDeleteComponentStep(step, context, previousError);
+      case "MoveComponent":
+        return this.executeMoveComponentStep(step, context, previousError);
       case "CreateQuery":
         return this.executeQueryStep(step, context, previousError);
       case "UpdateQuery":
         return this.executeUpdateQueryStep(step, context, previousError);
+      case "DeleteQuery":
+        return this.executeDeleteQueryStep(step, context, previousError);
       case "GenerateEvent":
         return this.executeEventStep(step, context, previousError);
       default:
@@ -2253,15 +2625,22 @@ export class AiService implements IAiService {
       await this.stepRepository.updateOne(step.id, {
         status: "awaiting_confirmation",
       });
-      this.aiUtilService.sendSSE(context.response, "step-awaiting-confirmation", {
-        stepId: step.id,
-        tableName: step.plannedTable?.table_name,
-        columns: step.plannedTable?.columns ?? [],
-        targetConnection: { id: targetDataSource.id, name: targetDataSource.name },
-        seedRowCount: Array.isArray(step.plannedSeedRows)
-          ? step.plannedSeedRows.length
-          : 0,
-      });
+      this.aiUtilService.sendSSE(
+        context.response,
+        "step-awaiting-confirmation",
+        {
+          stepId: step.id,
+          tableName: step.plannedTable?.table_name,
+          columns: step.plannedTable?.columns ?? [],
+          targetConnection: {
+            id: targetDataSource.id,
+            name: targetDataSource.name,
+          },
+          seedRowCount: Array.isArray(step.plannedSeedRows)
+            ? step.plannedSeedRows.length
+            : 0,
+        },
+      );
     }
 
     const deadline = Date.now() + this.CONFIRMATION_TIMEOUT_MS;
@@ -2280,6 +2659,115 @@ export class AiService implements IAiService {
     throw new Error(
       "Timed out waiting for confirmation on a CreateTable step targeting an external PostgreSQL source.",
     );
+  }
+
+  /**
+   * ADR-0044: generic pause point. Writes conversation.metadata.interrupt, sends the
+   * `interrupt` SSE event on the same response `awaitExternalTableConfirmation` streams on,
+   * then polls conversation.metadata for an `answer` written by `interruptAnswer` (a
+   * separate HTTP request) — the confirmation gate's checkpoint shape, generalized off of
+   * a Step's status column onto conversation metadata (see ADR-0044's storage rationale).
+   */
+  private async raiseInterrupt(
+    context: StepExecutionContext,
+    type: string,
+    payload: Record<string, any>,
+  ): Promise<any> {
+    const conversation = await this.aiConversationRepository.findById(
+      context.conversationId,
+    );
+    const existing = conversation?.metadata?.interrupt;
+    if (existing?.type === type && existing?.answer !== undefined) {
+      const answer = existing.answer;
+      await this.aiConversationRepository.updateOne(context.conversationId, {
+        metadata: { ...(conversation.metadata || {}), interrupt: undefined },
+      });
+      return answer;
+    }
+
+    const interruptId = existing?.id ?? randomUUID();
+    if (!existing) {
+      await this.aiConversationRepository.updateOne(context.conversationId, {
+        metadata: {
+          ...(conversation.metadata || {}),
+          interrupt: {
+            id: interruptId,
+            type,
+            payload,
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+      this.aiUtilService.sendSSE(context.response, "interrupt", {
+        interruptId,
+        type,
+        payload,
+      });
+    }
+
+    const deadline = Date.now() + this.INTERRUPT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.INTERRUPT_POLL_INTERVAL_MS),
+      );
+      const polled = await this.aiConversationRepository.findById(
+        context.conversationId,
+      );
+      const interrupt = polled?.metadata?.interrupt;
+      if (interrupt?.id === interruptId && interrupt?.answer !== undefined) {
+        await this.aiConversationRepository.updateOne(
+          context.conversationId,
+          { metadata: { ...(polled.metadata || {}), interrupt: undefined } },
+        );
+        return interrupt.answer;
+      }
+    }
+    // Clear the stale record before throwing — otherwise a retry of this same step (or a
+    // later step's own interrupt) finds `existing` still set, skips re-sending the SSE
+    // event (silent hang for a reconnected/late client), and a stale interruptId could
+    // still 409-match a genuinely new pause. Re-read rather than reusing the pre-poll
+    // `conversation` so an unrelated metadata write during the 30-minute wait isn't clobbered.
+    const latest = await this.aiConversationRepository.findById(
+      context.conversationId,
+    );
+    await this.aiConversationRepository.updateOne(context.conversationId, {
+      metadata: { ...(latest?.metadata || {}), interrupt: undefined },
+    });
+    throw new Error(`Timed out waiting for an answer to a "${type}" interrupt.`);
+  }
+
+  /**
+   * ADR-0044: the side channel `raiseInterrupt`'s poll picks up on its next tick. 409s on a
+   * stale or repeated answer (no live interrupt, or a different one) — the same shape
+   * `confirmStep` uses to reject a step that isn't `awaiting_confirmation`.
+   */
+  async interruptAnswer(
+    conversationId: string,
+    interruptId: string,
+    answer: any,
+    userId: string,
+  ): Promise<any> {
+    if (!conversationId || !interruptId || answer === undefined) {
+      throw new BadRequestException(
+        "conversationId, interruptId and answer are required",
+      );
+    }
+    await this.loadConversationOfType(conversationId, "generate", userId);
+    const conversation =
+      await this.aiConversationRepository.findById(conversationId);
+    const interrupt = conversation?.metadata?.interrupt;
+    if (!interrupt || interrupt.id !== interruptId) {
+      throw new ConflictException(
+        "This interrupt is no longer awaiting an answer",
+      );
+    }
+    await this.aiConversationRepository.updateOne(conversationId, {
+      metadata: {
+        ...(conversation.metadata || {}),
+        interrupt: { ...interrupt, answer, answeredAt: new Date().toISOString() },
+      },
+    });
+    return { answered: interruptId };
   }
 
   async executeCreateTableStep(
@@ -2316,7 +2804,11 @@ export class AiService implements IAiService {
             `This step's target data source (${step.targetDataSourceId}) is no longer connected`,
           );
         }
-        await this.awaitExternalTableConfirmation(step, context, targetDataSource);
+        await this.awaitExternalTableConfirmation(
+          step,
+          context,
+          targetDataSource,
+        );
 
         const created = await this.agentsService.CreateExternalTable(
           context.organizationId,
@@ -2462,7 +2954,7 @@ export class AiService implements IAiService {
             },
           ],
         },
-        "executeTableStep"
+        "executeTableStep",
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
         "openai",
@@ -2479,7 +2971,9 @@ export class AiService implements IAiService {
       if (!call || call.toolName !== "updateTable") {
         throw new Error("The assistant did not produce a table update");
       }
-      desired = call.args as TableDefinition & { renames?: Record<string, string> };
+      desired = call.args as TableDefinition & {
+        renames?: Record<string, string>;
+      };
     }
 
     const validationProblems = validateDesiredColumns(
@@ -2491,23 +2985,29 @@ export class AiService implements IAiService {
           is_not_null: column.is_not_null,
           is_unique: column.is_unique,
         },
-      }))
+      })),
     );
     if (validationProblems.length) {
       throw new Error(`Invalid table update: ${validationProblems.join("; ")}`);
     }
 
-    const current = await this.fetchCurrentTableSchema(step, context, desired.table_name);
+    const current = await this.fetchCurrentTableSchema(
+      step,
+      context,
+      desired.table_name,
+    );
     // Columns involved in the table's foreign keys (from view_table's own FK listing) —
     // diffTableColumns refuses dropping them (ADR-0041's safety stance).
     const fkColumnNames = new Set<string>(
-      (current.foreign_keys ?? []).flatMap((foreignKey: any) => foreignKey?.column_names ?? [])
+      (current.foreign_keys ?? []).flatMap(
+        (foreignKey: any) => foreignKey?.column_names ?? [],
+      ),
     );
     const diff = diffTableColumns(
       current.columns as CurrentTjdbColumn[],
       this.buildTableParams(desired).columns as DesiredTjdbColumn[],
       desired.renames,
-      { tableName: desired.table_name, fkColumnNames }
+      { tableName: desired.table_name, fkColumnNames },
     );
     if (diff.refusals.length) {
       // Not retryable by re-prompting for the same payload — these are structural
@@ -2516,7 +3016,11 @@ export class AiService implements IAiService {
     }
     if (diff.noOp) {
       return {
-        content: { table_name: desired.table_name, no_op: true, columns: desired.columns },
+        content: {
+          table_name: desired.table_name,
+          no_op: true,
+          columns: desired.columns,
+        },
         identifier: desired.table_name,
         props: { table_name: desired.table_name, columns: desired.columns },
       };
@@ -2543,10 +3047,16 @@ export class AiService implements IAiService {
    * the planned table's name — the planned path needs the schema of the table it is about
    * to replace, the LLM path also shows it to the model before it answers.
    */
-  private async fetchCurrentTableSchema(step: Step, context: StepExecutionContext, tableNameHint?: string) {
+  private async fetchCurrentTableSchema(
+    step: Step,
+    context: StepExecutionContext,
+    tableNameHint?: string,
+  ) {
     const tableName = tableNameHint ?? step.plannedTable?.table_name;
     if (!tableName || typeof tableName !== "string") {
-      throw new Error("UpdateTable step does not name an existing table to update");
+      throw new Error(
+        "UpdateTable step does not name an existing table to update",
+      );
     }
     return this.agentsService.ViewTable(context.organizationId, tableName);
   }
@@ -2614,6 +3124,85 @@ export class AiService implements IAiService {
         throw new Error(
           `pageId "${props.pageId}" does not match any Page created earlier in this plan`,
         );
+      }
+    }
+
+    // Create-time nesting: parentComponentId, when given, must reference a Container, Form,
+    // Listview or ModalV2/Tabs slot already created earlier in THIS plan on the SAME page.
+    // Unlike ModalV2's fixed "-header"/"-footer" suffixes, a bare match is tried first
+    // (rather than regexing off a trailing "-segment") because every id here is a UUID
+    // already full of dashes — splitting on "-" blind would mangle it. Only once no widget's
+    // id equals rawParentId outright do we look for one that rawParentId extends by exactly
+    // "-<suffix>", and interpret that suffix per the found parent's own type (ModalV2 ADR-0043
+    // follow-up; Tabs/Listview this pass — see docs/adr/0043, "Follow-up: Tabs pane nesting").
+    if (props.parentComponentId) {
+      const rawParentId: string = props.parentComponentId;
+
+      const widgetsOnPage = context.priorResults.filter(
+        (result) =>
+          result.type === "CreateComponent" &&
+          result.artifact.content?.pageId === props.pageId,
+      );
+
+      const bareMatch = widgetsOnPage.find(
+        (result) => result.artifact.content?.id === rawParentId,
+      );
+      if (bareMatch) {
+        const parentType = bareMatch.artifact.content?.type;
+        if (parentType === "Tabs") {
+          throw new Error(
+            `parentComponentId "${rawParentId}" refers to a Tabs bar directly — target one of its panes instead, e.g. "${rawParentId}-0"`,
+          );
+        }
+        if (
+          parentType !== "Container" &&
+          parentType !== "Form" &&
+          parentType !== "Listview" &&
+          parentType !== "ModalV2"
+        ) {
+          throw new Error(
+            `parentComponentId "${rawParentId}" refers to a ${parentType}, which cannot hold nested children — only Container, Form, Listview, ModalV2 and Tabs (via a pane suffix) can`,
+          );
+        }
+        // Container/Form/Listview body, or ModalV2's body slot — all valid bare.
+      } else {
+        const slotParent = widgetsOnPage.find(
+          (result) =>
+            typeof result.artifact.content?.id === "string" &&
+            rawParentId.startsWith(`${result.artifact.content.id}-`),
+        );
+        if (!slotParent) {
+          throw new Error(
+            `parentComponentId "${rawParentId}" does not match any Container, Form, Listview, ModalV2 or Tabs created earlier in this plan on the same page`,
+          );
+        }
+        const baseParentId: string = slotParent.artifact.content.id;
+        const suffix = rawParentId.slice(baseParentId.length + 1);
+        const parentType = slotParent.artifact.content?.type;
+        if (parentType === "ModalV2") {
+          if (suffix !== "header" && suffix !== "footer") {
+            throw new Error(
+              `parentComponentId "${rawParentId}" refers to a ModalV2 slot suffix "${suffix}", but only "-header" and "-footer" are valid (bare id for the body)`,
+            );
+          }
+        } else if (parentType === "Tabs") {
+          const tabsCount: number =
+            slotParent.artifact.content?.tabsCount ?? 3;
+          const tabIndex = Number(suffix);
+          if (
+            !/^\d+$/.test(suffix) ||
+            tabIndex < 0 ||
+            tabIndex >= tabsCount
+          ) {
+            throw new Error(
+              `parentComponentId "${rawParentId}" refers to tab index "${suffix}", but this Tabs bar only has tabs 0-${tabsCount - 1}`,
+            );
+          }
+        } else {
+          throw new Error(
+            `parentComponentId "${rawParentId}" refers to a ${parentType}, which has no addressable slots — only ModalV2 ("-header"/"-footer") and Tabs ("-<tabIndex>") do`,
+          );
+        }
       }
     }
 
@@ -2766,6 +3355,204 @@ export class AiService implements IAiService {
     };
   }
 
+  private async executeDeleteComponentStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const componentIndex = await this.appInventoryService.renderComponentIndex(
+      context.appVersionId,
+    );
+    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: DELETE_COMPONENT_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeDeleteComponentStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-delete-component",
+      {
+        ...prompt,
+        tools: { deleteComponent: deleteComponentTool },
+        toolChoice: { type: "tool", toolName: "deleteComponent" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "deleteComponent") {
+      throw new Error("The assistant did not produce a component to delete");
+    }
+
+    const { componentId } = call.args as { componentId: string };
+    if (!componentIndex.includes(`(id: ${componentId},`)) {
+      throw new Error(
+        `componentId "${componentId}" does not match any existing component in this app`,
+      );
+    }
+
+    const snapshot = await this.agentsService.DeleteComponent(
+      context.appVersionId,
+      componentId,
+    );
+
+    return {
+      content: snapshot,
+      identifier: snapshot.id,
+      props: { componentId },
+    };
+  }
+
+  /**
+   * MoveComponent (ADR-0043 follow-up): grounds both componentId and newParentComponentId
+   * against the live component index the same way UpdateComponent/DeleteComponent do — the
+   * target and the new parent can be anything already in the app, not just this plan's own
+   * priorResults, unlike create-time parentComponentId nesting (which only reaches
+   * components this same plan created). Cycle safety and the actual reparent live in
+   * AgentsService.MoveComponent (componentsService.componentLayoutChange's own
+   * assertNoParentCycle) — this method only checks that both ids are real.
+   */
+  private async executeMoveComponentStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const componentIndex = await this.appInventoryService.renderComponentIndex(
+      context.appVersionId,
+    );
+    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: MOVE_COMPONENT_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeMoveComponentStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-move-component",
+      {
+        ...prompt,
+        tools: { moveComponent: moveComponentTool },
+        toolChoice: { type: "tool", toolName: "moveComponent" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "moveComponent") {
+      throw new Error("The assistant did not produce a component to move");
+    }
+
+    const { componentId, newParentComponentId } = call.args as {
+      componentId: string;
+      newParentComponentId?: string;
+    };
+    if (!componentIndex.includes(`(id: ${componentId},`)) {
+      throw new Error(
+        `componentId "${componentId}" does not match any existing component in this app`,
+      );
+    }
+    if (
+      newParentComponentId &&
+      !componentIndex.includes(`(id: ${newParentComponentId},`)
+    ) {
+      throw new Error(
+        `newParentComponentId "${newParentComponentId}" does not match any existing component in this app`,
+      );
+    }
+
+    const snapshot = await this.agentsService.MoveComponent(
+      context.appVersionId,
+      componentId,
+      newParentComponentId,
+    );
+
+    return {
+      content: snapshot,
+      identifier: snapshot.id,
+      props: { componentId, newParentComponentId },
+    };
+  }
+
+  private async executeDeleteQueryStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    const existingQueries = context.priorResults.filter(
+      (result) => result.type === "CreateQuery",
+    );
+    if (!existingQueries.length) {
+      throw new Error(
+        "There is no query to delete — a DeleteQuery step needs a CreateQuery step before it",
+      );
+    }
+
+    const stepContext = [
+      this.buildStepContextLines(step, context, previousError),
+      `Existing queries (delete exactly one of these, by name):\n${existingQueries
+        .map(
+          (result) =>
+            `- ${result.artifact.content.name} (id ${result.artifact.content.id})`,
+        )
+        .join("\n")}`,
+    ].join("\n\n");
+
+    const prompt = await this.budgetPromptForOrg(
+      context.organizationId,
+      {
+        system: DELETE_QUERY_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: stepContext }],
+      },
+      "executeDeleteQueryStep",
+    );
+    const result = await this.aiUtilService.AIGatewayGenerate(
+      "openai",
+      "approve-prd-delete-query",
+      {
+        ...prompt,
+        tools: { deleteQuery: deleteQueryTool },
+        toolChoice: { type: "tool", toolName: "deleteQuery" },
+      },
+      context.organizationId,
+    );
+
+    const call = result?.toolCalls?.[0];
+    if (!call || call.toolName !== "deleteQuery") {
+      throw new Error("The assistant did not produce a query to delete");
+    }
+
+    const { queryName } = call.args as { queryName: string };
+    const existing = existingQueries.find(
+      (entry) => entry.artifact.content?.name === queryName,
+    );
+    if (!existing) {
+      throw new Error(
+        `queryName "${queryName}" does not match any query created earlier in this plan. Available: ${existingQueries
+          .map((entry) => entry.artifact.content?.name)
+          .join(", ")}`,
+      );
+    }
+
+    const snapshot = await this.agentsService.DeleteQuery(
+      existing.artifact.content.id,
+    );
+
+    return {
+      content: snapshot,
+      identifier: snapshot.name,
+      props: { queryName },
+    };
+  }
+
   private async executeQueryStep(
     step: Step,
     context: StepExecutionContext,
@@ -2812,11 +3599,31 @@ export class AiService implements IAiService {
       table_id?: string;
       data_source_id?: string;
       sql?: string;
+      method?: string;
+      url?: string;
+      headers?: Array<{ key: string; value: string }>;
+      params?: Array<{ key: string; value: string }>;
+      body?: string;
+      operation?: string;
+      options?: Array<{ key: string; value: string }>;
     };
-    const props =
-      args.source === "sql"
-        ? this.buildExternalQueryProps(args, context)
-        : this.buildTooljetDbQueryProps(args);
+    // Absent `source` lands on tooljetdb (see buildTooljetDbQueryProps) — a plan written
+    // without one is a ToolJet DB plan, exactly as it always was.
+    let props: any;
+    switch (args.source) {
+      case "sql":
+        props = await this.buildExternalQueryProps(args, context);
+        break;
+      case "restapi":
+        props = await this.buildRestApiQueryProps(args, context);
+        break;
+      case "plugin":
+        props = await this.buildPluginQueryProps(args, context);
+        break;
+      default:
+        props = this.buildTooljetDbQueryProps(args);
+        break;
+    }
 
     const created = await this.agentsService.CreateQuery(
       context.appVersionId,
@@ -2943,7 +3750,11 @@ export class AiService implements IAiService {
       return {
         content: {
           updated: [
-            { id: sameEvent.id, name: sameEvent.name, previousEvent: sameEvent.event },
+            {
+              id: sameEvent.id,
+              name: sameEvent.name,
+              previousEvent: sameEvent.event,
+            },
           ],
           targetName: target.name,
           eventId: body.eventId,
@@ -2953,16 +3764,13 @@ export class AiService implements IAiService {
       };
     }
 
-    const created = await this.agentsService.CreateEvent(
-      context.appVersionId,
-      {
-        name: body.eventId,
-        event: body,
-        eventType: targetType,
-        attachedTo: target.id,
-        index: existingEvents.length,
-      },
-    );
+    const created = await this.agentsService.CreateEvent(context.appVersionId, {
+      name: body.eventId,
+      event: body,
+      eventType: targetType,
+      attachedTo: target.id,
+      index: existingEvents.length,
+    });
     return {
       content: {
         created: [{ id: created.id, name: created.name, sourceId: target.id }],
@@ -3030,7 +3838,10 @@ export class AiService implements IAiService {
       throw new Error("The assistant did not produce a query update");
     }
 
-    const args = call.args as { queryName: string; options: Record<string, any> };
+    const args = call.args as {
+      queryName: string;
+      options: Record<string, any>;
+    };
     const existing = existingQueries.find(
       (entry) => entry.artifact.content?.name === args.queryName,
     );
@@ -3090,7 +3901,57 @@ export class AiService implements IAiService {
    * table name that doesn't exist would not surface here either way; showing the model the
    * source's real tables (renderConnectedDataSources) is what keeps the statement honest.
    */
-  private buildExternalQueryProps(
+  /**
+   * Resolves a model-supplied `data_source_id` against the same connected-sources list the
+   * prompt showed it, the same way `pageId`/`queryName` are resolved elsewhere in this flow:
+   * the tool schema can only ask for a string, so an id the model invented has to be caught
+   * here, and failing is retryable — the error names what was actually offered so the next
+   * attempt can correct itself. Shared by every external-source query branch (sql, restapi)
+   * so the hallucinated-id retry text is identical regardless of which branch was picked.
+   */
+  private async resolveExternalDataSource(
+    dataSourceId: string | undefined,
+    context: StepExecutionContext,
+  ): Promise<QueryableDataSource> {
+    // ADR-0044: a missing id with more than one connected source is genuine ambiguity, not
+    // a model mistake — the prompt's connected-sources block cannot force a correct guess,
+    // so this asks the user instead of retrying the model against the same information.
+    // An id that IS given but doesn't match stays a retryable model error, unchanged below.
+    if (!dataSourceId && context.dataSources.length > 1) {
+      const answer = await this.raiseInterrupt(context, "select_datasource", {
+        candidates: context.dataSources.map((candidate) => ({
+          id: candidate.id,
+          name: candidate.name,
+        })),
+      });
+      const chosen = context.dataSources.find(
+        (candidate) => candidate.id === answer?.dataSourceId,
+      );
+      if (!chosen) {
+        throw new Error(
+          `Interrupt answer "${answer?.dataSourceId}" does not match any connected data source.`,
+        );
+      }
+      return chosen;
+    }
+
+    const dataSource = context.dataSources.find(
+      (candidate) => candidate.id === dataSourceId,
+    );
+    if (!dataSource) {
+      const available = context.dataSources.length
+        ? context.dataSources
+            .map((candidate) => `${candidate.name} (${candidate.id})`)
+            .join(", ")
+        : "none — this app has no connected data source, so the query must target ToolJet DB";
+      throw new Error(
+        `data_source_id "${dataSourceId}" does not match any connected data source. Available: ${available}`,
+      );
+    }
+    return dataSource;
+  }
+
+  private async buildExternalQueryProps(
     args: { name: string; data_source_id?: string; sql?: string },
     context: StepExecutionContext,
   ) {
@@ -3105,24 +3966,116 @@ export class AiService implements IAiService {
       );
     }
 
-    const dataSource = context.dataSources.find(
-      (candidate) => candidate.id === args.data_source_id,
+    const dataSource = await this.resolveExternalDataSource(
+      args.data_source_id,
+      context,
     );
-    if (!dataSource) {
-      const available = context.dataSources.length
-        ? context.dataSources
-            .map((candidate) => `${candidate.name} (${candidate.id})`)
-            .join(", ")
-        : "none — this app has no connected data source, so the query must target ToolJet DB";
-      throw new Error(
-        `data_source_id "${args.data_source_id}" does not match any connected data source. Available: ${available}`,
-      );
-    }
 
     return {
       name: args.name,
       dataSourceId: dataSource.id,
       options: { mode: "sql", query: args.sql },
+    };
+  }
+
+  /**
+   * A query against a connected REST API data source. Mirrors the option shape the restapi
+   * plugin's runtime actually reads (`plugins/packages/restapi/lib/index.ts`'s `run()` /
+   * the query editor's `Restapi` component defaults) — `headers`/`url_params`/`body` as
+   * key-value pair arrays, `body_toggle` gating whether `body` is even sent — so a query
+   * this step creates runs identically to one a user built by hand.
+   */
+  private async buildRestApiQueryProps(
+    args: {
+      name: string;
+      data_source_id?: string;
+      method?: string;
+      url?: string;
+      headers?: Array<{ key: string; value: string }>;
+      params?: Array<{ key: string; value: string }>;
+      body?: string;
+    },
+    context: StepExecutionContext,
+  ) {
+    if (!args.url?.trim()) {
+      throw new Error(
+        "A REST API query needs a request path/URL, but none was given",
+      );
+    }
+
+    const dataSource = await this.resolveExternalDataSource(
+      args.data_source_id,
+      context,
+    );
+
+    const toPairs = (entries?: Array<{ key: string; value: string }>) =>
+      (entries ?? []).map(({ key, value }) => [key, value]);
+
+    return {
+      name: args.name,
+      dataSourceId: dataSource.id,
+      options: {
+        method: args.method ?? "get",
+        url: args.url,
+        url_params: toPairs(args.params),
+        headers: toPairs(args.headers),
+        body_toggle: Boolean(args.body?.trim()),
+        raw_body: args.body ?? null,
+        json_body: null,
+        body: [],
+        cookies: [],
+      },
+    };
+  }
+
+  /**
+   * A query against a connected plugin data source (increment 5's `plugin` branch, initially
+   * deferred — see ADR-0045, `docs/adr/0045-plugin-query-branch.md`). Unlike
+   * restapi/sql, there is no single fixed option shape across plugins: each one's runtime
+   * `run()` reads whatever flat fields its own `operations.json` describes for the chosen
+   * operation (Slack's `send_message` wants `channel`/`message`; Airtable's `create_record`
+   * wants different fields entirely) — the same "options stored flat, unwrapped, exactly as
+   * `run()` reads them" convention `buildRestApiQueryProps` already established, just with a
+   * `plugin`-supplied key set instead of a fixed one.
+   */
+  private async buildPluginQueryProps(
+    args: {
+      name: string;
+      data_source_id?: string;
+      operation?: string;
+      options?: Array<{ key: string; value: string }>;
+    },
+    context: StepExecutionContext,
+  ) {
+    if (!args.operation?.trim()) {
+      throw new Error(
+        "A plugin query needs an operation, but none was given",
+      );
+    }
+
+    const dataSource = await this.resolveExternalDataSource(
+      args.data_source_id,
+      context,
+    );
+
+    const validOperations = dataSource.operations ?? [];
+    if (!validOperations.some((op) => op.value === args.operation)) {
+      const available = validOperations.length
+        ? validOperations.map((op) => op.value).join(", ")
+        : "none — this source has no usable operations";
+      throw new Error(
+        `operation "${args.operation}" is not one of ${dataSource.name}'s operations. Available: ${available}`,
+      );
+    }
+
+    const fields = Object.fromEntries(
+      (args.options ?? []).map(({ key, value }) => [key, value]),
+    );
+
+    return {
+      name: args.name,
+      dataSourceId: dataSource.id,
+      options: { operation: args.operation, ...fields },
     };
   }
 
@@ -4007,16 +4960,22 @@ export class AiService implements IAiService {
    * treated as an error, per the ticket's acceptance criteria.
    */
   async getThreadTokenUsage(conversationId: string, user: any): Promise<any> {
-    const conversation = await this.aiConversationRepository.findById(conversationId);
+    const conversation =
+      await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== user.id) {
       throw new NotFoundException("Conversation not found");
     }
 
-    const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const messages =
+      await this.aiConversationMessageRepository.findLatestByConversationId(
+        conversationId,
+      );
     // Only "ai" messages can ever carry usage (it comes from a provider response) — counting
     // user turns here would make aiMessagesWithUsage read as "N messages are missing data"
     // when some of those N are simply the wrong message type to have any.
-    const aiMessages = messages.filter((message) => message.messageType === "ai");
+    const aiMessages = messages.filter(
+      (message) => message.messageType === "ai",
+    );
 
     let promptTokens = 0;
     let completionTokens = 0;
@@ -4047,7 +5006,9 @@ export class AiService implements IAiService {
    * Never throws: a provider that omits usage (or an SDK version mismatch) should not break
    * message persistence, it should just leave this message out of the aggregation.
    */
-  private async captureUsageMetadata(result: { usage?: Promise<any> | any }): Promise<Record<string, any> | undefined> {
+  private async captureUsageMetadata(result: {
+    usage?: Promise<any> | any;
+  }): Promise<Record<string, any> | undefined> {
     try {
       const usage = await result.usage;
       if (!usage) {
@@ -4055,13 +5016,18 @@ export class AiService implements IAiService {
       }
       const promptTokens = Number(usage.promptTokens);
       const completionTokens = Number(usage.completionTokens);
-      if (!Number.isFinite(promptTokens) && !Number.isFinite(completionTokens)) {
+      if (
+        !Number.isFinite(promptTokens) &&
+        !Number.isFinite(completionTokens)
+      ) {
         return undefined;
       }
       return {
         usage: {
           promptTokens: Number.isFinite(promptTokens) ? promptTokens : 0,
-          completionTokens: Number.isFinite(completionTokens) ? completionTokens : 0,
+          completionTokens: Number.isFinite(completionTokens)
+            ? completionTokens
+            : 0,
         },
       };
     } catch {

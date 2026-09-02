@@ -32,6 +32,9 @@ export const FEATURES: FeaturesConfig = {
     [FEATURE_KEY.CONFIRM_STEP]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },
+    [FEATURE_KEY.INTERRUPT_ANSWER]: {
+      license: LICENSE_FIELD.AI_FEATURE,
+    },
     [FEATURE_KEY.REGENERATE_MESSAGE]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },

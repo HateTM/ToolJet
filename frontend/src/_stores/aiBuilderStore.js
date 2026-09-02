@@ -31,6 +31,11 @@ const initialState = {
   // { id, type, description, status: 'pending'|'running'|'succeeded'|'failed', artifact?, errorMessage? }
   steps: [],
   isApproving: false,
+  // ADR-0044: the currently-paused interrupt (e.g. `select_datasource`), or null. Set by
+  // the `interrupt` SSE event during approvePrd, cleared once interruptAnswer resolves it —
+  // the backend's poll on the paused approvePrd request picks the answer up on its own.
+  interrupt: null,
+  isAnsweringInterrupt: false,
   // The plan previewed but not yet approved (ticket #20): the preview-plan endpoint's steps,
   // each optionally carrying its CreateTable step's planned table definition. Rendered as a
   // structured schema preview; cleared when real execution starts (approvePrd's plan event),
@@ -667,12 +672,24 @@ const useAiBuilderStore = create(
               false,
               'aiBuilder/approvePrd/step-failed'
             );
+          } else if (type === 'interrupt') {
+            // ADR-0044: the running plan is paused server-side (its SSE connection stays
+            // open — this event does not end the stream). isGenerating stays true so the
+            // rest of the UI keeps treating the run as active; only the question card shows.
+            set(
+              (state) => {
+                state.interrupt = data;
+              },
+              false,
+              'aiBuilder/approvePrd/interrupt'
+            );
           } else if (type === 'done') {
             set(
               (state) => {
                 if (data?.message) state.messages.push(data.message);
                 state.isApproving = false;
                 state.isGenerating = false;
+                state.interrupt = null;
               },
               false,
               'aiBuilder/approvePrd/done'
@@ -683,6 +700,7 @@ const useAiBuilderStore = create(
                 state.error = data?.message || 'Failed to build the plan';
                 state.isApproving = false;
                 state.isGenerating = false;
+                state.interrupt = null;
               },
               false,
               'aiBuilder/approvePrd/error'
@@ -696,6 +714,7 @@ const useAiBuilderStore = create(
           set(
             (state) => {
               state.error = buildErrorMessage(error, 'Failed to approve the plan');
+              state.interrupt = null;
               state.isApproving = false;
               state.isGenerating = false;
             },
@@ -834,6 +853,56 @@ const useAiBuilderStore = create(
             },
             false,
             'aiBuilder/skipStep/settled'
+          );
+        }
+      },
+
+      // ADR-0044: answers the currently-paused interrupt. Not SSE — the backend's poll on
+      // the paused approvePrd request picks up the answer on its own; this just clears the
+      // question card optimistically once the write succeeds (a stale/repeat answer 409s).
+      answerInterrupt: async (answer) => {
+        const conversationId = get().currentConversationId;
+        const interrupt = get().interrupt;
+        if (!conversationId || !interrupt || get().isAnsweringInterrupt) return null;
+
+        set(
+          (state) => {
+            state.isAnsweringInterrupt = true;
+          },
+          false,
+          'aiBuilder/answerInterrupt/start'
+        );
+
+        try {
+          const result = await aiService.interruptAnswer({
+            conversationId,
+            interruptId: interrupt.interruptId,
+            answer,
+          });
+          set(
+            (state) => {
+              state.interrupt = null;
+            },
+            false,
+            'aiBuilder/answerInterrupt/success'
+          );
+          return result;
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to answer');
+            },
+            false,
+            'aiBuilder/answerInterrupt/error'
+          );
+          return null;
+        } finally {
+          set(
+            (state) => {
+              state.isAnsweringInterrupt = false;
+            },
+            false,
+            'aiBuilder/answerInterrupt/settled'
           );
         }
       },

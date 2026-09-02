@@ -1430,6 +1430,463 @@ describe('AiService.approvePrd', () => {
     );
   });
 
+  it('rejects a component step whose parentComponentId does not match a Container/Form created in this plan, then succeeds once the retry references the real one (increment 4)', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateComponent', description: 'Add a container to the page' },
+        { type: 'CreateComponent', description: 'Add a text input inside the container' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Container', pageId: 'page-1', title: 'Sidebar' }))
+      // Attempt 1: hallucinated parentComponentId that doesn't match the real Container below.
+      .mockResolvedValueOnce(
+        componentToolCall({
+          type: 'TextInput',
+          pageId: 'page-1',
+          label: 'Name',
+          parentComponentId: 'made-up-container-id',
+        })
+      )
+      // Attempt 2 (retry): the real Container id.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'TextInput', pageId: 'page-1', label: 'Name', parentComponentId: 'container-1' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Add a container to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a text input inside the container',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' })
+      .mockResolvedValueOnce({ id: 'container-1', pageId: 'page-1', type: 'Container' })
+      .mockResolvedValueOnce({ id: 'component-1', pageId: 'page-1', type: 'TextInput' });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'container-1', pageId: 'page-1', type: 'Container' },
+        identifier: 'container-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'component-1', pageId: 'page-1', type: 'TextInput' },
+        identifier: 'component-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    // CreateComponent is called three times total: Page, Container, and the TextInput's
+    // successful (second) attempt — the hallucinated-parentComponentId attempt never reached it.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(3);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(3, 'version-1', 'org-1', 'TextInput', {
+      pageId: 'page-1',
+      label: 'Name',
+      parentComponentId: 'container-1',
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-3',
+      expect.objectContaining({
+        attempts: 1,
+        errorMessage: expect.stringContaining('parentComponentId "made-up-container-id" does not match'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-3',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
+  it('rejects a header/footer suffix on a real Container, then succeeds once the retry targets the real ModalV2 header slot', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateComponent', description: 'Add a container to the page' },
+        { type: 'CreateComponent', description: 'Add a modal to the page' },
+        { type: 'CreateComponent', description: 'Add a text into the modal header' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Container', pageId: 'page-1', title: 'Sidebar' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'ModalV2', pageId: 'page-1', triggerButtonLabel: 'Open' }))
+      // Attempt 1: "-header" on a real Container is invalid — Container has no slots.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Details', parentComponentId: 'container-1-header' })
+      )
+      // Attempt 2 (retry): the real ModalV2's header slot.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Details', parentComponentId: 'modal-1-header' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Add a container to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a modal to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-4',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 3,
+        type: 'CreateComponent',
+        description: 'Add a text into the modal header',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' })
+      .mockResolvedValueOnce({ id: 'container-1', pageId: 'page-1', type: 'Container' })
+      .mockResolvedValueOnce({ id: 'modal-1', pageId: 'page-1', type: 'ModalV2' })
+      .mockResolvedValueOnce({ id: 'component-1', pageId: 'page-1', type: 'Text' });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'container-1', pageId: 'page-1', type: 'Container' },
+        identifier: 'container-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'modal-1', pageId: 'page-1', type: 'ModalV2' },
+        identifier: 'modal-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
+        content: { id: 'component-1', pageId: 'page-1', type: 'Text' },
+        identifier: 'component-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(4);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(4, 'version-1', 'org-1', 'Text', {
+      pageId: 'page-1',
+      text: 'Details',
+      parentComponentId: 'modal-1-header',
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-4',
+      expect.objectContaining({
+        attempts: 1,
+        errorMessage: expect.stringContaining('which has no addressable slots'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-4',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+  });
+
+  it('nests a widget into a Tabs pane by index, rejects an out-of-range pane, and accepts a bare Listview id as its row template', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateComponent', description: 'Add a 2-tab bar to the page' },
+        { type: 'CreateComponent', description: 'Add a listview to the page' },
+        { type: 'CreateComponent', description: 'Add text into the second tab pane' },
+        { type: 'CreateComponent', description: 'Add text into the listview row template' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Tabs', pageId: 'page-1', tabs: ['One', 'Two'] }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Listview', pageId: 'page-1' }))
+      // Attempt 1: pane index 2 is out of range for a 2-tab bar (only 0 and 1 exist).
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Pane', parentComponentId: 'tabs-1-2' })
+      )
+      // Attempt 2 (retry): the real second pane, index 1.
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Pane', parentComponentId: 'tabs-1-1' })
+      )
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Row', parentComponentId: 'listview-1' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Add a 2-tab bar to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add a listview to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-4',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 3,
+        type: 'CreateComponent',
+        description: 'Add text into the second tab pane',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-5',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 4,
+        type: 'CreateComponent',
+        description: 'Add text into the listview row template',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' })
+      .mockResolvedValueOnce({ id: 'tabs-1', pageId: 'page-1', type: 'Tabs', tabsCount: 2 })
+      .mockResolvedValueOnce({ id: 'listview-1', pageId: 'page-1', type: 'Listview' })
+      .mockResolvedValueOnce({ id: 'component-1', pageId: 'page-1', type: 'Text' })
+      .mockResolvedValueOnce({ id: 'component-2', pageId: 'page-1', type: 'Text' });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'tabs-1', pageId: 'page-1', type: 'Tabs', tabsCount: 2 },
+        identifier: 'tabs-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-3',
+        content: { id: 'listview-1', pageId: 'page-1', type: 'Listview' },
+        identifier: 'listview-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-4',
+        content: { id: 'component-1', pageId: 'page-1', type: 'Text' },
+        identifier: 'component-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'artifact-5',
+        content: { id: 'component-2', pageId: 'page-1', type: 'Text' },
+        identifier: 'component-2',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(5);
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(4, 'version-1', 'org-1', 'Text', {
+      pageId: 'page-1',
+      text: 'Pane',
+      parentComponentId: 'tabs-1-1',
+    });
+    expect(agentsService.CreateComponent).toHaveBeenNthCalledWith(5, 'version-1', 'org-1', 'Text', {
+      pageId: 'page-1',
+      text: 'Row',
+      parentComponentId: 'listview-1',
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-4',
+      expect.objectContaining({
+        attempts: 1,
+        errorMessage: expect.stringContaining('only has tabs 0-1'),
+      })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-4',
+      expect.objectContaining({ status: 'succeeded', attempts: 2 })
+    );
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-5',
+      expect.objectContaining({ status: 'succeeded', attempts: 1 })
+    );
+  });
+
+  it('rejects a bare Tabs id as its own parentComponentId — a pane index must be given', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
+      buildService();
+
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      userId: 'user-1',
+      appId: 'app-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([
+      { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
+    ]);
+
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
+      planToolCall([
+        { type: 'CreateComponent', description: 'Create the Orders page' },
+        { type: 'CreateComponent', description: 'Add a tab bar to the page' },
+        { type: 'CreateComponent', description: 'Add text directly onto the tab bar' },
+      ])
+    )
+      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+      .mockResolvedValueOnce(componentToolCall({ type: 'Tabs', pageId: 'page-1' }))
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Oops', parentComponentId: 'tabs-1' })
+      )
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Oops', parentComponentId: 'tabs-1' })
+      )
+      .mockResolvedValueOnce(
+        componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Oops', parentComponentId: 'tabs-1' })
+      );
+
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 0,
+        type: 'CreateComponent',
+        description: 'Create the Orders page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 1,
+        type: 'CreateComponent',
+        description: 'Add a tab bar to the page',
+        status: 'pending',
+      })
+      .mockResolvedValueOnce({
+        id: 'step-3',
+        conversationId: 'conv-1',
+        messageId: 'ai-msg-1',
+        order: 2,
+        type: 'CreateComponent',
+        description: 'Add text directly onto the tab bar',
+        status: 'pending',
+      });
+
+    agentsService.CreateComponent.mockResolvedValueOnce({ id: 'page-1', name: 'Orders' }).mockResolvedValueOnce({
+      id: 'tabs-1',
+      pageId: 'page-1',
+      type: 'Tabs',
+      tabsCount: 3,
+    });
+
+    artifactRepository.createOne
+      .mockResolvedValueOnce({ id: 'artifact-1', content: { id: 'page-1', name: 'Orders' }, identifier: 'page-1' })
+      .mockResolvedValueOnce({
+        id: 'artifact-2',
+        content: { id: 'tabs-1', pageId: 'page-1', type: 'Tabs', tabsCount: 3 },
+        identifier: 'tabs-1',
+      });
+
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+
+    // Every attempt repeats the same (invalid) bare id, so the step exhausts its retries and
+    // never reaches CreateComponent for the Text — never falls through to a top-level placement.
+    expect(agentsService.CreateComponent).toHaveBeenCalledTimes(2);
+    expect(stepRepository.updateOne).toHaveBeenCalledWith(
+      'step-3',
+      expect.objectContaining({
+        status: 'failed',
+        errorMessage: expect.stringContaining('target one of its panes instead'),
+      })
+    );
+  });
+
   it('builds a working page end to end: CreateTable → CreateComponent(Page) → CreateQuery → CreateComponent(Table), each step referencing the real prior artifacts', async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
       buildService();
@@ -4963,7 +5420,10 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
     const { service, aiUtilService } = buildService();
     aiUtilService.AIGatewayGenerate.mockResolvedValue(suggestionToolCall);
     aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
-      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'trimmed' },
+      ],
       truncated: [
         { role: 'user', originalTokens: 100, keptTokens: 50, droppedTokens: 50, reason: 'content-truncated' },
       ],
@@ -5012,7 +5472,10 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
       toolCalls: [{ toolName: 'writeCode', args: { code: 'x', explanation: 'ok' } }],
     });
     aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
-      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'trimmed' },
+      ],
       truncated: [],
     });
 
@@ -5041,9 +5504,17 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
     aiUtilService.AIGatewayGenerate.mockResolvedValue({
       toolCalls: [{ toolName: 'proposeStepPlan', args: { steps: [{ type: 'createTable', description: 't' }] } }],
     });
-    stepRepository.createOne.mockResolvedValue({ id: 'step-1', type: 'CreateTable', description: 't', status: 'pending' });
+    stepRepository.createOne.mockResolvedValue({
+      id: 'step-1',
+      type: 'CreateTable',
+      description: 't',
+      status: 'pending',
+    });
     aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
-      messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'trimmed' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'trimmed' },
+      ],
       truncated: [],
     });
 
@@ -5055,10 +5526,7 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
 
     expect(aiUtilService.fitMessagesToContextWindowForOrg).toHaveBeenCalledWith(
       'org-1',
-      expect.arrayContaining([
-        expect.objectContaining({ role: 'system' }),
-        expect.objectContaining({ role: 'user' }),
-      ])
+      expect.arrayContaining([expect.objectContaining({ role: 'system' }), expect.objectContaining({ role: 'user' })])
     );
     expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
       'openai',

@@ -1,5 +1,5 @@
 // server/test/modules/ai/unit/data-source-inventory.service.spec.ts
-import { DataSourceInventoryService } from '@modules/ai/services/data-source-inventory.service';
+import { DataSourceInventoryService, renderConnectedDataSources } from '@modules/ai/services/data-source-inventory.service';
 
 const USER = { id: 'user-1', organizationId: 'org-1' } as any;
 const PERMISSIONS = { isAdmin: true } as any;
@@ -51,7 +51,7 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
     expect(dataSourcesRepository.allGlobalDS).toHaveBeenCalledWith(PERMISSIONS, 'org-1', expect.anything());
   });
 
-  it('offers only SQL-family sources, ignoring the other kinds the org has connected', async () => {
+  it('offers SQL-family and restapi sources, ignoring every other kind the org has connected', async () => {
     const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
     dataSourcesRepository.allGlobalDS.mockResolvedValue([
       { id: 'ds-rest', name: 'Stripe', kind: 'restapi' },
@@ -63,8 +63,21 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
 
     const sources = await service.listQueryableSources(USER, PERMISSIONS);
 
-    expect(sources.map((source) => source.id)).toEqual(['ds-pg']);
+    expect(sources.map((source) => source.id).sort()).toEqual(['ds-pg', 'ds-rest']);
+    // Only the SQL source's schema is read — a restapi source has no schema to introspect.
     expect(dataQueriesUtilService.listTables).toHaveBeenCalledTimes(1);
+  });
+
+  // Increment 5: a restapi source has no schema to read at all, so — unlike a SQL source —
+  // reporting zero tables must not drop it from the inventory.
+  it('keeps a restapi source even though it reports no tables, unlike an empty SQL source', async () => {
+    const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([{ id: 'ds-rest', name: 'Petstore', kind: 'restapi' }]);
+
+    const sources = await service.listQueryableSources(USER, PERMISSIONS);
+
+    expect(sources).toEqual([{ id: 'ds-rest', name: 'Petstore', kind: 'restapi', tables: [] }]);
+    expect(dataQueriesUtilService.listTables).not.toHaveBeenCalled();
   });
 
   it("never offers a sample data source — it is ToolJet's demo data, not something the user connected", async () => {
@@ -234,5 +247,128 @@ describe('DataSourceInventoryService.listQueryableSources', () => {
     dataSourcesRepository.allGlobalDS.mockRejectedValue(new Error('db is down'));
 
     await expect(service.listQueryableSources(USER, PERMISSIONS)).resolves.toEqual([]);
+  });
+
+  // Increment 5 follow-up (ADR-0045): a plugin source is queryable when its manifest exposes
+  // a real operation dropdown — derived from the manifest, never a hardcoded kind list.
+  it('offers a plugin source whose manifest has a real operation dropdown, carrying the operations list', async () => {
+    const { service, dataSourcesRepository } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        plugin: {
+          operationsFile: {
+            data: {
+              properties: {
+                operation: {
+                  list: [
+                    { name: 'List members', value: 'list_users' },
+                    { name: 'Send message', value: 'send_message' },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    const sources = await service.listQueryableSources(USER, PERMISSIONS);
+
+    expect(sources).toEqual([
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        tables: [],
+        operations: [
+          { name: 'List members', value: 'list_users' },
+          { name: 'Send message', value: 'send_message' },
+        ],
+      },
+    ]);
+  });
+
+  // Notion's real operations.json has no flat `operation` dropdown (a resource/database/page
+  // tree instead) — there is nothing to ground a tool call in, so it's silently excluded,
+  // the same tolerant drop an unreadable SQL schema already gets.
+  it('excludes a plugin source whose manifest has no flat operation dropdown to ground a tool call in', async () => {
+    const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([
+      {
+        id: 'ds-notion',
+        name: 'Notion',
+        kind: 'notion',
+        plugin: { operationsFile: { data: { properties: { resource: {}, database: {}, page: {} } } } },
+      },
+    ]);
+
+    await expect(service.listQueryableSources(USER, PERMISSIONS)).resolves.toEqual([]);
+    expect(dataQueriesUtilService.listTables).not.toHaveBeenCalled();
+  });
+
+  // The pre-loop filter admits any source with a `plugin` relation, which includes SQL-family
+  // marketplace plugins too — the loop's kind-ordering (SQL check before the operation-dropdown
+  // check) is what keeps a SQL source on the schema-introspection path instead of being
+  // (mis)treated as a plugin source.
+  it('still reads a SQL source through listTables even when it also carries a plugin relation', async () => {
+    const { service, dataSourcesRepository, dataQueriesUtilService } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([
+      {
+        id: 'ds-pg',
+        name: 'Warehouse',
+        kind: 'postgresql',
+        plugin: { operationsFile: { data: { properties: { operation: { list: [{ value: 'noop' }] } } } } },
+      },
+    ]);
+    dataQueriesUtilService.listTables.mockResolvedValue({ status: 'ok', data: [{ table_name: 'orders' }] });
+
+    const sources = await service.listQueryableSources(USER, PERMISSIONS);
+
+    expect(dataQueriesUtilService.listTables).toHaveBeenCalledTimes(1);
+    expect(sources).toEqual([{ id: 'ds-pg', name: 'Warehouse', kind: 'postgresql', tables: ['orders'] }]);
+  });
+
+  it('excludes a plugin source with no plugin/operationsFile data at all, without throwing', async () => {
+    const { service, dataSourcesRepository } = buildInventoryService();
+    dataSourcesRepository.allGlobalDS.mockResolvedValue([{ id: 'ds-mystery', name: 'Mystery', kind: 'mystery' }]);
+
+    await expect(service.listQueryableSources(USER, PERMISSIONS)).resolves.toEqual([]);
+  });
+});
+
+describe('renderConnectedDataSources (increment 5)', () => {
+  it('renders a SQL source with its table list, and a restapi source without one', () => {
+    const rendered = renderConnectedDataSources([
+      { id: 'ds-pg', name: 'Warehouse', kind: 'postgresql', tables: ['orders', 'customers'] },
+      { id: 'ds-rest', name: 'Petstore', kind: 'restapi', tables: [] },
+    ]);
+
+    expect(rendered).toContain('Warehouse (postgresql), id ds-pg — tables: orders, customers');
+    expect(rendered).toContain('Petstore (restapi), id ds-rest — a REST API');
+    expect(rendered).not.toContain('Petstore (restapi), id ds-rest — tables:');
+  });
+
+  it('renders nothing when there are no connected sources', () => {
+    expect(renderConnectedDataSources([])).toBe('');
+  });
+
+  it('renders a plugin source by its operations, not a table list or "give a request path"', () => {
+    const rendered = renderConnectedDataSources([
+      {
+        id: 'ds-slack',
+        name: 'Team Slack',
+        kind: 'slack',
+        tables: [],
+        operations: [
+          { name: 'List members', value: 'list_users' },
+          { name: 'Send message', value: 'send_message' },
+        ],
+      },
+    ]);
+
+    expect(rendered).toContain('Team Slack (slack), id ds-slack — a plugin; operations: list_users, send_message');
   });
 });

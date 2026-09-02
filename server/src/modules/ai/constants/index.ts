@@ -9,6 +9,7 @@ export enum FEATURE_KEY {
   REWIND_STEP = 'rewindStep',
   SKIP_STEP = 'skipStep',
   CONFIRM_STEP = 'confirmStep',
+  INTERRUPT_ANSWER = 'interruptAnswer',
   REGENERATE_MESSAGE = 'regenerateMessage',
   VOTE_MESSAGE = 'voteMessage',
   FIX_WITH_AI = 'fixWithAi',

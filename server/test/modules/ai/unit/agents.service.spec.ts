@@ -210,6 +210,72 @@ describe('AgentsService.CreateComponent', () => {
     expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
   });
 
+  it('nests a new component inside a Container via parentComponentId, scoping siblings to that parent (increment 4)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    componentsService.getAllComponents.mockResolvedValue({
+      'root-sibling': {
+        component: { name: 'Header', component: 'Text', parent: null },
+        layouts: { desktop: { left: 1, top: 5, width: 6, height: 40 } },
+      },
+      'child-in-container': {
+        component: { name: 'Field', component: 'TextInput', parent: 'container-1' },
+        layouts: { desktop: { left: 1, top: 5, width: 10, height: 40 } },
+      },
+    });
+
+    await service.CreateComponent('version-1', 'org-1', 'Button', {
+      pageId: 'page-1',
+      text: 'Save',
+      parentComponentId: 'container-1',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.parent).toBe('container-1');
+    // Placed below the existing child of the SAME parent (45 + 10 gap), ignoring the
+    // page-level 'root-sibling' entirely — nested children live in their own coordinate space.
+    expect(definition.layouts.desktop).toEqual({ left: 1, top: 55, width: 4, height: 40 });
+    expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
+  });
+
+  it('nests into a ModalV2 header slot, clamping the child height to fit the strip (increment 4 follow-up)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    componentsService.getAllComponents.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Table', {
+      pageId: 'page-1',
+      title: 'Orders',
+      queryName: 'list_orders',
+      parentComponentId: 'modal-1-header',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.parent).toBe('modal-1-header');
+    // Table's own default height (460) would blow out a ~56px header strip — clamped down.
+    expect(definition.layouts.desktop.height).toBe(30);
+  });
+
+  it('does not clamp height when nesting into a ModalV2 body slot (bare id, not header/footer)', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.create.mockResolvedValue({});
+    componentsService.getAllComponents.mockResolvedValue({});
+
+    await service.CreateComponent('version-1', 'org-1', 'Table', {
+      pageId: 'page-1',
+      title: 'Orders',
+      queryName: 'list_orders',
+      parentComponentId: 'modal-1',
+    });
+
+    const [componentDiff] = componentsService.create.mock.calls[0];
+    const [definition] = Object.values(componentDiff) as any[];
+    expect(definition.parent).toBe('modal-1');
+    expect(definition.layouts.desktop.height).toBe(460);
+  });
+
   it('fails the creation instead of overlapping when sibling compaction is rejected (ticket #63)', async () => {
     const { service, componentsService } = buildAgentsService();
     componentsService.create.mockResolvedValue({});
@@ -839,9 +905,9 @@ describe('AgentsService.UpdateComponent (ticket #66)', () => {
     const { service, componentsService } = buildAgentsService();
     componentsService.findOneWithLayouts.mockRejectedValue(new Error('Component with id ghost not found'));
 
-    await expect(
-      service.UpdateComponent('version-1', 'org-1', 'ghost', { properties: { text: 'x' } })
-    ).rejects.toThrow('Component "ghost" does not exist');
+    await expect(service.UpdateComponent('version-1', 'org-1', 'ghost', { properties: { text: 'x' } })).rejects.toThrow(
+      'Component "ghost" does not exist'
+    );
     expect(componentsService.update).not.toHaveBeenCalled();
   });
 });
@@ -1044,5 +1110,155 @@ describe('AgentsService.SeedTable (ticket #48, per-query report #62)', () => {
 
     expect(tooljetDbBulkUploadService.bulkUpsertRowsWithPrimaryKey).not.toHaveBeenCalled();
     expect(result).toEqual({ total: 0, inserted: 0, updated: 0, failed: 0, failures: [] });
+  });
+});
+
+// ADR-0043 follow-up 3: reparents an existing component into a different
+// Container/Form/Listview (bare id only), or back to the page root.
+describe('AgentsService.MoveComponent', () => {
+  const movingComponent = {
+    id: 'component-1',
+    type: 'Text',
+    pageId: 'page-1',
+    parent: 'container-old',
+    layouts: [{ type: 'desktop', top: 10, left: 5, width: 8, height: 4 }],
+  };
+
+  it('reparents into a real Container, writing the new parent and a computed layout', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockImplementation((id: string) => {
+      if (id === 'component-1') return Promise.resolve(movingComponent);
+      if (id === 'container-new') return Promise.resolve({ id: 'container-new', type: 'Container', pageId: 'page-1' });
+      return Promise.reject(new Error('not found'));
+    });
+    componentsService.getAllComponents.mockResolvedValue({});
+    componentsService.componentLayoutChange.mockResolvedValue({});
+
+    const snapshot = await service.MoveComponent('version-1', 'component-1', 'container-new');
+
+    expect(componentsService.componentLayoutChange).toHaveBeenCalledWith(
+      {
+        'component-1': {
+          layouts: { desktop: expect.objectContaining({ width: 8, height: 4 }) },
+          component: { parent: 'container-new' },
+        },
+      },
+      'version-1'
+    );
+    expect(snapshot).toMatchObject({
+      id: 'component-1',
+      pageId: 'page-1',
+      previousParent: 'container-old',
+      previousLayout: { top: 10, left: 5, width: 8, height: 4 },
+      newParent: 'container-new',
+    });
+  });
+
+  it('moves back to the page root when newParentComponentId is omitted', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue(movingComponent);
+    componentsService.getAllComponents.mockResolvedValue({});
+    componentsService.componentLayoutChange.mockResolvedValue({});
+
+    await service.MoveComponent('version-1', 'component-1');
+
+    expect(componentsService.componentLayoutChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'component-1': expect.objectContaining({ component: { parent: null } }),
+      }),
+      'version-1'
+    );
+  });
+
+  it('rejects a target that is not a Container, Form or Listview — retryable, no DB write attempted', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockImplementation((id: string) => {
+      if (id === 'component-1') return Promise.resolve(movingComponent);
+      if (id === 'modal-1') return Promise.resolve({ id: 'modal-1', type: 'ModalV2', pageId: 'page-1' });
+      return Promise.reject(new Error('not found'));
+    });
+
+    await expect(service.MoveComponent('version-1', 'component-1', 'modal-1')).rejects.toThrow(
+      /which cannot hold nested children/
+    );
+    expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
+  });
+
+  it('rejects moving a component into itself', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockResolvedValue(movingComponent);
+
+    await expect(service.MoveComponent('version-1', 'component-1', 'component-1')).rejects.toThrow(
+      'cannot be moved into itself'
+    );
+    expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
+  });
+
+  it('surfaces componentLayoutChange rejecting a parent cycle as a plain retryable Error', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockImplementation((id: string) => {
+      if (id === 'component-1') return Promise.resolve(movingComponent);
+      if (id === 'container-new') return Promise.resolve({ id: 'container-new', type: 'Container', pageId: 'page-1' });
+      return Promise.reject(new Error('not found'));
+    });
+    componentsService.getAllComponents.mockResolvedValue({});
+    componentsService.componentLayoutChange.mockResolvedValue({
+      error: { message: 'Parent assignment for component component-1 would create a parent-child loop.' },
+    });
+
+    await expect(service.MoveComponent('version-1', 'component-1', 'container-new')).rejects.toThrow(
+      /parent-child loop/
+    );
+  });
+
+  it('is a no-op (no DB write) when the target parent is already the component\'s current parent', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.findOneWithLayouts.mockImplementation((id: string) => {
+      if (id === 'component-1') return Promise.resolve(movingComponent);
+      if (id === 'container-old') return Promise.resolve({ id: 'container-old', type: 'Container', pageId: 'page-1' });
+      return Promise.reject(new Error('not found'));
+    });
+
+    const snapshot = await service.MoveComponent('version-1', 'component-1', 'container-old');
+
+    expect(snapshot).toEqual({
+      id: 'component-1',
+      pageId: 'page-1',
+      noop: true,
+      previousParent: 'container-old',
+      newParent: 'container-old',
+    });
+    expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('AgentsService.undoArtifact — MoveComponent', () => {
+  it('restores the previous parent and layout, touching only the moved component', async () => {
+    const { service, componentsService } = buildAgentsService();
+    componentsService.componentLayoutChange.mockResolvedValue({});
+
+    await service.undoArtifact('MoveComponent', 'version-1', 'org-1', {
+      id: 'component-1',
+      previousParent: 'container-old',
+      previousLayout: { top: 10, left: 5, width: 8, height: 4 },
+    });
+
+    expect(componentsService.componentLayoutChange).toHaveBeenCalledWith(
+      {
+        'component-1': {
+          layouts: { desktop: { top: 10, left: 5, width: 8, height: 4 } },
+          component: { parent: 'container-old' },
+        },
+      },
+      'version-1'
+    );
+  });
+
+  it('is a no-op for a noop MoveComponent snapshot', async () => {
+    const { service, componentsService } = buildAgentsService();
+
+    await service.undoArtifact('MoveComponent', 'version-1', 'org-1', { id: 'component-1', noop: true });
+
+    expect(componentsService.componentLayoutChange).not.toHaveBeenCalled();
   });
 });

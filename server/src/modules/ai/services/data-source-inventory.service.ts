@@ -18,11 +18,42 @@ import { DataQueriesUtilService } from '@modules/data-queries/util.service';
  */
 export const SQL_QUERYABLE_KINDS = ['postgresql', 'mysql', 'mariadb', 'mssql', 'oracledb'];
 
+/**
+ * Increment 5: a REST source has no schema to introspect — there is no `tables` list to
+ * ground the model in, so it is queryable by name/id alone (the AI Builder gives it a
+ * request path, not a table). Kept as its own list rather than folded into
+ * `SQL_QUERYABLE_KINDS` because it changes both how the source survives `listQueryableSources`
+ * (never dropped for having zero tables) and how it is rendered to the model
+ * (`renderConnectedDataSources`).
+ */
+export const REST_QUERYABLE_KINDS = ['restapi'];
+
+/**
+ * Increment 5 (plugin branch): unlike `SQL_QUERYABLE_KINDS`/`REST_QUERYABLE_KINDS`, this is
+ * deliberately not a hardcoded list of plugin kinds — that would drift the moment a new
+ * marketplace plugin is installed. Queryable-ness for the ~40 non-SQL, non-REST connector
+ * kinds is instead derived per-source, in `isPluginQueryable` below, from whether that
+ * source's plugin manifest exposes an `operations.json` with a real `operation` dropdown
+ * (`properties.operation.list`, a `[{ name, value }]` array — the shape
+ * `operations.schema.json` governs, confirmed uniform across Slack/Airtable/Baserow/Google
+ * Sheets/Mailgun). A plugin whose operations aren't a flat dropdown (Notion's
+ * resource/database/page/block/user tree, Stripe's `spec_url`-driven OpenAPI operations) has
+ * no equivalent to ground a tool call in and is silently excluded — the same tolerant
+ * degradation `readTables` already gives a SQL source with an unreadable schema.
+ */
+const isPluginOperationList = (value: unknown): value is Array<{ name?: string; value: string }> =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every((entry) => entry && typeof entry === 'object' && typeof (entry as any).value === 'string');
+
 export type QueryableDataSource = {
   id: string;
   name: string;
   kind: string;
   tables: string[];
+  // Only set for a plugin-queryable source (see isPluginOperationList): the operation names
+  // the model may pick from, e.g. [{ name: 'Send message', value: 'send_message' }].
+  operations?: Array<{ name?: string; value: string }>;
 };
 
 // Bounds on what reaches the prompt. Both the planner and every CreateQuery step carry this
@@ -66,12 +97,21 @@ const listTablesOptionsFor = (kind: string) => (kind === 'postgresql' ? { schema
 export const renderConnectedDataSources = (dataSources: QueryableDataSource[]): string => {
   if (!dataSources?.length) return '';
 
-  const lines = dataSources.map(
-    (dataSource) =>
-      `- ${dataSource.name} (${dataSource.kind}), id ${dataSource.id} — tables: ${dataSource.tables.join(', ')}`
-  );
+  const lines = dataSources.map((dataSource) => {
+    if (REST_QUERYABLE_KINDS.includes(dataSource.kind)) {
+      return `- ${dataSource.name} (${dataSource.kind}), id ${dataSource.id} — a REST API; give a request path relative to its base URL`;
+    }
+    if (dataSource.operations?.length) {
+      const ops = dataSource.operations.map((op) => op.value).join(', ');
+      return `- ${dataSource.name} (${dataSource.kind}), id ${dataSource.id} — a plugin; operations: ${ops}`;
+    }
+    return `- ${dataSource.name} (${dataSource.kind}), id ${dataSource.id} — tables: ${dataSource.tables.join(', ')}`;
+  });
 
-  return ['Connected data sources (already configured by the user, queryable with SQL):', ...lines].join('\n');
+  return [
+    'Connected data sources (already configured by the user, queryable with SQL, an HTTP request for a REST source, or a named operation for a plugin source):',
+    ...lines,
+  ].join('\n');
 };
 
 @Injectable()
@@ -105,7 +145,13 @@ export class DataSourceInventoryService {
    * connected" rather than failing a build that never needed one.
    */
   async listQueryableSources(user: User, userPermissions: UserPermissions): Promise<QueryableDataSource[]> {
-    let dataSources: Array<{ id: string; name: string; kind: string; type?: string }>;
+    let dataSources: Array<{
+      id: string;
+      name: string;
+      kind: string;
+      type?: string;
+      plugin?: { operationsFile?: { data?: any } };
+    }>;
     try {
       const visible = await this.dataSourcesRepository.allGlobalDS(userPermissions, user.organizationId, {});
       dataSources = (visible || [])
@@ -113,7 +159,15 @@ export class DataSourceInventoryService {
         // own demo data rather than something the user connected, so nothing should propose
         // building an app against them.
         .filter((dataSource) => dataSource.type !== DataSourceTypes.SAMPLE)
-        .filter((dataSource) => SQL_QUERYABLE_KINDS.includes(dataSource.kind))
+        .filter(
+          (dataSource) =>
+            SQL_QUERYABLE_KINDS.includes(dataSource.kind) ||
+            REST_QUERYABLE_KINDS.includes(dataSource.kind) ||
+            // Plugin kinds aren't enumerated here (see isPluginOperationList's comment) — a
+            // non-SQL, non-REST source is a plugin candidate and gets a real check below;
+            // this filter only needs to not throw it away before that check runs.
+            Boolean(dataSource.plugin)
+        )
         .sort((left, right) => (left.name || '').localeCompare(right.name || ''));
     } catch (error) {
       this.logger.warn(`[dataSourceInventory] could not list data sources: ${error?.message}`);
@@ -125,6 +179,31 @@ export class DataSourceInventoryService {
       // Capped on what survives, not on what was found: ten unreachable sources must not be
       // able to hide the readable eleventh.
       if (queryable.length >= MAX_SOURCES) break;
+
+      // A REST source has no schema to introspect — it is never dropped for having zero
+      // tables, unlike a SQL source (whose empty `tables` means "could not read its schema").
+      if (REST_QUERYABLE_KINDS.includes(dataSource.kind)) {
+        queryable.push({ id: dataSource.id, name: dataSource.name, kind: dataSource.kind, tables: [] });
+        continue;
+      }
+
+      if (!SQL_QUERYABLE_KINDS.includes(dataSource.kind)) {
+        const operations = dataSource.plugin?.operationsFile?.data?.properties?.operation?.list;
+        if (isPluginOperationList(operations)) {
+          queryable.push({
+            id: dataSource.id,
+            name: dataSource.name,
+            kind: dataSource.kind,
+            tables: [],
+            operations,
+          });
+        }
+        // Not a SQL kind and no usable operation list — e.g. Notion's resource tree, Stripe's
+        // spec-driven operations. Same silent-drop as an unreadable SQL schema; there is
+        // nothing to ground a tool call in for this source, so it isn't offered.
+        continue;
+      }
+
       const tables = await this.readTables(user, dataSource);
       if (!tables.length) continue;
       queryable.push({ id: dataSource.id, name: dataSource.name, kind: dataSource.kind, tables });
