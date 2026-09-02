@@ -786,4 +786,64 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
     expect(agentsService.MoveComponent).toHaveBeenCalledWith('v1', 'component-1', undefined);
     expect(result.props).toEqual({ componentId: 'component-1', newParentComponentId: undefined });
   });
+
+  it('CreateComponent consumes the payload without an LLM call', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        CreateComponent: jest.fn().mockResolvedValue({ id: 'new-1', type: 'Text' }),
+      },
+    });
+    // Text is a page widget: the executor's pageId guard requires a Page artifact from an
+    // earlier step in the same plan, so the payload must carry a valid pageId.
+    const pageContext = {
+      ...execContext,
+      priorResults: [
+        { type: 'CreateComponent', artifact: { content: { id: 'page-1', type: 'Page' } } },
+      ],
+    } as any;
+
+    const result = await service.executeComponentStep(
+      {
+        type: 'CreateComponent',
+        description: 'welcome text',
+        props: { generatedStep: { type: 'Text', pageId: 'page-1', properties: { text: 'Hello' } } },
+      } as any,
+      pageContext,
+    );
+
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+    // executor destructures { type, ...props } from call.args, so CreateComponent receives
+    // the widget definition (properties/styles keys included) as its 4th argument
+    expect(agentsService.CreateComponent).toHaveBeenCalledWith(
+      'v1',
+      'org-1',
+      'Text',
+      expect.objectContaining({ properties: { text: 'Hello' } }),
+    );
+    expect(result.identifier).toBe('new-1');
+    expect(result.props.type).toBe('Text');
+  });
+
+  it('CreateComponent: a payload with an unsupported component type throws retryably without calling the LLM', async () => {
+    const { service, aiUtilService, agentsService } = buildAiService({
+      agentsService: {
+        ...buildMockAgentsService(),
+        CreateComponent: jest.fn(),
+      },
+    });
+
+    await expect(
+      service.executeComponentStep(
+        {
+          type: 'CreateComponent',
+          description: 'd',
+          props: { generatedStep: { type: 'TimeTravelWidget' } },
+        } as any,
+        execContext,
+      ),
+    ).rejects.toThrow(/Unsupported component type/);
+    expect(agentsService.CreateComponent).not.toHaveBeenCalled();
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
+  });
 });

@@ -3097,31 +3097,39 @@ export class AiService implements IAiService {
     context: StepExecutionContext,
     previousError?: string,
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: CREATE_COMPONENT_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: this.buildStepContextLines(step, context, previousError),
-          },
-        ],
-      },
-      "executeComponentStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-create-component",
-      {
-        ...prompt,
-        tools: { createComponent: createComponentTool },
-        toolChoice: { type: "tool", toolName: "createComponent" },
-      },
-      context.organizationId,
-    );
+    // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "createComponent", args: generatedArgs };
+    } else {
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: CREATE_COMPONENT_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: this.buildStepContextLines(step, context, previousError),
+            },
+          ],
+        },
+        "executeComponentStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-create-component",
+        {
+          ...prompt,
+          tools: { createComponent: createComponentTool },
+          toolChoice: { type: "tool", toolName: "createComponent" },
+        },
+        context.organizationId,
+      );
 
-    const call = result?.toolCalls?.[0];
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "createComponent") {
       throw new Error("The assistant did not produce a component definition");
     }
