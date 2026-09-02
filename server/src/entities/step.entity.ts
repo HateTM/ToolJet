@@ -11,7 +11,13 @@ import { AiConversation } from './ai_conversation.entity';
 import { AiConversationMessage } from './ai_conversation_message.entity';
 import { Artifact } from './artifact.entity';
 
-export type StepType = 'CreateTable' | 'CreateQuery' | 'CreateComponent' | 'UpdateQuery' | 'GenerateEvent';
+export type StepType =
+  | 'CreateTable'
+  | 'UpdateTable'
+  | 'CreateQuery'
+  | 'CreateComponent'
+  | 'UpdateQuery'
+  | 'GenerateEvent';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
 
 @Entity('steps')

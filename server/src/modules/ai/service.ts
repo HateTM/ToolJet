@@ -19,6 +19,12 @@ import {
 } from "./services/query-update";
 import { isSingleReadOnlyStatement } from "./services/query-security";
 import {
+  diffTableColumns,
+  validateDesiredColumns,
+  CurrentTjdbColumn,
+  DesiredTjdbColumn,
+} from "./services/update-table-diff";
+import {
   renderEventCatalogForPrompt,
   normalizeEventId,
   validateEventBody,
@@ -76,6 +82,7 @@ You cannot change this app in this conversation — you have no ability to creat
 // options and event wiring on components/queries the plan has created.
 const STEP_TYPES = [
   "CreateTable",
+  "UpdateTable",
   "CreateQuery",
   "CreateComponent",
   "UpdateQuery",
@@ -313,6 +320,34 @@ Use the optional indexes field when a table will be filtered, sorted, or joined 
 export const createTableTool = tool({
   description: "Create a ToolJet DB table with the given name and columns.",
   parameters: tableDefinitionObject,
+});
+
+// Ticket #111 / ADR-0041: update_table is a full replace of the table's column definition
+// (same shape as createTable, plus an optional explicit renames map so a rename keeps the
+// column's data instead of inferring drop+add). The engine diffs this payload against the
+// table's real current schema — the LLM is never trusted to know the current schema.
+export const UPDATE_TABLE_SYSTEM_PROMPT = `You update the schema of one existing ToolJet DB table, based on the PRD and the specific step you've been asked to build.
+
+Call updateTable exactly once with the table's exact current name and the COMPLETE list of columns the table should have after this step. This is a full replace, not a patch: every column that should survive — existing or new — must appear in your columns list, described in the same shape the createTable tool uses (column_name, data_type, is_primary_key, is_not_null, is_unique). The engine compares your list against the table's real current schema and applies exactly the difference; an unchanged table means an empty diff, so never invent changes to seem useful.
+
+Rules:
+- Keep exactly one primary key column. Dropping or swapping the table's primary key is not allowed.
+- You are shown the table's current columns. Any current column you omit from your list will be DROPPED, and its data is lost — omit a column only when the step genuinely calls for removing it. Dropping a column that is part of a foreign key is refused outright.
+- When an existing column keeps its meaning but should be called something else, say so with the optional renames map ("old_column_name": "new_column_name") instead of dropping and re-adding it: a rename keeps the column's data, a drop loses it.
+- New columns you add must satisfy what this step describes — pick sensible, minimal defaults consistent with the rest of the table.
+- Changing a column's type or constraints (is_not_null, is_unique) is expressed by listing the column with its new attributes; the engine applies the alter.
+- Foreign keys and indexes are not part of this update: leave them as they are.`;
+
+export const updateTableTool = tool({
+  description: "Replace an existing ToolJet DB table's column definition with the complete desired column list.",
+  parameters: tableDefinitionObject.extend({
+    renames: z
+      .record(z.string())
+      .optional()
+      .describe(
+        "Explicit old_column_name -> new_column_name renames. A renamed column keeps its data; omitting it from columns instead drops it and loses the data. A rename's old name must be a current column and must not also appear in columns."
+      ),
+  }),
 });
 
 // The full allow-list (ADR-0002's v1 set — Page, Table, Form, Button, Text, TextInput,
@@ -760,6 +795,7 @@ export class AiService implements IAiService {
 
   private readonly SUPPORTED_STEP_TYPES: StepType[] = [
     "CreateTable",
+    "UpdateTable",
     "CreateComponent",
     "CreateQuery",
     "UpdateQuery",
@@ -1574,6 +1610,8 @@ export class AiService implements IAiService {
     switch (step.type) {
       case "CreateTable":
         return this.executeCreateTableStep(step, context, previousError);
+      case "UpdateTable":
+        return this.executeUpdateTableStep(step, context, previousError);
       case "CreateComponent":
         return this.executeComponentStep(step, context, previousError);
       case "CreateQuery":
@@ -1795,6 +1833,132 @@ export class AiService implements IAiService {
       identifier: created.table_name,
       props: tableParams,
     };
+  }
+
+  /**
+   * Ticket #111 / ADR-0041: executes an UpdateTable step. The tool call carries a
+   * full replace of the table's column definition; the current schema is fetched here
+   * (AgentsService.ViewTable), the diff is computed deterministically
+   * (diffTableColumns), and the resulting alter entries run through the existing
+   * 'edit_table' action — no hand-built SQL. The LLM is never trusted with the
+   * transition itself, only with the desired end state.
+   *
+   * A planned table on the step (same persisted-preview contract as CreateTable,
+   * ticket #20) is used verbatim; note the planned path carries no renames — a rename
+   * must come through the tool call (or be absent, in which case the plan's omission
+   * of the old column is a data-losing drop the user previewed and approved).
+   */
+  private async executeUpdateTableStep(
+    step: Step,
+    context: StepExecutionContext,
+    previousError?: string,
+  ): Promise<{ content: any; identifier: string; props: any }> {
+    let desired: TableDefinition & { renames?: Record<string, string> };
+    if (isWellFormedTableDefinition(step.plannedTable)) {
+      desired = step.plannedTable;
+    } else {
+      const current = await this.fetchCurrentTableSchema(step, context);
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: UPDATE_TABLE_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: [
+                this.buildStepContextLines(step, context, previousError),
+                `The table's current columns (JSON):\n${JSON.stringify(current.columns, null, 2)}`,
+              ].join("\n\n"),
+            },
+          ],
+        },
+        "executeTableStep"
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-update-table",
+        {
+          ...prompt,
+          tools: { updateTable: updateTableTool },
+          toolChoice: { type: "tool", toolName: "updateTable" },
+        },
+        context.organizationId,
+      );
+
+      const call = result?.toolCalls?.[0];
+      if (!call || call.toolName !== "updateTable") {
+        throw new Error("The assistant did not produce a table update");
+      }
+      desired = call.args as TableDefinition & { renames?: Record<string, string> };
+    }
+
+    const validationProblems = validateDesiredColumns(
+      desired.columns.map((column) => ({
+        column_name: column.column_name,
+        data_type: column.data_type,
+        constraints_type: {
+          is_primary_key: column.is_primary_key,
+          is_not_null: column.is_not_null,
+          is_unique: column.is_unique,
+        },
+      }))
+    );
+    if (validationProblems.length) {
+      throw new Error(`Invalid table update: ${validationProblems.join("; ")}`);
+    }
+
+    const current = await this.fetchCurrentTableSchema(step, context, desired.table_name);
+    // Columns involved in the table's foreign keys (from view_table's own FK listing) —
+    // diffTableColumns refuses dropping them (ADR-0041's safety stance).
+    const fkColumnNames = new Set<string>(
+      (current.foreign_keys ?? []).flatMap((foreignKey: any) => foreignKey?.column_names ?? [])
+    );
+    const diff = diffTableColumns(
+      current.columns as CurrentTjdbColumn[],
+      this.buildTableParams(desired).columns as DesiredTjdbColumn[],
+      desired.renames,
+      { tableName: desired.table_name, fkColumnNames }
+    );
+    if (diff.refusals.length) {
+      // Not retryable by re-prompting for the same payload — these are structural
+      // refusals (primary key / foreign-key drops). Surfaced as the step error.
+      throw new Error(`update_table refused: ${diff.refusals.join("; ")}`);
+    }
+    if (diff.noOp) {
+      return {
+        content: { table_name: desired.table_name, no_op: true, columns: desired.columns },
+        identifier: desired.table_name,
+        props: { table_name: desired.table_name, columns: desired.columns },
+      };
+    }
+
+    await this.agentsService.UpdateTable(context.organizationId, {
+      table_name: desired.table_name,
+      columns: diff.entries,
+    });
+
+    return {
+      content: {
+        table_name: desired.table_name,
+        columns: desired.columns,
+        ...(desired.renames && { renames: desired.renames }),
+      },
+      identifier: desired.table_name,
+      props: { table_name: desired.table_name, columns: diff.entries },
+    };
+  }
+
+  /**
+   * Fetches a table's current schema for an UpdateTable step. `tableNameHint` defaults to
+   * the planned table's name — the planned path needs the schema of the table it is about
+   * to replace, the LLM path also shows it to the model before it answers.
+   */
+  private async fetchCurrentTableSchema(step: Step, context: StepExecutionContext, tableNameHint?: string) {
+    const tableName = tableNameHint ?? step.plannedTable?.table_name;
+    if (!tableName || typeof tableName !== "string") {
+      throw new Error("UpdateTable step does not name an existing table to update");
+    }
+    return this.agentsService.ViewTable(context.organizationId, tableName);
   }
 
   private async executeComponentStep(

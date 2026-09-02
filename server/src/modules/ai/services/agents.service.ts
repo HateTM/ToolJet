@@ -56,6 +56,25 @@ export class AgentsService implements IAgentsService {
   }
 
   /**
+   * Fetches a table's current schema ({ foreign_keys, columns, configurations }) via the
+   * 'view_table' action (ticket #111). This — not the LLM's memory — is what an
+   * update_table step diffs its full-replace payload against (ADR-0041).
+   */
+  async ViewTable(organizationId: string, tableName: string): Promise<any> {
+    return this.tooljetDbTableOperationsService.perform(organizationId, 'view_table', { table_name: tableName });
+  }
+
+  /**
+   * Applies an update_table step's diffed column entries via the 'edit_table' action
+   * (ticket #111). `columns` is editTable's own per-column entry shape
+   * ({ old_column, new_column }), produced deterministically by update-table-diff.ts;
+   * empty new_column drops, empty old_column adds, both present alters (incl. renames).
+   */
+  async UpdateTable(organizationId: string, params): Promise<any> {
+    return this.tooljetDbTableOperationsService.perform(organizationId, 'edit_table', params);
+  }
+
+  /**
    * Lists the organization's ToolJet DB tables ({ id, tableName }), for AI-step validation
    * that needs to know what already exists (ticket #23's foreign-key pre-flight). Errors
    * propagate to the caller.
