@@ -94,3 +94,10 @@ describe('prompts/*.ts import surface', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('ported non-table step prompts (ADR-0048)', () => {
+  it('exports the UpdateComponent prompt with the forced tool-call contract', () => {
+    expect(promptsIndex.UPDATE_COMPONENT_SYSTEM_PROMPT).toContain('Call updateComponent exactly once');
+    expect(promptsIndex.UPDATE_COMPONENT_SYSTEM_PROMPT).toContain('include ONLY the paths that actually need to change');
+  });
+});
