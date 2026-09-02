@@ -26,6 +26,7 @@ import {
   CurrentTjdbColumn,
   DesiredTjdbColumn,
 } from "./services/update-table-diff";
+import { resolveGeneratedStepArgs } from "./helpers/generated-step-args";
 import {
   renderEventCatalogForPrompt,
   normalizeEventId,
@@ -3331,28 +3332,39 @@ export class AiService implements IAiService {
     const componentIndex = await this.appInventoryService.renderComponentIndex(
       context.appVersionId,
     );
-    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: UPDATE_COMPONENT_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: stepContext }],
-      },
-      "executeUpdateComponentStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-update-component",
-      {
-        ...prompt,
-        tools: { updateComponent: updateComponentTool },
-        toolChoice: { type: "tool", toolName: "updateComponent" },
-      },
-      context.organizationId,
-    );
+    // Plan-time payload (ADR-0048): on the first attempt a well-shaped props.generatedStep
+    // is used verbatim as the tool call — guards below still run, so a payload that is
+    // wrong about live state throws retryably and the next attempt goes back to the LLM.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "updateComponent", args: generatedArgs };
+    } else {
+      const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
-    const call = result?.toolCalls?.[0];
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: UPDATE_COMPONENT_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: stepContext }],
+        },
+        "executeUpdateComponentStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-update-component",
+        {
+          ...prompt,
+          tools: { updateComponent: updateComponentTool },
+          toolChoice: { type: "tool", toolName: "updateComponent" },
+        },
+        context.organizationId,
+      );
+
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "updateComponent") {
       throw new Error("The assistant did not produce a component update");
     }
@@ -3393,28 +3405,37 @@ export class AiService implements IAiService {
     const componentIndex = await this.appInventoryService.renderComponentIndex(
       context.appVersionId,
     );
-    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: DELETE_COMPONENT_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: stepContext }],
-      },
-      "executeDeleteComponentStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-delete-component",
-      {
-        ...prompt,
-        tools: { deleteComponent: deleteComponentTool },
-        toolChoice: { type: "tool", toolName: "deleteComponent" },
-      },
-      context.organizationId,
-    );
+    // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "deleteComponent", args: generatedArgs };
+    } else {
+      const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
-    const call = result?.toolCalls?.[0];
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: DELETE_COMPONENT_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: stepContext }],
+        },
+        "executeDeleteComponentStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-delete-component",
+        {
+          ...prompt,
+          tools: { deleteComponent: deleteComponentTool },
+          toolChoice: { type: "tool", toolName: "deleteComponent" },
+        },
+        context.organizationId,
+      );
+
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "deleteComponent") {
       throw new Error("The assistant did not produce a component to delete");
     }
@@ -3477,28 +3498,37 @@ export class AiService implements IAiService {
     const componentIndex = await this.appInventoryService.renderComponentIndex(
       context.appVersionId,
     );
-    const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
-    const prompt = await this.budgetPromptForOrg(
-      context.organizationId,
-      {
-        system: MOVE_COMPONENT_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: stepContext }],
-      },
-      "executeMoveComponentStep",
-    );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-move-component",
-      {
-        ...prompt,
-        tools: { moveComponent: moveComponentTool },
-        toolChoice: { type: "tool", toolName: "moveComponent" },
-      },
-      context.organizationId,
-    );
+    // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
+    const generatedArgs = resolveGeneratedStepArgs(step, previousError);
+    let call: { toolName: string; args: any } | undefined;
+    if (generatedArgs) {
+      call = { toolName: "moveComponent", args: generatedArgs };
+    } else {
+      const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
-    const call = result?.toolCalls?.[0];
+      const prompt = await this.budgetPromptForOrg(
+        context.organizationId,
+        {
+          system: MOVE_COMPONENT_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: stepContext }],
+        },
+        "executeMoveComponentStep",
+      );
+      const result = await this.aiUtilService.AIGatewayGenerate(
+        "openai",
+        "approve-prd-move-component",
+        {
+          ...prompt,
+          tools: { moveComponent: moveComponentTool },
+          toolChoice: { type: "tool", toolName: "moveComponent" },
+        },
+        context.organizationId,
+      );
+
+      call = result?.toolCalls?.[0];
+    }
+
     if (!call || call.toolName !== "moveComponent") {
       throw new Error("The assistant did not produce a component to move");
     }
