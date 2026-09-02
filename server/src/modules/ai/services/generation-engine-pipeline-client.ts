@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { parseEngineSSE } from './engine-sse-parser';
+import { AiKeySettingsService } from './ai-key-settings.service';
 
 /**
  * The per-request LLM provider config the server resolves (org BYOK via
@@ -29,6 +30,34 @@ export type GenerationEnginePipelineEvent =
   | { type: 'prd-chunk'; content: string }
   | { type: 'done'; artifacts: Record<string, unknown> }
   | { type: 'error'; message: string; stage?: string };
+
+/**
+ * One non-table step's pre-generated payload from POST /generate/steps (ADR-0048);
+ * `index` is the step's position in the returned step plan.
+ */
+export interface EngineGeneratedStep {
+  index: number;
+  type: string;
+  payload: Record<string, unknown>;
+}
+
+/** The part of /generate/steps' final artifacts the server's planner consumes (ADR-0048). */
+export interface EngineStepsResult {
+  steps: Array<{
+    type: string;
+    description: string;
+    table?: unknown;
+    seed_rows?: unknown[];
+    phase?: string;
+  }>;
+  generatedSteps: EngineGeneratedStep[];
+}
+
+/**
+ * Bounded worst case for the whole engine pipeline (up to six LLM calls). Beyond this
+ * the server falls back in-process rather than hanging approvePrd's SSE channel.
+ */
+const STEPS_TIMEOUT_MS = 300_000;
 
 /**
  * Idle-timeout: no event from the engine (not even a chunk) within this window
@@ -64,8 +93,83 @@ const IDLE_TIMEOUT_MS = 60_000;
 export class GenerationEnginePipelineClient {
   private readonly logger = new Logger(GenerationEnginePipelineClient.name);
 
+  constructor(private readonly aiKeySettingsService: AiKeySettingsService) {}
+
   isConfigured(): boolean {
     return Boolean(process.env.GENERATION_ENGINE_URL);
+  }
+
+  /**
+   * Plans the approved PRD's step list against POST /generate/steps (ADR-0048) and
+   * returns the engine's step plan plus the non-table steps' pre-generated payloads.
+   *
+   * Throws on every failure mode — unreachable engine, non-200, missing effective org
+   * LLM config (ADR-0038: resolved here, per request, before anything crosses the
+   * wire), malformed response — so the CALLER (generateStepPlan) owns the
+   * fallback-to-in-process policy (ADR-0048 decision 5); this client never hides a
+   * failure.
+   */
+  async generateSteps(
+    prd: string,
+    lld: Record<string, unknown> | undefined,
+    componentIndex: string | undefined,
+    organizationId: string
+  ): Promise<EngineStepsResult> {
+    const baseUrl = process.env.GENERATION_ENGINE_URL;
+    if (!baseUrl) {
+      throw new Error('GenerationEnginePipelineClient: GENERATION_ENGINE_URL is not configured');
+    }
+    const orgConfig = await this.aiKeySettingsService.getEffectiveOrgConfig(organizationId);
+    if (!orgConfig) {
+      throw new Error('GenerationEnginePipelineClient: no effective org LLM config for step planning');
+    }
+
+    const llm: EngineLlmConfig = {
+      provider: orgConfig.provider,
+      model: orgConfig.model,
+      apiKey: orgConfig.apiKey,
+      ...(orgConfig.baseURL && { baseURL: orgConfig.baseURL }),
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl.replace(/\/$/, '')}/generate/steps`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(process.env.ENGINE_API_KEY && { Authorization: `Bearer ${process.env.ENGINE_API_KEY}` }),
+        },
+        body: JSON.stringify({
+          prd,
+          ...(lld && { lld }),
+          ...(componentIndex && { componentIndex }),
+          organizationId,
+          llm,
+        }),
+        signal: AbortSignal.timeout(STEPS_TIMEOUT_MS),
+      });
+    } catch (error: any) {
+      throw new Error(`GenerationEnginePipelineClient: engine unreachable (${error?.message || error})`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`GenerationEnginePipelineClient: engine responded ${response.status}`);
+    }
+
+    const payload = (await response.json()) as {
+      artifacts?: { stepPlan?: { steps?: unknown }; generatedSteps?: unknown };
+    };
+    const steps = (payload as any)?.artifacts?.stepPlan?.steps;
+    if (!Array.isArray(steps)) {
+      throw new Error('GenerationEnginePipelineClient: engine returned no step plan');
+    }
+
+    return {
+      steps: steps as EngineStepsResult['steps'],
+      generatedSteps: Array.isArray((payload as any)?.artifacts?.generatedSteps)
+        ? ((payload as any).artifacts.generatedSteps as EngineGeneratedStep[])
+        : [],
+    };
   }
 
   /**
