@@ -6,6 +6,12 @@
 // The `Modal` entry's properties and triggers both come from widgets/modal.js (the legacy
 // widget componentsMeta.json's `Modal` key describes -- useDefaultButton/triggerButtonLabel/
 // hideOnEsc are its shape, not modalV2.js's), confirmed events: { onOpen, onClose } match.
+//
+// Part 2/Task 5 (11->35 parity): ported the remaining 24 componentsMeta.json keys the same
+// way, plus re-tokenized literal hex color defaultValues to the fork's `var(--cc-*)` design
+// tokens (Table.actionButtonBackgroundColor: #375FCF -> var(--cc-primary-brand), matching
+// ButtonColumnAdapter.jsx's #4368E3/var(--cc-primary-brand) equivalence). No `--cc-*` token
+// represents plain white/on-brand text, so Table.actionButtonTextColor stays '#fff'.
 import type { ComponentCatalogEntry } from './types';
 
 export const COMPONENT_CATALOG: Record<string, ComponentCatalogEntry> = {
@@ -55,7 +61,12 @@ export const COMPONENT_CATALOG: Record<string, ComponentCatalogEntry> = {
       { name: 'disableRowDeselection', valueType: 'boolean', defaultValue: false },
       { name: 'serverSideRowsPerPage', valueType: 'dynamic' },
       { name: 'serverSideSearch', valueType: 'boolean', defaultValue: false },
-      { name: 'actionButtonBackgroundColor', valueType: 'string', defaultValue: '#375FCF' },
+      {
+        name: 'actionButtonBackgroundColor',
+        valueType: 'string',
+        defaultValue: 'var(--cc-primary-brand)',
+      },
+      // No fork design token represents plain white/on-brand text -- left as literal hex.
       { name: 'actionButtonTextColor', valueType: 'string', defaultValue: '#fff' },
     ],
     triggers: [
@@ -285,6 +296,439 @@ export const COMPONENT_CATALOG: Record<string, ComponentCatalogEntry> = {
     triggers: [
       { id: 'onOpen', displayName: 'Opened' },
       { id: 'onClose', displayName: 'Closed' },
+    ],
+  },
+  TextArea: {
+    name: 'TextArea',
+    category: 'input',
+    properties: [
+      { name: 'value', valueType: 'string', defaultValue: 'Default value' },
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Enter your input' },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+    ],
+    triggers: [
+      { id: 'onChange', displayName: 'On change' },
+      { id: 'onEnterPressed', displayName: 'On enter pressed' },
+      { id: 'onFocus', displayName: 'On focus' },
+      { id: 'onBlur', displayName: 'On blur' },
+    ],
+  },
+  PasswordInput: {
+    name: 'PasswordInput',
+    category: 'input',
+    properties: [
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Password' },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      { name: 'value', valueType: 'string', defaultValue: 'default value' },
+    ],
+    triggers: [
+      { id: 'onChange', displayName: 'On change' },
+      { id: 'onFocus', displayName: 'On focus' },
+      { id: 'onBlur', displayName: 'On blur' },
+      { id: 'onEnterPressed', displayName: 'On enter pressed' },
+    ],
+  },
+  NumberInput: {
+    name: 'NumberInput',
+    category: 'input',
+    properties: [
+      { name: 'value', valueType: 'number', defaultValue: 0 },
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      { name: 'maxValue', valueType: 'dynamic' },
+      { name: 'minValue', valueType: 'dynamic' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Enter your input' },
+      { name: 'decimalPlaces', valueType: 'number', defaultValue: 2 },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+    ],
+    triggers: [
+      { id: 'onChange', displayName: 'On change' },
+      { id: 'onFocus', displayName: 'On focus' },
+      { id: 'onBlur', displayName: 'On blur' },
+      { id: 'onEnterPressed', displayName: 'On enter pressed' },
+    ],
+  },
+  Link: {
+    name: 'Link',
+    category: 'display',
+    properties: [
+      { name: 'linkTarget', valueType: 'string', defaultValue: 'https://dev.to/' },
+      { name: 'linkText', valueType: 'string', defaultValue: 'Click here' },
+      { name: 'targetType', valueType: 'string', defaultValue: 'new' },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+    ],
+    triggers: [
+      { id: 'onClick', displayName: 'On click' },
+      { id: 'onHover', displayName: 'On hover' },
+    ],
+  },
+  Divider: {
+    name: 'Divider',
+    category: 'display',
+    properties: [
+      { name: 'label', valueType: 'string' },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+    ],
+    triggers: [],
+  },
+  Icon: {
+    name: 'Icon',
+    category: 'display',
+    properties: [
+      { name: 'icon', valueType: 'string', defaultValue: 'IconHome2' },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+    ],
+    triggers: [
+      { id: 'onClick', displayName: 'On click' },
+      { id: 'onHover', displayName: 'On hover' },
+    ],
+  },
+  StarRating: {
+    name: 'StarRating',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Select your rating' },
+      { name: 'maxRating', valueType: 'number', defaultValue: 5 },
+      { name: 'defaultSelected', valueType: 'number', defaultValue: 5 },
+      { name: 'allowHalfStar', valueType: 'boolean', defaultValue: false },
+      { name: 'visible', valueType: 'dynamic' },
+      // componentsMeta.json records `"[]"` (a literal string, not an array) as the default --
+      // not a trustworthy effective value, so it's omitted rather than copied.
+      { name: 'tooltips', valueType: 'array' },
+    ],
+    triggers: [{ id: 'onChange', displayName: 'On Change' }],
+  },
+  Statistics: {
+    name: 'Statistics',
+    category: 'data',
+    properties: [
+      { name: 'primaryValueLabel', valueType: 'string', defaultValue: 'This months earnings' },
+      { name: 'primaryValue', valueType: 'string', defaultValue: '682.3' },
+      { name: 'primaryPrefixText', valueType: 'string', defaultValue: '' },
+      { name: 'primarySuffixText', valueType: 'string', defaultValue: '' },
+      { name: 'secondaryValueLabel', valueType: 'string', defaultValue: 'Last month' },
+      { name: 'secondaryValue', valueType: 'string', defaultValue: '2.85' },
+      { name: 'secondaryPrefixText', valueType: 'string', defaultValue: '' },
+      { name: 'secondarySuffixText', valueType: 'string', defaultValue: '' },
+      { name: 'secondarySignDisplay', valueType: 'string', defaultValue: 'positive' },
+      { name: 'dataAlignment', valueType: 'string', defaultValue: 'left' },
+      { name: 'secondaryValueAlignment', valueType: 'string', defaultValue: 'horizontal' },
+      { name: 'icon', valueType: 'string', defaultValue: 'IconDatabaseDollar' },
+      { name: 'iconDirection', valueType: 'string', defaultValue: 'right' },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'tooltip', valueType: 'string', defaultValue: '' },
+    ],
+    triggers: [],
+  },
+  Tags: {
+    name: 'Tags',
+    category: 'display',
+    properties: [
+      // componentsMeta.json's default is a 2-row seed array of demo tag chips (ADR-0033: not
+      // migrated, same judgment as Table.data/Form.JSONData).
+      { name: 'data', valueType: 'array' },
+    ],
+    triggers: [],
+  },
+  Datepicker: {
+    name: 'Datepicker',
+    category: 'input',
+    properties: [
+      { name: 'defaultValue', valueType: 'string', defaultValue: '01/01/2022' },
+      { name: 'format', valueType: 'string', defaultValue: 'DD/MM/YYYY' },
+      { name: 'enableTime', valueType: 'boolean', defaultValue: false },
+      { name: 'enableDate', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledDates', valueType: 'array' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Select date' },
+      { name: 'showClearBtn', valueType: 'boolean', defaultValue: false },
+    ],
+    triggers: [{ id: 'onSelect', displayName: 'On select' }],
+  },
+  EmailInput: {
+    name: 'EmailInput',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Enter email' },
+      { name: 'value', valueType: 'string', defaultValue: 'Default value' },
+      { name: 'showClearBtn', valueType: 'boolean', defaultValue: false },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'collapseWhenHidden', valueType: 'boolean', defaultValue: false },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+      { name: 'tooltipFormat', valueType: 'dynamic' },
+    ],
+    triggers: [
+      { id: 'onChange', displayName: 'On change' },
+      { id: 'onEnterPressed', displayName: 'On enter pressed' },
+      { id: 'onFocus', displayName: 'On focus' },
+      { id: 'onBlur', displayName: 'On blur' },
+    ],
+  },
+  CurrencyInput: {
+    name: 'CurrencyInput',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Enter your number' },
+      { name: 'value', valueType: 'number', defaultValue: 0 },
+      { name: 'decimalPlaces', valueType: 'string', defaultValue: '2' },
+      { name: 'isCountryChangeEnabled', valueType: 'boolean', defaultValue: true },
+      { name: 'showFlag', valueType: 'boolean', defaultValue: true },
+      { name: 'showClearBtn', valueType: 'boolean', defaultValue: false },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'collapseWhenHidden', valueType: 'boolean', defaultValue: false },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+      { name: 'tooltipFormat', valueType: 'dynamic' },
+    ],
+    triggers: [
+      { id: 'onChange', displayName: 'On change' },
+      { id: 'onEnterPressed', displayName: 'On enter pressed' },
+      { id: 'onFocus', displayName: 'On focus' },
+      { id: 'onBlur', displayName: 'On blur' },
+    ],
+  },
+  PhoneInput: {
+    name: 'PhoneInput',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Enter your input' },
+      { name: 'value', valueType: 'string', defaultValue: 'Default value' },
+      { name: 'isCountryChangeEnabled', valueType: 'boolean', defaultValue: true },
+      { name: 'showClearBtn', valueType: 'boolean', defaultValue: false },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'collapseWhenHidden', valueType: 'boolean', defaultValue: false },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: 'Tooltip text' },
+      { name: 'tooltipFormat', valueType: 'dynamic' },
+    ],
+    triggers: [
+      { id: 'onChange', displayName: 'On change' },
+      { id: 'onEnterPressed', displayName: 'On enter pressed' },
+      { id: 'onFocus', displayName: 'On focus' },
+      { id: 'onBlur', displayName: 'On blur' },
+    ],
+  },
+  Tabs: {
+    name: 'Tabs',
+    category: 'layout',
+    properties: [
+      { name: 'useDynamicOptions', valueType: 'boolean', defaultValue: false },
+      {
+        name: 'tabs',
+        valueType: 'array',
+        defaultValue: [
+          { title: 'Home', id: '0' },
+          { title: 'Profile', id: '1' },
+          { title: 'Settings', id: '2' },
+        ],
+      },
+      { name: 'tabItems', valueType: 'dynamic' },
+      { name: 'defaultTab', valueType: 'string', defaultValue: '0' },
+      { name: 'hideTabs', valueType: 'boolean', defaultValue: false },
+      { name: 'renderOnlyActiveTab', valueType: 'boolean', defaultValue: false },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: '' },
+    ],
+    triggers: [{ id: 'onTabSwitch', displayName: 'On tab switch' }],
+  },
+  Listview: {
+    name: 'Listview',
+    category: 'data',
+    properties: [
+      // componentsMeta.json's `data` default is a demo row (ADR-0033: not migrated).
+      { name: 'data', valueType: 'array' },
+      { name: 'mode', valueType: 'string', defaultValue: 'list' },
+      { name: 'columns', valueType: 'number', defaultValue: 3 },
+      { name: 'rowHeight', valueType: 'number', defaultValue: 100 },
+      { name: 'visible', valueType: 'dynamic' },
+      { name: 'showBorder', valueType: 'boolean', defaultValue: true },
+      { name: 'rowsPerPage', valueType: 'number', defaultValue: 10 },
+      { name: 'enablePagination', valueType: 'boolean', defaultValue: false },
+    ],
+    triggers: [
+      { id: 'onRowClicked', displayName: 'Row clicked (Deprecated)' },
+      { id: 'onRecordClicked', displayName: 'Record clicked' },
+    ],
+  },
+  IFrame: {
+    name: 'IFrame',
+    category: 'display',
+    properties: [
+      { name: 'source', valueType: 'string', defaultValue: 'https://tooljet.io/' },
+      { name: 'visible', valueType: 'dynamic' },
+    ],
+    triggers: [],
+  },
+  FilePicker: {
+    name: 'FilePicker',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      {
+        name: 'instructionText',
+        valueType: 'string',
+        defaultValue: 'Drag and drop files or click here to upload',
+      },
+      { name: 'enableDropzone', valueType: 'boolean', defaultValue: false },
+      { name: 'enablePicker', valueType: 'boolean', defaultValue: false },
+      { name: 'enableMultiple', valueType: 'boolean', defaultValue: false },
+      { name: 'parseContent', valueType: 'boolean', defaultValue: false },
+      { name: 'parseFileType', valueType: 'string', defaultValue: 'auto-detect' },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: '' },
+    ],
+    triggers: [
+      { id: 'onFileSelected', displayName: 'On File Selected' },
+      { id: 'onFileLoaded', displayName: 'On File Loaded' },
+      { id: 'onFileDeselected', displayName: 'On File Deselected' },
+    ],
+  },
+  ModalV2: {
+    name: 'ModalV2',
+    category: 'layout',
+    properties: [
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledTrigger', valueType: 'boolean', defaultValue: false },
+      { name: 'disabledModal', valueType: 'boolean', defaultValue: false },
+      { name: 'useDefaultButton', valueType: 'boolean', defaultValue: true },
+      { name: 'triggerButtonLabel', valueType: 'string', defaultValue: 'Launch Modal' },
+      { name: 'size', valueType: 'string', defaultValue: 'lg' },
+      { name: 'showHeader', valueType: 'dynamic' },
+      { name: 'showFooter', valueType: 'dynamic' },
+      { name: 'hideCloseButton', valueType: 'dynamic' },
+      { name: 'hideOnEsc', valueType: 'dynamic' },
+      { name: 'closeOnClickingOutside', valueType: 'dynamic' },
+      { name: 'modalHeight', valueType: 'number', defaultValue: 400 },
+      { name: 'headerHeight', valueType: 'dynamic', defaultValue: 80 },
+      { name: 'footerHeight', valueType: 'dynamic', defaultValue: 80 },
+    ],
+    triggers: [
+      { id: 'onOpen', displayName: 'On open' },
+      { id: 'onClose', displayName: 'On close' },
+    ],
+  },
+  TreeSelect: {
+    name: 'TreeSelect',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'dynamic' },
+      // componentsMeta.json's `data`/`checkedData`/`expandedData` defaults are a nested demo
+      // country/city tree (ADR-0033: not migrated, same judgment as Table.data).
+      { name: 'data', valueType: 'dynamic' },
+      { name: 'checkedData', valueType: 'dynamic' },
+      { name: 'expandedData', valueType: 'dynamic' },
+    ],
+    triggers: [
+      { id: 'onChange', displayName: 'On change' },
+      { id: 'onCheck', displayName: 'On check' },
+      { id: 'onUnCheck', displayName: 'On uncheck' },
+    ],
+  },
+  Html: {
+    name: 'Html',
+    category: 'display',
+    properties: [
+      {
+        name: 'rawHtml',
+        valueType: 'string',
+        defaultValue: '<body><div><h1>Hello World</h1></div></body>',
+      },
+    ],
+    triggers: [],
+  },
+  PopoverMenu: {
+    name: 'PopoverMenu',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Menu' },
+      { name: 'buttonType', valueType: 'string', defaultValue: 'primary' },
+      { name: 'trigger', valueType: 'string', defaultValue: 'click' },
+      // componentsMeta.json's `options` default is a single demo menu item (ADR-0033: not
+      // migrated).
+      { name: 'options', valueType: 'dynamic' },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: '' },
+    ],
+    triggers: [{ id: 'onSelect', displayName: 'On select' }],
+  },
+  ButtonGroupV2: {
+    name: 'ButtonGroupV2',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      // componentsMeta.json's `options` default is a single demo option (ADR-0033: not migrated).
+      { name: 'options', valueType: 'dynamic' },
+      { name: 'multiSelection', valueType: 'boolean', defaultValue: false },
+      { name: 'layout', valueType: 'string', defaultValue: 'row' },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+    ],
+    triggers: [{ id: 'onClick', displayName: 'On click' }],
+  },
+  DatePickerV2: {
+    name: 'DatePickerV2',
+    category: 'input',
+    properties: [
+      { name: 'label', valueType: 'string', defaultValue: 'Label' },
+      { name: 'defaultValue', valueType: 'string', defaultValue: '01/01/2022' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Select date' },
+      { name: 'dateFormat', valueType: 'string', defaultValue: 'DD/MM/YYYY' },
+      { name: 'loadingState', valueType: 'boolean', defaultValue: false },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disabledState', valueType: 'boolean', defaultValue: false },
+      { name: 'tooltip', valueType: 'string', defaultValue: '' },
+      { name: 'showClearBtn', valueType: 'boolean', defaultValue: false },
+    ],
+    triggers: [
+      { id: 'onSelect', displayName: 'On select' },
+      { id: 'onFocus', displayName: 'On focus' },
+      { id: 'onBlur', displayName: 'On blur' },
+    ],
+  },
+  Chat: {
+    name: 'Chat',
+    category: 'input',
+    properties: [
+      { name: 'chatTitle', valueType: 'string', defaultValue: 'Chat' },
+      { name: 'placeholder', valueType: 'string', defaultValue: 'Ask me anything!' },
+      { name: 'userName', valueType: 'string', defaultValue: '{{globals.currentUser.firstName}}' },
+      { name: 'respondentName', valueType: 'string', defaultValue: 'Assistant' },
+      { name: 'visibility', valueType: 'boolean', defaultValue: true },
+      { name: 'disableInput', valueType: 'boolean', defaultValue: false },
+    ],
+    triggers: [
+      { id: 'onMessageSent', displayName: 'On message sent' },
+      { id: 'onClearHistory', displayName: 'On history cleared' },
     ],
   },
 };
