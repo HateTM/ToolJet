@@ -177,13 +177,15 @@
 > run-time step list) but **still not executed**. Structurally the mocking approach is
 > sound (intercepts the `fetch` transport `fetchEventSource` uses). A later session with
 > Docker available tried to bring up the local dev stack (`docker compose up`) to actually
-> run it. First hit [HateTM/ToolJet#166](https://github.com/HateTM/ToolJet/issues/166)
-> (`server` missing explicit `pino`/`pino-http` deps) — fixed and merged. That unblocked
-> the server past its first crash, but exposed a second, unrelated pre-existing bug:
-> [HateTM/ToolJet#168](https://github.com/HateTM/ToolJet/issues/168) — the dev image's
-> `src`/`dist` detection during migrations resolves a TS source path Node can't `import()`,
-> crashing `MODULE_NOT_FOUND`. Run the spec against a live stack once #168 is resolved,
-> before fully trusting it:
+> run it and hit a chain of pre-existing, unrelated dev-stack bugs, two now fixed (PR #167):
+> [#166](https://github.com/HateTM/ToolJet/issues/166) (`server` missing explicit
+> `pino`/`pino-http` deps) and [#168](https://github.com/HateTM/ToolJet/issues/168)
+> (`dev-entrypoint.sh`'s stale-`dist` detection picked the compiled prod migration path,
+> which can't `import()` TS source). Both verified fixed — migrations now proceed well past
+> either old crash point. The stack still doesn't boot end-to-end: it now stops on a third,
+> separate, untracked data-migration bug (`AlterOrganizationIdInAppEnvironments1677822012965`,
+> `Null value encountered in property 'organizationId' of a where condition`). Run the spec
+> against a live stack once that's resolved, before fully trusting it:
 > `npx cypress run --config-file cypress-appbuilder.config.js --spec cypress/e2e/happyPath/platform/commonTestcases/apps/aiBuilderConfirmationBanner.cy.js`
 
 - [x] Inline-баннер в списке шагов для состояния `awaiting_confirmation` — не блокирующая модалка. Покрывает и `CreateTable`, и (по построению, на случай появления) `UpdateTable`.
