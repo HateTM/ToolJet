@@ -15,17 +15,17 @@ import { getModifiedColor } from '@/AppBuilder/Widgets/utils';
 const FilePicker = (props) => {
   const {
     id,
-    width,
+    width = '100%',
     height,
     component,
-    fireEvent,
+    fireEvent = () => {},
     onComponentOptionChanged,
-    darkMode,
-    styles,
-    properties,
+    darkMode = false,
+    styles = {},
+    properties = {},
     validation,
-    setExposedVariable,
-    setExposedVariables,
+    setExposedVariable = () => {},
+    setExposedVariables = () => {},
     dataCy,
   } = props;
 
@@ -267,16 +267,6 @@ FilePicker.propTypes = {
   setExposedVariable: PropTypes.func,
   setExposedVariables: PropTypes.func,
   dataCy: PropTypes.string,
-};
-
-FilePicker.defaultProps = {
-  width: '100%',
-  darkMode: false,
-  styles: {},
-  properties: {},
-  fireEvent: () => {},
-  setExposedVariable: () => {},
-  setExposedVariables: () => {},
 };
 
 export default FilePicker;

@@ -2,7 +2,15 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import FileList from './FileList';
 
-const FileListComponent = (props) => {
+const fileListDefaultProps = {
+  type: 'single',
+  onRemove: () => {},
+  width: '300px',
+  onRetry: () => {},
+};
+
+const FileListComponent = (rawProps) => {
+  const props = { ...fileListDefaultProps, ...rawProps };
   return <FileList {...props} />;
 };
 
@@ -14,11 +22,4 @@ FileListComponent.propTypes = {
   onRemove: PropTypes.func,
   width: PropTypes.string,
   onRetry: PropTypes.func,
-};
-
-FileListComponent.defaultProps = {
-  type: 'single',
-  onRemove: () => {},
-  width: '300px',
-  onRetry: () => {},
 };

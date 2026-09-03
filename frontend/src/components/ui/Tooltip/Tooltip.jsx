@@ -4,7 +4,15 @@ import { cn } from '@/lib/utils';
 import { Arrow } from './TooltipUtils/Arrow';
 import { arrowVariants, tooltipVariants } from './TooltipUtils/TooltipUtils';
 
-const Tooltip = ({ tooltipLabel, supportingText, theme, arrow, children, width, className }) => {
+const Tooltip = ({
+  tooltipLabel,
+  supportingText = '',
+  theme = 'light',
+  arrow = '',
+  children = null,
+  width = '',
+  className = '',
+}) => {
   return (
     <div className={cn(arrowVariants({ arrow }), className)}>
       <div
@@ -52,13 +60,4 @@ Tooltip.propTypes = {
   children: PropTypes.node,
   width: PropTypes.string,
   className: PropTypes.string,
-};
-
-Tooltip.defaultProps = {
-  supportingText: '',
-  theme: 'light',
-  arrow: '',
-  children: null,
-  width: '',
-  className: '',
 };

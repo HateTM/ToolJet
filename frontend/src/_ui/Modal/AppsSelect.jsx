@@ -48,7 +48,16 @@ export const getResourceTypeConfig = (resourceType) => {
   }
 };
 
-export function AppsSelect(props) {
+export function AppsSelect(rawProps) {
+  const props = {
+    allOption: {
+      label: 'Select all',
+      value: '*',
+      isAllField: true,
+    },
+    resourceType: RESOURCE_TYPE.APPS,
+    ...rawProps,
+  };
   const { customComponents, ...rest } = props;
   const navigate = useNavigate();
   const workspaceId = getWorkspaceId();
@@ -249,12 +258,3 @@ export function AppsSelect(props) {
     // </div>
   );
 }
-
-AppsSelect.defaultProps = {
-  allOption: {
-    label: 'Select all',
-    value: '*',
-    isAllField: true,
-  },
-  resourceType: RESOURCE_TYPE.APPS,
-};

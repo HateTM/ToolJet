@@ -3,7 +3,28 @@ import PropTypes from 'prop-types';
 import CommonInput from './CommonInput/Index';
 import EditableTitleInput from './EditableTitleInput/Index';
 
-const InputComponent = (props) => {
+const inputDefaultProps = {
+  type: 'text',
+  onChange: (e, validateObj) => {},
+  onClear: () => {},
+  placeholder: '',
+  name: '',
+  id: '',
+  size: 'medium',
+  disabled: false,
+  readOnly: '',
+  validation: null,
+  label: '',
+  'aria-label': '',
+  required: false,
+  leadingIcon: '',
+  trailingAction: '',
+  trailingActionDisabled: false,
+  helperText: '',
+};
+
+const InputComponent = (rawProps) => {
+  const props = { ...inputDefaultProps, ...rawProps };
   return props.type === 'editable title' ? <EditableTitleInput {...props} /> : <CommonInput {...props} />;
 };
 
@@ -28,24 +49,4 @@ InputComponent.propTypes = {
   trailingAction: PropTypes.oneOf(['clear', 'loading']),
   trailingActionDisabled: PropTypes.bool,
   helperText: PropTypes.string,
-};
-
-InputComponent.defaultProps = {
-  type: 'text',
-  onChange: (e, validateObj) => {},
-  onClear: () => {},
-  placeholder: '',
-  name: '',
-  id: '',
-  size: 'medium',
-  disabled: false,
-  readOnly: '',
-  validation: null,
-  label: '',
-  'aria-label': '',
-  required: false,
-  leadingIcon: '',
-  trailingAction: '',
-  trailingActionDisabled: false,
-  helperText: '',
 };

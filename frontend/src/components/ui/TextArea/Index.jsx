@@ -3,7 +3,20 @@ import PropTypes from 'prop-types';
 import { Textarea } from './Textarea';
 import { HelperMessage, InputLabel, ValidationMessage } from './TextareaUtils/TextareaUtils';
 
-const TextAreaComponent = ({ onChange, ...props }) => {
+const textAreaRestDefaults = {
+  placeholder: '',
+  label: '',
+  helperText: '',
+  disabled: false,
+  required: false,
+  validation: () => {},
+  name: '',
+  id: '',
+  'aria-label': '',
+};
+
+const TextAreaComponent = ({ onChange = (e, validateObj) => {}, ...restProps }) => {
+  const props = { ...textAreaRestDefaults, ...restProps };
   const [isValid, setIsValid] = React.useState(null);
   const [message, setMessage] = React.useState('');
 
@@ -53,17 +66,4 @@ TextAreaComponent.propTypes = {
   name: PropTypes.string,
   id: PropTypes.string,
   'aria-label': PropTypes.string,
-};
-
-TextAreaComponent.defaultProps = {
-  placeholder: '',
-  label: '',
-  helperText: '',
-  disabled: false,
-  required: false,
-  onChange: (e, validateObj) => {},
-  validation: () => {},
-  name: '',
-  id: '',
-  'aria-label': '',
 };

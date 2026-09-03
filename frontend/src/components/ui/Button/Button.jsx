@@ -123,13 +123,13 @@ const buttonVariants = cva(
 const Button = forwardRef(
   (
     {
-      className,
+      className = '',
       variant = 'primary',
       size = 'default',
-      leadingIcon,
-      trailingIcon,
-      isLoading,
-      disabled,
+      leadingIcon = '',
+      trailingIcon = '',
+      isLoading = false,
+      disabled = false,
       asChild = false,
       fill = '',
       iconOnly = false, // as normal button and icon have diff styles make sure to pass it as truw when icon only button is used
@@ -223,20 +223,6 @@ Button.propTypes = {
   leadingIcon: PropTypes.string,
   trailingIcon: PropTypes.string,
   isLucid: PropTypes.bool,
-};
-
-Button.defaultProps = {
-  className: '',
-  variant: 'primary',
-  size: 'default',
-  isLoading: false,
-  disabled: false,
-  asChild: false,
-  iconOnly: false,
-  fill: '',
-  leadingIcon: '',
-  trailingIcon: '',
-  isLucid: false,
 };
 
 export { Button, buttonVariants };

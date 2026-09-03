@@ -3,12 +3,12 @@ import PropTypes from 'prop-types';
 import { formatFileSize } from '@/_helpers/utils'; // Import the utility
 
 const ValidationBar = ({
-  minSize,
-  maxSize,
+  minSize = 0,
+  maxSize = Infinity, // Use Infinity for no practical upper limit
   selectedFileCount,
-  minFileCount, // Added minFileCount prop
-  maxFileCount,
-  enableMultiple,
+  minFileCount = 0, // Added minFileCount prop
+  maxFileCount = 0,
+  enableMultiple = false,
   dataCy,
 }) => {
   const showSizeValidation = minSize > 0 || (maxSize > 0 && maxSize < Infinity); // Check if size limits are meaningful
@@ -70,14 +70,6 @@ ValidationBar.propTypes = {
   minFileCount: PropTypes.number, // Added prop type
   maxFileCount: PropTypes.number,
   enableMultiple: PropTypes.bool,
-};
-
-ValidationBar.defaultProps = {
-  minSize: 0,
-  maxSize: Infinity, // Use Infinity for no practical upper limit
-  minFileCount: 0, // Default min count
-  maxFileCount: 0, // Default to 0 if not multiple or specified
-  enableMultiple: false,
 };
 
 export default ValidationBar;

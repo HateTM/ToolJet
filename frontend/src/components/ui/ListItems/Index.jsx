@@ -2,7 +2,30 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import ListItems from './ListItems';
 
-const ListItemsComponent = (props) => {
+const listItemsDefaultProps = {
+  width: '',
+  background: false,
+  indexed: false,
+  disabled: false,
+  label: 'List Item',
+  addon: '',
+  error: false,
+  supportingVisuals: false,
+  supportingText: '',
+  leadingIcon: '',
+  trailingActionEdit: false,
+  trailingActionDelete: false,
+  trailingActionMenu: false,
+  trailingActionDuplicate: false,
+  onSaveEdit: () => {},
+  onDelete: () => {},
+  onMenu: () => {},
+  onDuplicate: () => {},
+  className: '',
+};
+
+const ListItemsComponent = (rawProps) => {
+  const props = { ...listItemsDefaultProps, ...rawProps };
   return <ListItems {...props} />;
 };
 
@@ -28,26 +51,4 @@ ListItemsComponent.propTypes = {
   onMenu: PropTypes.func,
   onDuplicate: PropTypes.func,
   className: PropTypes.string,
-};
-
-ListItemsComponent.defaultProps = {
-  width: '',
-  background: false,
-  indexed: false,
-  disabled: false,
-  label: 'List Item',
-  addon: '',
-  error: false,
-  supportingVisuals: false,
-  supportingText: '',
-  leadingIcon: '',
-  trailingActionEdit: false,
-  trailingActionDelete: false,
-  trailingActionMenu: false,
-  trailingActionDuplicate: false,
-  onSaveEdit: () => {},
-  onDelete: () => {},
-  onMenu: () => {},
-  onDuplicate: () => {},
-  className: '',
 };

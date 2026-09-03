@@ -2,7 +2,20 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { Checkbox } from './Checkbox';
 
-const CheckboxComponent = (props) => {
+const checkboxDefaultProps = {
+  disabled: false,
+  intermediate: false,
+  label: '',
+  helper: '',
+  type: 'checkbox',
+  size: 'default',
+  align: 'left',
+  required: false,
+  className: '',
+};
+
+const CheckboxComponent = (rawProps) => {
+  const props = { ...checkboxDefaultProps, ...rawProps };
   return <Checkbox {...props} />;
 };
 
@@ -19,16 +32,4 @@ CheckboxComponent.propTypes = {
   align: PropTypes.oneOf(['left', 'right']),
   required: PropTypes.bool,
   className: PropTypes.string,
-};
-
-CheckboxComponent.defaultProps = {
-  disabled: false,
-  intermediate: false,
-  label: '',
-  helper: '',
-  type: 'checkbox',
-  size: 'default',
-  align: 'left',
-  required: false,
-  className: '',
 };
