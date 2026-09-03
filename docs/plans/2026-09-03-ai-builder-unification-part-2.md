@@ -174,19 +174,33 @@
 **Files:** step list UI (AiBuilder), `cypress-tests/` (соответствующий config).
 
 > **Status note (2026-09-04):** Cypress spec written (first one covering the AI Builder's
-> run-time step list) but **still not executed**. Structurally the mocking approach is
-> sound (intercepts the `fetch` transport `fetchEventSource` uses). A later session with
-> Docker available tried to bring up the local dev stack (`docker compose up`) to actually
-> run it and hit a chain of pre-existing, unrelated dev-stack bugs, two now fixed (PR #167):
+> run-time step list) but **still not executed against a live stack**. Structurally the
+> mocking approach is sound (intercepts the `fetch` transport `fetchEventSource` uses). A
+> later session with Docker available got the full local dev stack (`docker compose up`)
+> to actually boot end-to-end for the first time — client, server, migrations, seed user —
+> after fixing four chained, pre-existing, unrelated bugs (all in PR #167):
 > [#166](https://github.com/HateTM/ToolJet/issues/166) (`server` missing explicit
-> `pino`/`pino-http` deps) and [#168](https://github.com/HateTM/ToolJet/issues/168)
+> `pino`/`pino-http` deps), [#168](https://github.com/HateTM/ToolJet/issues/168)
 > (`dev-entrypoint.sh`'s stale-`dist` detection picked the compiled prod migration path,
-> which can't `import()` TS source). Both verified fixed — migrations now proceed well past
-> either old crash point. The stack still doesn't boot end-to-end: it now stops on a third,
-> separate, untracked data-migration bug (`AlterOrganizationIdInAppEnvironments1677822012965`,
-> `Null value encountered in property 'organizationId' of a where condition`). Run the spec
-> against a live stack once that's resolved, before fully trusting it:
-> `npx cypress run --config-file cypress-appbuilder.config.js --spec cypress/e2e/happyPath/platform/commonTestcases/apps/aiBuilderConfirmationBanner.cy.js`
+> which can't `import()` TS source), a data migration (`AlterOrganizationIdInAppEnvironments
+> 1677822012965`) using a bare `null` in TypeORM delete criteria instead of `IsNull()`, and
+> the `client` image missing `@mui/material`/`@emotion/*`/`immutable` as explicit deps
+> (peers dropped by `--legacy-peer-deps`). All four verified fixed — app served real pages,
+> login worked.
+>
+> Running the spec itself surfaced a further, separate problem that was **not** fixed: none
+> of this fork's local `npx cypress run` invocations (tried against `cypress-appbuilder
+> .config.js`, `cypress-platform.config.js`, and an ad-hoc `cypress-run.config.js`) actually
+> load `cypress/commands/commands.js` — even `cy.apiLogin`, the first command the file
+> defines, is undefined at runtime, despite `cypress/support/e2e.js` importing it. This is
+> not specific to the AI Builder spec or to this branch's changes; it looks like a
+> local-environment/support-bundle issue unrelated to anything fixed above. Rather than
+> guess at a fix for CI wiring outside this plan's scope, this session left
+> `cypress-platform.config.js` untouched (reverted an exploratory `specPattern` addition)
+> and did not add the spec to any CI-used config. Whoever picks this up next should
+> diagnose why the support bundle doesn't register custom commands locally before trying
+> to run this spec again:
+> `npx cypress run --config-file cypress-platform.config.js --env server_host=http://localhost:3000 --spec cypress/e2e/happyPath/platform/commonTestcases/apps/aiBuilderConfirmationBanner.cy.js`
 
 - [x] Inline-баннер в списке шагов для состояния `awaiting_confirmation` — не блокирующая модалка. Покрывает и `CreateTable`, и (по построению, на случай появления) `UpdateTable`.
 - [x] Cypress: только сценарий подтверждения (banner → confirm/reject) — написан, не запущен (см. статус выше).
