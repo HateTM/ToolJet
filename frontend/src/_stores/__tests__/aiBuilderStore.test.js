@@ -15,6 +15,7 @@ jest.mock('@/_services/ai.service', () => ({
     promoteConversation: jest.fn(),
     previewPlan: jest.fn(),
     skipStep: jest.fn(),
+    confirmStep: jest.fn(),
   },
 }));
 
@@ -1041,6 +1042,45 @@ describe('skip and phases (ticket #21)', () => {
     expect(state.isApproving).toBe(false);
   });
 
+  it('marks the matching step awaiting_confirmation and stashes the confirmation payload, looked up by stepId', async () => {
+    aiService.approvePrd.mockImplementation(async (body, onMessage) => {
+      onMessage({
+        type: 'plan',
+        data: {
+          steps: [
+            { id: 'step-1', type: 'CreateTable', description: 'Create a table' },
+            { id: 'step-2', type: 'CreateTable', description: 'Create another table' },
+          ],
+        },
+      });
+      onMessage({
+        type: 'step-awaiting-confirmation',
+        data: {
+          stepId: 'step-2',
+          tableName: 'orders',
+          columns: [{ name: 'id' }, { name: 'total' }],
+          targetConnection: { id: 'ds-1', name: 'Warehouse PG' },
+          seedRowCount: 5,
+        },
+      });
+      return [];
+    });
+
+    await getInitialState().approvePrd('PRD text');
+
+    const state = getInitialState();
+    expect(state.steps[0]).toMatchObject({ status: 'pending' });
+    expect(state.steps[1]).toMatchObject({
+      status: 'awaiting_confirmation',
+      confirmation: {
+        tableName: 'orders',
+        columns: [{ name: 'id' }, { name: 'total' }],
+        targetConnection: { id: 'ds-1', name: 'Warehouse PG' },
+        seedRowCount: 5,
+      },
+    });
+  });
+
   it('keeps the planner-assigned phase label on the stored steps', async () => {
     aiService.approvePrd.mockImplementation(async (body, onMessage) => {
       onMessage({
@@ -1106,6 +1146,56 @@ describe('skip and phases (ticket #21)', () => {
     await getInitialState().skipStep('step-1');
 
     expect(aiService.skipStep).not.toHaveBeenCalled();
+  });
+
+  it('confirmStep records the decision with the backend without mutating the step locally', async () => {
+    useAiBuilderStore.setState({
+      steps: [{ id: 'step-1', type: 'CreateTable', description: 'Create a table', status: 'awaiting_confirmation' }],
+      error: null,
+    });
+    aiService.confirmStep.mockResolvedValue({ confirmed: 'step-1' });
+
+    const result = await getInitialState().confirmStep('step-1');
+
+    expect(result).toEqual({ confirmed: 'step-1' });
+    expect(aiService.confirmStep).toHaveBeenCalledWith({ conversationId: 'conv-1', stepId: 'step-1' });
+    expect(getInitialState().steps[0]).toMatchObject({ status: 'awaiting_confirmation' });
+    expect(getInitialState().error).toBeNull();
+    expect(getInitialState().confirmingStepId).toBeNull();
+  });
+
+  it('confirmStep sets confirmingStepId while the request is in flight', async () => {
+    let release;
+    aiService.confirmStep.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      })
+    );
+
+    const pending = getInitialState().confirmStep('step-1');
+    expect(getInitialState().confirmingStepId).toBe('step-1');
+
+    release({ confirmed: 'step-1' });
+    await pending;
+    expect(getInitialState().confirmingStepId).toBeNull();
+  });
+
+  it('confirmStep surfaces an error when the backend call fails', async () => {
+    aiService.confirmStep.mockRejectedValue({ error: 'This step is no longer awaiting confirmation' });
+
+    const result = await getInitialState().confirmStep('step-1');
+
+    expect(result).toBeNull();
+    expect(getInitialState().error).toBe('This step is no longer awaiting confirmation');
+    expect(getInitialState().confirmingStepId).toBeNull();
+  });
+
+  it('confirmStep does nothing without a current conversation', async () => {
+    useAiBuilderStore.setState({ currentConversationId: null });
+
+    await getInitialState().confirmStep('step-1');
+
+    expect(aiService.confirmStep).not.toHaveBeenCalled();
   });
 });
 
