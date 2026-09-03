@@ -51,7 +51,7 @@
 **2c. Frontend: React 18→19**
 - [ ] Compat-аудит: legacy react-bootstrap, PropType, findDOMNode; codemod'ы React 19.
 - [ ] react/react-dom + @types, webpack/babel; гейт: `npm run typecheck` + smoke `npm test` + storybook.
-- [ ] Блокер (react-bootstrap несовместим) → решение в ADR-0051, не «ждёт задачу».
+- [ ] Проверено (2026-09-03): `react-bootstrap@2.10.10` (latest) имеет открытый peer-диапазон `react: ">=16.14.0"` — верхней границы нет, `npm install` React 19 не заблокирует. Реальный риск — не install-time блокер, а рантайм (legacy Context API, `findDOMNode`, deprecation-warnings), см. следующий пункт по codemod'ам/аудиту. ADR-0051 нужен только если аудит найдёт непереносимые паттерны, не заводить его превентивно.
 - [ ] Commit: `chore(frontend): React 19`
 
 **2d. Tooling:** Cypress latest, root dev-deps, `.nvmrc`/npm-пины — одним PR `chore: tooling 2026`.
