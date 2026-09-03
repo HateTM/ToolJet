@@ -85,7 +85,7 @@ export const evaluationOutputSchema = z.looseObject({
  * schema's job is JSON-mode grounding plus the few identifiers the prompts call
  * mandatory (a componentId/queryName the step cannot work without).
  */
-export const STEP_PAYLOAD_OUTPUT_SCHEMAS: Record<Exclude<StepType, 'CreateTable'>, z.ZodType> = {
+export const STEP_PAYLOAD_OUTPUT_SCHEMAS: Record<Exclude<StepType, 'CreateTable' | 'UpdateTable'>, z.ZodType> = {
   CreateComponent: z.looseObject({}),
   UpdateComponent: z.looseObject({
     componentId: z.string(),

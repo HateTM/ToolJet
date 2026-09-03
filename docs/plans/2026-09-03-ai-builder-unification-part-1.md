@@ -68,12 +68,12 @@
 **Files:** Create `server/test/modules/ai/unit/engine-contract-sync.spec.ts`, `generation-engine/test/fork-contract-sync.test.ts`; modify `generation-engine/test/catalogs/component-catalog.test.ts`, `generation-engine/src/pipeline/types.ts:99-109`.
 Механика: TS-импорт между пакетами невозможен (typeorm, алиасы) — читаем чужой файл как текст (`fs.readFileSync` + regex).
 
-- [ ] Падающий server-тест: парсит `STEP_TYPES` из `generation-engine/src/pipeline/types.ts`, сверяет с entity `StepType` (`step.entity.ts:14-24`, 10 членов). FAIL: в движке 9, нет `UpdateTable`.
-- [ ] Фикс: `'UpdateTable'` в engine `STEP_TYPES` (промпт и per-entity роутинг уже есть, ADR-0041); doc-comment :93-98.
-- [ ] Зеркальный engine-тест: парсит union из `step.entity.ts`.
-- [ ] Server-тест: парсит `LlmProvider` из `generation-engine/src/config/llm.ts:10`, сверяет с `constants/llm.ts:8`.
-- [ ] Engine `component-catalog.test.ts`: hardcoded `FORK_COMPONENT_SET` → чтение `componentsMeta.json` (ключи) — упадёт (11 vs 36), зеленеет в Части 2 (Task 5).
-- [ ] Commit: `test: bidirectional fork↔engine contract guards; add UpdateTable to engine STEP_TYPES`
+- [x] Падающий server-тест: парсит `STEP_TYPES` из `generation-engine/src/pipeline/types.ts`, сверяет с entity `StepType` (`step.entity.ts:14-24`, 10 членов). FAIL: в движке 9, нет `UpdateTable`. (`server/test/modules/ai/unit/engine-contract-sync.spec.ts`)
+- [x] Фикс: `'UpdateTable'` в engine `STEP_TYPES` (промпт и per-entity роутинг уже есть, ADR-0041). Заодно найден и закрыт смежный пробел: `step-generation`'s Exclude-типы (`STEP_PAYLOAD_SYSTEM_PROMPTS`/`STEP_PAYLOAD_OUTPUT_SCHEMAS`, llm-deps.ts/schemas.ts) и стадийный `continue`-скип исключали только `CreateTable` — `UpdateTable` тоже per-entity'шный (ADR-0041), теперь исключён явно, иначе `tsc --noEmit` падал.
+- [x] Зеркальный engine-тест: парсит union из `step.entity.ts` (`generation-engine/test/fork-contract-sync.test.ts`).
+- [x] Server-тест: парсит `LlmProvider` из `generation-engine/src/config/llm.ts:10`, сверяет с `constants/llm.ts:8` (тот же файл, второй `it`; уже в синхроне — 6/6 значений совпали, тест зелёный сразу).
+- [x] Engine `component-catalog.test.ts`: hardcoded `FORK_COMPONENT_SET` → чтение `componentsMeta.json` (ключи) — падает (35 реальных ключей vs 11 в каталоге; план оценивал 36 — реальное число в файле 35), зеленеет в Части 2 (Task 5). Гейт подтверждён: полный `npm test` движка 177/178 (177 зелёных + этот один ожидаемо красный).
+- [x] Commit: `test: bidirectional fork↔engine contract guards; add UpdateTable to engine STEP_TYPES`
 
 ## Часть 2 (отдельный план после Части 1)
 Task 5: каталог движка 11→36 (ADR-0026 метод). Task 6: деплой TrueNAS (ADR-0032) + prod-status. Task 7: hard switch — удаление fallback (`generateStepPlan` :2211-2264, `streamPrdText` :4329-4342, `regenerateAiMessage` :4985), fail-fast, удаление `prompt-library/`, `PRD_SYSTEM_PROMPT`/`STEP_PLAN_SYSTEM_PROMPT`/`proposeStepPlanTool`. Task 8: фронтенд — `step-awaiting-confirmation` UI, Cypress E2E AI-потоки, workflows до полной реализации (ADR-0047).

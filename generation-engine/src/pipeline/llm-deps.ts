@@ -121,10 +121,10 @@ async function completeObject(
 
 /**
  * Step type -> ported system prompt (ADR-0048). All eight non-table types have entries:
- * the five ADR-0048 ports plus the three already in the #93 library. CreateTable is
- * absent — per-entity owns table payloads.
+ * the five ADR-0048 ports plus the three already in the #93 library. CreateTable and
+ * UpdateTable are absent — per-entity owns table payloads (ADR-0028, ADR-0041).
  */
-const STEP_PAYLOAD_SYSTEM_PROMPTS: Record<Exclude<StepType, 'CreateTable'>, string> = {
+const STEP_PAYLOAD_SYSTEM_PROMPTS: Record<Exclude<StepType, 'CreateTable' | 'UpdateTable'>, string> = {
   CreateComponent: CREATE_COMPONENT_SYSTEM_PROMPT,
   UpdateComponent: UPDATE_COMPONENT_SYSTEM_PROMPT,
   DeleteComponent: DELETE_COMPONENT_SYSTEM_PROMPT,
@@ -176,11 +176,11 @@ export function buildRealPipelineDeps(): DefaultPipelineDeps {
     },
     stepGeneration: {
       async generateStepPayload(step, index, artifacts, ctx) {
-        const system = STEP_PAYLOAD_SYSTEM_PROMPTS[step.type as Exclude<StepType, 'CreateTable'>];
+        const system = STEP_PAYLOAD_SYSTEM_PROMPTS[step.type as Exclude<StepType, 'CreateTable' | 'UpdateTable'>];
         if (!system) {
           throw new Error(`step-generation has no system prompt for step type "${step.type}"`);
         }
-        const schema = STEP_PAYLOAD_OUTPUT_SCHEMAS[step.type as Exclude<StepType, 'CreateTable'>];
+        const schema = STEP_PAYLOAD_OUTPUT_SCHEMAS[step.type as Exclude<StepType, 'CreateTable' | 'UpdateTable'>];
         if (!schema) {
           throw new Error(`step-generation has no payload schema for step type "${step.type}"`);
         }
