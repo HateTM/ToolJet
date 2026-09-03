@@ -260,7 +260,9 @@ export class GroupPermissionsUtilService implements IGroupPermissionsUtilService
             organizationId,
           },
         },
-        relations: ['group'],
+        relations: {
+                     group: true,
+                   },
       });
 
       if (groupUsersToDelete.length > 0) {
@@ -338,7 +340,7 @@ export class GroupPermissionsUtilService implements IGroupPermissionsUtilService
           },
         },
         null,
-        ['organizationUsers'],
+        { organizationUsers: true },
         null,
         manager
       );

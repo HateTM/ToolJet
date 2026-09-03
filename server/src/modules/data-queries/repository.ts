@@ -153,13 +153,13 @@ export class DataQueryRepository extends Repository<DataQuery> {
 
   async getMany(
     findOptions: FindOptionsWhere<DataQuery>,
-    relations?: string[],
+    relations?: FindOptionsRelations<DataQuery>,
     manager?: EntityManager
   ): Promise<DataQuery[]> {
     const m = manager ?? this.manager;
     return m.find(DataQuery, {
       where: { ...(findOptions ? findOptions : {}) },
-      relations: relations || [],
+      relations: relations || {},
     });
   }
 }

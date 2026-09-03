@@ -116,7 +116,10 @@ export class AppsService implements IAppsService {
         if (orgGit?.isBranchingEnabled) {
           const targetBranch = await manager.findOne(WorkspaceBranch, {
             where: { id: branchId, organizationId: user.organizationId },
-            select: ['id', 'isDefault'],
+            select: {
+                      id: true,
+                      isDefault: true,
+                    },
           });
           if (targetBranch?.isDefault) {
             throw new BadRequestException('Apps cannot be created on the default branch. Switch to a feature branch.');
@@ -372,7 +375,10 @@ export class AppsService implements IAppsService {
         }
         const branch = await this.appRepository.manager.findOne(WorkspaceBranch, {
           where: { id: appUpdateDto.branch_id, organizationId: app.organizationId },
-          select: ['id', 'isDefault'],
+          select: {
+                    id: true,
+                    isDefault: true,
+                  },
         });
         // Unknown branch → treat as block. Default branch → block (must edit from a
         // feature branch and let push + merge flow the change to default).
@@ -477,12 +483,12 @@ export class AppsService implements IAppsService {
       }
 
       // Clean up query folder data — no CASCADE exists for these tables
-      const versions = await manager.find(AppVersion, { select: ['id'], where: { appId: id } });
+      const versions = await manager.find(AppVersion, { select: { id: true }, where: { appId: id } });
       const versionIds = versions.map((v) => v.id);
       if (versionIds.length > 0) {
         const folders = await manager.find(DataQueryFolder, { where: { appVersionId: In(versionIds) } });
         const folderIds = folders.map((f) => f.id);
-        const queries = await manager.find(DataQuery, { select: ['id'], where: { appVersionId: In(versionIds) } });
+        const queries = await manager.find(DataQuery, { select: { id: true }, where: { appVersionId: In(versionIds) } });
         const queryIds = queries.map((q) => q.id);
         const allChildIds = [...folderIds, ...queryIds];
 
@@ -568,7 +574,9 @@ export class AppsService implements IAppsService {
         if (nonWorkflowAppIds.length > 0) {
           const defaultBranch = await manager.findOne(WorkspaceBranch, {
             where: { organizationId: user.organizationId, isDefault: true },
-            select: ['id'],
+            select: {
+                      id: true,
+                    },
           });
           const qb = manager
             .createQueryBuilder()
@@ -637,7 +645,9 @@ export class AppsService implements IAppsService {
     if (!orgGit) return undefined;
     const defaultBranch = await this.appRepository.manager.findOne(WorkspaceBranch, {
       where: { organizationId: user.organizationId, isDefault: true },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
     return defaultBranch?.id;
   }
@@ -769,14 +779,18 @@ export class AppsService implements IAppsService {
 
     const defaultBranch = await this.appRepository.manager.findOne(WorkspaceBranch, {
       where: { organizationId: app.organizationId, isDefault: true },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
     if (!defaultBranch) return; // git off — subscriber should have handled it
 
     const targetBranchId = branchId ?? defaultBranch.id;
     const version = await this.versionRepository.findOne({
       where: { appId: app.id, branchId: targetBranchId, isStub: false },
-      relations: ['branch'],
+      relations: {
+                   branch: true,
+                 },
       order: { updatedAt: 'DESC' },
     });
     if (version) {
@@ -1048,7 +1062,9 @@ export class AppsService implements IAppsService {
         // (every row carries identical metadata when git-sync is off).
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId: user.organizationId, isDefault: true },
-          select: ['id'],
+          select: {
+                    id: true,
+                  },
         });
 
         const slugVersion = defaultBranch

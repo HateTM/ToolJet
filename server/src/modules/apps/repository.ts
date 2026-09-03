@@ -68,7 +68,7 @@ export class AppsRepository extends Repository<App> {
     // upstream if appropriate. Don't throw from here.
     const versionCondition = versionId ? { appVersions: { id: versionId } } : {};
     const workflow = await this.findOne({
-      ...(versionId ? { relations: ['appVersions'] } : {}),
+      ...(versionId ? { relations: { appVersions: true } } : {}),
       where: {
         ...versionCondition,
         type: APP_TYPES.WORKFLOW,
@@ -85,7 +85,9 @@ export class AppsRepository extends Repository<App> {
       // Explicit branch context: slug must resolve on that branch.
       const version = await this.dataSource.getRepository(AppVersion).findOne({
         where: { slug, branchId },
-        relations: ['app'],
+        relations: {
+                     app: true,
+                   },
       });
       if (!version?.app || version.app.organizationId !== organizationId) {
         return null;
@@ -102,13 +104,17 @@ export class AppsRepository extends Repository<App> {
       // Git sync enabled and no branch id — pick from default branch only.
       resolvedVersion = await this.dataSource.getRepository(AppVersion).findOne({
         where: { slug, branchId: defaultBranchId },
-        relations: ['app'],
+        relations: {
+                     app: true,
+                   },
       });
     } else {
       // Git sync disabled — find any slug match across all versions in the workspace.
       resolvedVersion = await this.dataSource.getRepository(AppVersion).findOne({
         where: { slug },
-        relations: ['app'],
+        relations: {
+                     app: true,
+                   },
       });
     }
 
@@ -207,7 +213,9 @@ export class AppsRepository extends Repository<App> {
   async retrieveAppDataUsingSlug(slug: string): Promise<SessionAppData> {
     const candidate = await this.dataSource.getRepository(AppVersion).findOne({
       where: { slug },
-      relations: ['app'],
+      relations: {
+                   app: true,
+                 },
     });
 
     let resolved: AppVersion | null = candidate;
@@ -216,7 +224,9 @@ export class AppsRepository extends Repository<App> {
       if (defaultBranchId && candidate.branchId !== defaultBranchId) {
         resolved = await this.dataSource.getRepository(AppVersion).findOne({
           where: { slug, branchId: defaultBranchId },
-          relations: ['app'],
+          relations: {
+                       app: true,
+                     },
         });
       }
     }
@@ -281,7 +291,7 @@ export class AppsRepository extends Repository<App> {
     // Fallback to apps table (for workflows — they keep name on apps.*)
     const versionCondition = versionId ? { appVersions: { id: versionId } } : {};
     return this.findOne({
-      ...(versionId ? { relations: ['appVersions'] } : {}),
+      ...(versionId ? { relations: { appVersions: true } } : {}),
       where: { name, organizationId, ...versionCondition },
     });
   }
@@ -301,7 +311,7 @@ export class AppsRepository extends Repository<App> {
     const where = organizationId ? { ...baseWhere, organizationId } : baseWhere;
 
     const app = await this.findOne({
-      ...(versionId ? { relations: ['appVersions'] } : {}),
+      ...(versionId ? { relations: { appVersions: true } } : {}),
       where,
     });
 
@@ -314,7 +324,11 @@ export class AppsRepository extends Repository<App> {
 
   async findByDataQuery(dataQueryId: string, organizationId?: string, versionId?: string): Promise<App> {
     const app = await this.findOne({
-      relations: ['appVersions', 'appVersions.dataQueries'],
+      relations: {
+                   appVersions: {
+                     dataQueries: true,
+                   },
+                 },
       where: {
         ...(organizationId ? { organizationId } : {}),
         appVersions: { dataQueries: { id: dataQueryId }, ...(versionId ? { id: versionId } : {}) },
@@ -453,7 +467,9 @@ export class AppsRepository extends Repository<App> {
     const mgr = manager ?? this.manager;
     const app = await mgr.findOne(App, {
       where: { id: appId },
-      relations: ['appVersions'],
+      relations: {
+                   appVersions: true,
+                 },
     });
     if (app && app.type !== APP_TYPES.WORKFLOW) {
       const version = await this.resolveMetadataVersion(mgr, app);
@@ -467,7 +483,9 @@ export class AppsRepository extends Repository<App> {
     if (isUUID(idOrSlug)) {
       const app = await manager.findOne(App, {
         where: { id: idOrSlug },
-        relations: ['appVersions'],
+        relations: {
+                     appVersions: true,
+                   },
       });
       if (app) {
         if (app.type === APP_TYPES.WORKFLOW) return app;
@@ -514,7 +532,7 @@ export class AppsRepository extends Repository<App> {
     }
 
     // Fallback to apps.slug (workflows — metadata lives on apps.*)
-    return manager.findOne(App, { where: { slug: idOrSlug }, relations: ['appVersions'] });
+    return manager.findOne(App, { where: { slug: idOrSlug }, relations: { appVersions: true } });
   }
 
   // ----- helpers ---------------------------------------------------------
@@ -524,7 +542,9 @@ export class AppsRepository extends Repository<App> {
     if (!organizationId) return null;
     const branch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId, isDefault: true },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
     return branch?.id ?? null;
   }
@@ -533,7 +553,9 @@ export class AppsRepository extends Repository<App> {
   private async checkIfGitEnabled(manager: EntityManager): Promise<boolean> {
     const branch = await manager.findOne(WorkspaceBranch, {
       where: { isDefault: true },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
     return !!branch?.id;
   }

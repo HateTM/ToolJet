@@ -68,7 +68,7 @@ function buildConnectionOptions(data): TypeOrmModuleOptions {
   };
 }
 
-function buildToolJetDbConnectionOptions(data): TypeOrmModuleOptions {
+function buildToolJetDbConnectionOptions(data): TypeOrmModuleOptions & { name: string } {
   const connectionParams = {
     database: data.TOOLJET_DB,
     port: +data.TOOLJET_DB_PORT || 5432,

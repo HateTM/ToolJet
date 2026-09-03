@@ -9,7 +9,9 @@ export class UpdateMysqlDatasourceForSocketConnection1690830899563 implements Mi
     const dataSourceIds = (
       await entityManager.find(DataSource, {
         where: { kind: 'mysql' },
-        select: ['id'],
+        select: {
+                  id: true,
+                },
       })
     ).map((d) => d.id);
 

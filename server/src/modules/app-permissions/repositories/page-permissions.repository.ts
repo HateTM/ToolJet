@@ -15,7 +15,12 @@ export class PagePermissionsRepository extends Repository<PagePermission> {
     return dbTransactionWrap(async (manager: EntityManager) => {
       const pagePermissions = await manager.find(PagePermission, {
         where: { pageId },
-        relations: ['users', 'users.user', 'users.permissionGroup'],
+        relations: {
+                     users: {
+                       user: true,
+                       permissionGroup: true,
+                     },
+                   },
       });
 
       return pagePermissions.map((permission) => {

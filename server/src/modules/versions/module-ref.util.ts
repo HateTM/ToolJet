@@ -259,7 +259,10 @@ export async function reconcileModuleViewerPinsFromDefault(
 ): Promise<void> {
   const featureVersion = await manager.findOne(AppVersion, {
     where: { id: featureBranchVersionId },
-    select: ['id', 'appId'],
+    select: {
+              id: true,
+              appId: true,
+            },
   });
   if (!featureVersion) return;
 
@@ -390,7 +393,10 @@ export async function resolveAllModuleViewersForVersion(
 ): Promise<ResolvedModuleViewer[]> {
   const parent = await manager.findOne(AppVersion, {
     where: { id: parentVersionId },
-    select: ['id', 'branchId'],
+    select: {
+              id: true,
+              branchId: true,
+            },
   });
   if (!parent) return [];
 

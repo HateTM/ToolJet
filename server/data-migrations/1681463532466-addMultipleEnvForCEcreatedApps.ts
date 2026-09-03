@@ -19,7 +19,9 @@ export class addMultipleEnvForCEcreatedApps1681463532466 implements MigrationInt
     const entityManager = queryRunner.manager;
     // Fetch all organizations with their app environments
     const organizations = await entityManager.find(Organization, {
-      relations: ['appEnvironments'],
+      relations: {
+                   appEnvironments: true,
+                 },
     });
 
     if (organizations?.length === 0) {

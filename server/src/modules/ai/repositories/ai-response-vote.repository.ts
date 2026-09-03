@@ -12,7 +12,9 @@ export class AiResponseVoteRepository extends Repository<AiResponseVote> {
   async get(id: string): Promise<AiResponseVote> {
     return await this.findOne({
       where: { id },
-      relations: ['message'],
+      relations: {
+        aiConversationMessage: true,
+      },
     });
   }
 

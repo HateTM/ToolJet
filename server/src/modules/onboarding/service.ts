@@ -278,7 +278,9 @@ export class OnboardingService implements IOnboardingService {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const user: User | undefined = await manager.findOne(User, {
         where: { invitationToken: token },
-        relations: ['organizationUsers'],
+        relations: {
+                     organizationUsers: true,
+                   },
       });
       let organizationUser: OrganizationUser;
       let isSSOVerify: boolean;
@@ -295,7 +297,9 @@ export class OnboardingService implements IOnboardingService {
       if (organizationToken) {
         organizationUser = await manager.findOne(OrganizationUser, {
           where: { invitationToken: organizationToken },
-          relations: ['user'],
+          relations: {
+                       user: true,
+                     },
         });
       }
 
@@ -447,7 +451,10 @@ export class OnboardingService implements IOnboardingService {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const organizationUser: OrganizationUser = await manager.findOne(OrganizationUser, {
         where: { invitationToken: token },
-        relations: ['user', 'organization'],
+        relations: {
+                     user: true,
+                     organization: true,
+                   },
       });
 
       if (!organizationUser?.user) {
@@ -494,7 +501,10 @@ export class OnboardingService implements IOnboardingService {
         /* Activate the personal workspace */
         const organizationUser = await manager.findOne(OrganizationUser, {
           where: { organizationId: user.defaultOrganizationId },
-          relations: ['user', 'organization'],
+          relations: {
+                       user: true,
+                       organization: true,
+                     },
         });
         await this.organizationUsersUtilService.activateOrganization(organizationUser, manager);
       }
@@ -526,7 +536,10 @@ export class OnboardingService implements IOnboardingService {
     if (organizationToken) {
       organizationUser = await this.organizationUsersRepository.findOne({
         where: { invitationToken: organizationToken },
-        relations: ['user', 'organization'],
+        relations: {
+                     user: true,
+                     organization: true,
+                   },
       });
 
       if (!user && organizationUser) {
@@ -692,8 +705,13 @@ export class OnboardingService implements IOnboardingService {
   async getInviteeDetails(token: string) {
     const organizationUser: OrganizationUser = await this.organizationUsersRepository.findOneOrFail({
       where: { invitationToken: token },
-      select: ['id', 'user'],
-      relations: ['user'],
+      select: {
+                id: true,
+                user: true,
+              },
+      relations: {
+                   user: true,
+                 },
     });
     return { email: organizationUser.user.email };
   }
@@ -701,7 +719,9 @@ export class OnboardingService implements IOnboardingService {
   async verifyOrganizationToken(token: string) {
     const organizationUser: OrganizationUser = await this.organizationUsersRepository.findOne({
       where: { invitationToken: token },
-      relations: ['user'],
+      relations: {
+                   user: true,
+                 },
     });
 
     const user: User = organizationUser?.user;
@@ -775,7 +795,10 @@ export class OnboardingService implements IOnboardingService {
 
       const invitedOrganization = await this.organizationRepository.findOne({
         where: { id: organizationUser.organizationId },
-        select: ['name', 'id'],
+        select: {
+                  name: true,
+                  id: true,
+                },
       });
       if (existingUser.invitationToken) {
         /* Not activated. Regenerate User-level token on re-invite. */

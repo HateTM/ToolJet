@@ -359,7 +359,11 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
 
   async personalWorkspaces(userId: string): Promise<OrganizationUser[]> {
     const personalWorkspaces: Partial<OrganizationUser[]> = await this.organizationUsersRepository.find({
-      select: ['organizationId', 'invitationToken', 'id'],
+      select: {
+                organizationId: true,
+                invitationToken: true,
+                id: true,
+              },
       where: { userId },
     });
     const personalWorkspaceArray: OrganizationUser[] = [];
@@ -382,7 +386,9 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
   async getUser(token: string) {
     return await this.organizationUsersRepository.findOneOrFail({
       where: { invitationToken: token },
-      relations: ['user'],
+      relations: {
+                   user: true,
+                 },
     });
   }
 
@@ -533,7 +539,10 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
         };
         const orgGroupPermissions = await this.groupPermissionsRepository.find({
           where: groupQuery,
-          select: ['id', 'name'],
+          select: {
+                    id: true,
+                    name: true,
+                  },
         });
         groupsArray.push(...orgGroupPermissions.map((group) => group.name));
       }

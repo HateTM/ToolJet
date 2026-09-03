@@ -10,8 +10,12 @@ export class PromoteAndReleaseExistingModuleVersions1776419051000 implements Mig
     const manager = queryRunner.manager;
 
     const organizations = await manager.find(Organization, {
-      select: ['id'],
-      relations: ['appEnvironments'],
+      select: {
+                id: true,
+              },
+      relations: {
+                   appEnvironments: true,
+                 },
     });
 
     const migrationProgress = new MigrationProgress(
@@ -29,14 +33,20 @@ export class PromoteAndReleaseExistingModuleVersions1776419051000 implements Mig
 
       const moduleApps = await manager.find(App, {
         where: { organizationId: organization.id, type: APP_TYPES.MODULE },
-        select: ['id', 'currentVersionId'],
+        select: {
+                  id: true,
+                  currentVersionId: true,
+                },
       });
 
       for (const app of moduleApps) {
         const versions = await manager.find(AppVersion, {
           where: { appId: app.id },
           order: { createdAt: 'DESC' },
-          select: ['id', 'createdAt'],
+          select: {
+                    id: true,
+                    createdAt: true,
+                  },
         });
 
         if (!versions.length) continue;

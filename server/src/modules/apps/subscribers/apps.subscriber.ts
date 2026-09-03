@@ -65,7 +65,9 @@ export class AppsSubscriber implements EntitySubscriberInterface {
     if (!isWorkflow) {
       const defaultBranch = await this.datasourceRepository.manager.findOne(WorkspaceBranch, {
         where: { organizationId: app.organizationId, isDefault: true },
-        select: ['id'],
+        select: {
+                  id: true,
+                },
       });
       isGitEnabled = !!defaultBranch;
     }

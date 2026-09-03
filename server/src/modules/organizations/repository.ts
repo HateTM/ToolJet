@@ -19,7 +19,7 @@ export class OrganizationRepository extends Repository<Organization> {
   }
 
   async get(id: string): Promise<Organization> {
-    return await this.findOne({ where: { id }, relations: ['ssoConfigs'] });
+    return await this.findOne({ where: { id }, relations: { ssoConfigs: true } });
   }
 
   async fetchOrganizationWithSSOConfigs(
@@ -77,7 +77,10 @@ export class OrganizationRepository extends Repository<Organization> {
     }
 
     return await this.manager.find(Organization, {
-      relations: ['ssoConfigs', 'organizationUsers'],
+      relations: {
+                   ssoConfigs: true,
+                   organizationUsers: true,
+                 },
       where: conditions,
       order: {
         name: 'ASC',
@@ -178,7 +181,9 @@ export class OrganizationRepository extends Repository<Organization> {
 
     const [organizations, totalCount] = await m.findAndCount(Organization, {
       where: whereClause,
-      relations: ['organizationUsers'],
+      relations: {
+                   organizationUsers: true,
+                 },
       order: { name: 'ASC' },
       skip: currentPage && perPageCount ? (currentPage - 1) * perPageCount : undefined,
       take: isNaN(perPageCount) ? undefined : perPageCount,

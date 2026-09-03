@@ -45,7 +45,10 @@ export class ValidateAppVersionGuard implements CanActivate {
     if (app.type !== APP_TYPES.WORKFLOW) {
       const version = await this.versionRepository.findOne({
         where: { id: versionId },
-        select: ['id', 'isPublic'],
+        select: {
+                  id: true,
+                  isPublic: true,
+                },
       });
       if (version) {
         app.isPublic = version.isPublic;

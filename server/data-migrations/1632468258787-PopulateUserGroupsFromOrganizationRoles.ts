@@ -11,7 +11,7 @@ export class PopulateUserGroupsFromOrganizationRoles1632468258787 implements Mig
     const entityManager = queryRunner.manager;
     const OrganizationRepository = entityManager.getRepository(Organization);
 
-    const organizations = await OrganizationRepository.find({ select: ['id'] });
+    const organizations = await OrganizationRepository.find({ select: { id: true } });
 
     for (const organization of organizations) {
       const groupPermissions = await setupInitialGroupPermissions(entityManager, organization);
@@ -64,7 +64,11 @@ async function setupInitialGroupPermissions(
     where: {
       id: In(createdGroupPermissionIds),
     },
-    select: ['id', 'group', 'organizationId'],
+    select: {
+              id: true,
+              group: true,
+              organizationId: true,
+            },
   });
 }
 
@@ -77,13 +81,18 @@ async function setupUserAndAppGroupPermissions(
 
   const organizationApps = await appRepository.find({
     where: { organizationId: organization.id },
-    select: ['id'],
+    select: {
+              id: true,
+            },
   });
 
   for (const groupPermission of createdGroupPermissions) {
     const orgUsers = await entityManager.find(OrganizationUser, {
       where: { organizationId: organization.id },
-      select: ['id', 'role'],
+      select: {
+                id: true,
+                role: true,
+              },
     });
     const usersForGroup = orgUsers.filter(
       (u) => u.role == groupPermission.group || groupPermission.group == 'all_users'

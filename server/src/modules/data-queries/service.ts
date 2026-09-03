@@ -112,7 +112,7 @@ export class DataQueriesService implements IDataQueriesService {
     const where: any = { appVersionId, name };
     if (excludeQueryId) where.id = Not(excludeQueryId);
 
-    const conflict = await manager.findOne(DataQuery, { where, select: ['id'] });
+    const conflict = await manager.findOne(DataQuery, { where, select: { id: true } });
     if (conflict) {
       throw new ConflictException(`A query named "${name}" already exists in this app version`);
     }
@@ -177,7 +177,11 @@ export class DataQueriesService implements IDataQueriesService {
       if (name !== undefined) {
         const existing = await manager.findOne(DataQuery, {
           where: { id: dataQueryId },
-          select: ['id', 'appVersionId', 'name'],
+          select: {
+                    id: true,
+                    appVersionId: true,
+                    name: true,
+                  },
         });
         if (existing && existing.name !== name) {
           await this.assertUniqueQueryName(manager, existing.appVersionId, name, dataQueryId);
@@ -213,7 +217,9 @@ export class DataQueriesService implements IDataQueriesService {
       for (const { id, options } of dataQueriesOptions) {
         await this.dataQueryRepository.findOneOrFail({
           where: { id, dataSource: { organizationId: user.organizationId } },
-          relations: ['dataSource'],
+          relations: {
+                       dataSource: true,
+                     },
         });
         await this.dataQueryRepository.updateOne(id, { options }, manager);
       }
@@ -222,7 +228,7 @@ export class DataQueriesService implements IDataQueriesService {
       }
       return await this.dataQueryRepository.getMany(
         { id: In(dataQueriesOptions.map((query) => query.id)) },
-        [],
+        {},
         manager
       );
     });

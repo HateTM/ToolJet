@@ -43,8 +43,13 @@ export class PopulateSSOConfigs1650485473528 implements MigrationInterface {
     const passwordEnabled = envVars.DISABLE_PASSWORD_LOGIN !== 'true';
 
     const organizations: Organization[] = await entityManager.find(Organization, {
-      relations: ['ssoConfigs'],
-      select: ['ssoConfigs', 'id'],
+      relations: {
+                   ssoConfigs: true,
+                 },
+      select: {
+                ssoConfigs: true,
+                id: true,
+              },
     });
 
     if (organizations && organizations.length > 0) {

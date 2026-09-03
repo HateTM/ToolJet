@@ -11,7 +11,7 @@
 ## Global Constraints
 - Каждая задача (и под-шаг модернизации) — отдельный PR squash в main; ребейз от свежего origin/main.
 - «Готово = проверено» (verification-before-completion): каждая задача закрывается выводом тестов/команды.
-- Гейты: engine `npm test` (baseline 152/152), server `npm run test:ai` (6 падений ai-feasibility — baseline), frontend `npm run typecheck` + smoke `npm test`, после фронтенда — Cypress.
+- Гейты: engine `npm test` (baseline 152/152), server `npm run test:ai` (актуальный baseline на 2026-09-03: 27/27 suites, 593/593 тестов, tsc --noEmit чисто — старое «6 падений ai-feasibility» устарело), frontend `npm run typecheck` + smoke `npm test`, после фронтенда — Cypress.
 - Принимаемое следствие модернизации: расхождение с upstream CE растёт (ADR-0046-порядок мерджа апстрима применяется до, не после).
 - Скоуп модернизации: engine, server, frontend, cypress-tests, root-пины (Node/npm/.nvmrc). plugins/cli/marketplace/docs — только если сломаются гейты.
 - Применяемые skills: context7 + ai-sdk (доки AI SDK 6), nestjs-best-practices, vercel-react-best-practices + frontend-design (Task 8), test-driven-development (Task 4), subagent-driven-development + code-review (субагент на задачу, ревью между задачами), prod-status (Task 6), resolving-merge-conflicts.
@@ -43,10 +43,10 @@
 - [x] Гейт: engine-тесты 152+ зелёные (176/176). Commit: `feat(engine): AI SDK 6, structured outputs, abort propagation, telemetry` (PR #133, squash-merged в main).
 
 **2b. Server: NestJS 11→12, TypeORM 0.3→1.0, TS latest**
-- [ ] TS + типы → чистая `nest build`.
-- [ ] TypeORM 1.0 upgrade path: deprecated-API аудит по `server/src/entities`, `repositories`, data-migrations; гейт — DB-backed suite (baseline 457/457) + `test:ai`.
-- [ ] NestJS 12: ESM-совместимость, compat @nestjs/{typeorm,throttler,swagger,jwt,config}, BullMQ, platform-ws; гейты — `test:ai` + выборочный e2e smoke.
-- [ ] Commit: `chore(server): NestJS 12, TypeORM 1.0, TS latest`
+- [x] TS + типы → чистая `nest build` (tsc --noEmit чисто после TypeORM-бампа).
+- [x] TypeORM 1.0 upgrade path: аудит `select`/`relations` array-form (удалена в 1.0) по `server/src/entities`, `repositories`, `migrations`, `data-migrations`, `scripts` — ~220 мест, кодмод + ручной разбор оставшихся; `Connection`/`Transaction` удалены из экспортов typeorm. Гейт: tsc чисто + `test:ai` 27/27 suites, 593/593. DB-backed suite (baseline 457/457) не прогонялся — нужен выделенный Postgres, не общий `tooljet-test-pg`, которым параллельно пользуются другие worktree. Commit `c8c53e0718`.
+- [ ] ~~NestJS 12~~ **Отложено, ADR-0050**: `@nestjs/throttler`, `@bull-board/nestjs`, `nestjs-otel`, `nest-winston` не имеют релиза под `@nestjs/core@^12` на 2026-09-03 (`nestjs-otel` — с явным верхним ограничением `< 12`, т.е. заявленная несовместимость, не просто неопубликованный диапазон). Смешанное состояние TypeORM 1.0 + NestJS 11 поддерживается (`@nestjs/typeorm@^11` принимает `typeorm@^0.3.0 || ^1.0.0-dev`). Условие возврата к задаче — в ADR.
+- [x] Commit (TypeORM-часть): `feat(server): TypeORM 0.3 → 1.0` (`c8c53e0718`). NestJS 12 — отдельный будущий коммит после снятия блокера.
 
 **2c. Frontend: React 18→19**
 - [ ] Compat-аудит: legacy react-bootstrap, PropType, findDOMNode; codemod'ы React 19.

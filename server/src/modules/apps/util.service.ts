@@ -93,7 +93,9 @@ export class AppsUtilService implements IAppsUtilService {
       if (!isWorkflow && name) {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId: user.organizationId, isDefault: true },
-          select: ['id'],
+          select: {
+                    id: true,
+                  },
         });
         if (!defaultBranch) {
           const conflictingNameVersion = await manager
@@ -467,7 +469,10 @@ export class AppsUtilService implements IAppsUtilService {
 
   getAppOrganizationDetails(app: App): Promise<Organization> {
     return this.organizationRepository.findOneOrFail({
-      select: ['id', 'slug'],
+      select: {
+                id: true,
+                slug: true,
+              },
       where: { id: app.organizationId, status: WORKSPACE_STATUS.ACTIVE },
     });
   }
@@ -657,7 +662,9 @@ export class AppsUtilService implements IAppsUtilService {
       if (versionParams.appName && !isWorkflow && !branchId) {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId, isDefault: true },
-          select: ['id'],
+          select: {
+                    id: true,
+                  },
         });
         if (!defaultBranch) {
           const conflictingNameVersion = await manager
@@ -683,7 +690,9 @@ export class AppsUtilService implements IAppsUtilService {
       if (Object.keys(versionParams).length > 0 && !isWorkflow) {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId, isDefault: true },
-          select: ['id'],
+          select: {
+                    id: true,
+                  },
         });
         const isGitEnabled = !!defaultBranch;
 
@@ -769,7 +778,9 @@ export class AppsUtilService implements IAppsUtilService {
         throw new NotAcceptableException();
       }
       const nextEnvironment = await AppEnvironment.findOne({
-        select: ['id'],
+        select: {
+                  id: true,
+                },
         where: {
           priority: MoreThan(currentEnvironment.priority),
           organizationId,
@@ -1426,7 +1437,9 @@ export class AppsUtilService implements IAppsUtilService {
       // (0) Single defaultBranch lookup (not per module). Modules are never workflows here.
       const defaultBranch = await manager.findOne(WorkspaceBranch, {
         where: { organizationId: app.organizationId, isDefault: true },
-        select: ['id'],
+        select: {
+                  id: true,
+                },
       });
       const gitEnabled = !!defaultBranch;
 
@@ -1711,7 +1724,9 @@ export class AppsUtilService implements IAppsUtilService {
     return dbTransactionWrap(async (manager: EntityManager) => {
       const defaultBranch = await manager.findOne(WorkspaceBranch, {
         where: { organizationId: app.organizationId, isDefault: true },
-        select: ['id'],
+        select: {
+                  id: true,
+                },
       });
       const gitEnabled = !!defaultBranch;
 
@@ -1721,7 +1736,13 @@ export class AppsUtilService implements IAppsUtilService {
         source = await manager.findOne(AppVersion, {
           where: { appId: app.id, branchId: targetBranchId, status: AppVersionStatus.DRAFT },
           order: { updatedAt: 'DESC' },
-          select: ['id', 'appName', 'slug', 'icon', 'isPublic'],
+          select: {
+                    id: true,
+                    appName: true,
+                    slug: true,
+                    icon: true,
+                    isPublic: true,
+                  },
         });
         if (!source && branchId) {
           throw new BadRequestException(`No DRAFT version found for app ${app.id} on branch ${branchId}.`);
@@ -1731,7 +1752,13 @@ export class AppsUtilService implements IAppsUtilService {
         source = await manager.findOne(AppVersion, {
           where: { appId: app.id },
           order: { updatedAt: 'DESC' },
-          select: ['id', 'appName', 'slug', 'icon', 'isPublic'],
+          select: {
+                    id: true,
+                    appName: true,
+                    slug: true,
+                    icon: true,
+                    isPublic: true,
+                  },
         });
       }
 

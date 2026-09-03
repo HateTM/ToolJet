@@ -88,7 +88,7 @@ describe('AppInventoryService.assemble', () => {
 
     const inventory = await service.assemble('app-1', 'version-1');
 
-    expect(dataQueryRepository.getMany).toHaveBeenCalledWith({ appVersionId: 'version-1' }, ['dataSource']);
+    expect(dataQueryRepository.getMany).toHaveBeenCalledWith({ appVersionId: 'version-1' }, { dataSource: true });
     expect(inventory).toContain('- list_orders on ToolJet Database (list_rows)');
     expect(inventory).toContain('- list_customers on ToolJet Database (list_rows)');
     // One data source, listed once, even though two queries reference it.

@@ -184,7 +184,10 @@ export class GroupPermissionsDuplicateService implements IGroupPermissionsDuplic
 
   async getDuplicateGroupName(groupToDuplicate: GroupPermissions, manager: EntityManager): Promise<string> {
     const existNameList = await manager.find(GroupPermissions, {
-      select: ['name', 'id'],
+      select: {
+                name: true,
+                id: true,
+              },
       where: [
         {
           name: Raw((alias) => `${alias} ~* :pattern`, { pattern: `^${groupToDuplicate.name}_copy_[0-9]+$` }),

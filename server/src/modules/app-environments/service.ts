@@ -20,8 +20,19 @@ export class AppEnvironmentService implements IAppEnvironmentService {
   async init(editingVersionId: string, organizationId: string): Promise<IAppEnvironmentResponse> {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const editorVersion = await manager.findOne(AppVersion, {
-        select: ['id', 'name', 'description', 'status', 'versionType', 'currentEnvironmentId', 'appId', 'branchId'],
-        relations: ['branch'],
+        select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  status: true,
+                  versionType: true,
+                  currentEnvironmentId: true,
+                  appId: true,
+                  branchId: true,
+                },
+        relations: {
+                     branch: true,
+                   },
         where: { id: editingVersionId },
       });
 
@@ -206,7 +217,9 @@ export class AppEnvironmentService implements IAppEnvironmentService {
                 isDefault: true,
                 organizationId,
               },
-              select: ['id'],
+              select: {
+                        id: true,
+                      },
             });
             conditions['currentEnvironmentId'] = In([productionEnv.id, currentEnvironmentId]);
           } else {
@@ -217,26 +230,28 @@ export class AppEnvironmentService implements IAppEnvironmentService {
 
       const versions = await manager.find(AppVersion, {
         where: { ...conditions },
-        relations: ['branch'],
+        relations: {
+                     branch: true,
+                   },
         order: {
           createdAt: 'DESC',
         },
-        select: [
-          'id',
-          'name',
-          'description',
-          'status',
-          'appId',
-          'currentEnvironmentId',
-          'parentVersionId',
-          'promotedFrom',
-          'versionType',
-          'branchId',
-          'createdAt',
-          'updatedAt',
-          'publishedAt',
-          'releasedAt',
-        ],
+        select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  status: true,
+                  appId: true,
+                  currentEnvironmentId: true,
+                  parentVersionId: true,
+                  promotedFrom: true,
+                  versionType: true,
+                  branchId: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  publishedAt: true,
+                  releasedAt: true,
+                },
       });
 
       // For branch-type versions, replace the UUID name with the human-readable branch name
