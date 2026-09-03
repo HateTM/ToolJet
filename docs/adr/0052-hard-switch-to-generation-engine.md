@@ -67,3 +67,30 @@ generation could be getting the old in-process path with no signal that it happe
 - Re-entry / trigger condition for Task 7: Part 2 Task 5 (catalog parity, 11→36)
   and Task 6 (ADR-0032 TrueNAS deploy) both closed and verified. Before that, this
   ADR records the decision but changes no running behavior.
+
+## Amendment (2026-09-04, Task 7 execution): two premises above were false
+
+Executing Task 7 found two inaccuracies in this ADR's own Context/Decision, both
+verified against the actual codebase rather than assumed:
+
+1. **Decision 1's claim that `AiService.regenerateAiMessage`'s PRD-regeneration call
+   site checks `isConfigured()` as a soft gate is false.** `git log` confirms the
+   engine was never wired into `regenerateAiMessage` (implemented in ticket #131,
+   PRD-regeneration has called `aiUtilService.AIGatewayGenerate` unconditionally
+   since). Only two `isConfigured()` soft-gates ever existed in `service.ts`:
+   `streamPrdText` (feeding `sendUserMessage`) and `generateStepPlan`. There was no
+   fallback at that third call site to remove — wiring the engine into
+   `regenerateAiMessage` now would be new feature work, not a hard switch, so Task 7
+   left it untouched. `PRD_SYSTEM_PROMPT` therefore also survives Task 7's deletions:
+   `regenerateAiMessage` still reads it via `buildPrdMessages`.
+2. **Consequences' claim that `prompt-library/` becomes dead is false.** The
+   directory (`generateQuery.ts`, `updateQuery.ts`, etc.) is a live import for
+   unrelated, unaffected features — `service.ts:47` and
+   `services/query-update.ts:4`. Only `STEP_PLAN_SYSTEM_PROMPT` and
+   `proposeStepPlanTool`, both defined directly in `service.ts` (not in
+   `prompt-library/`), were actually dead once `generateStepPlan`'s in-process branch
+   was removed; those two were deleted.
+
+Decision 1–2's actual removal (two real call sites: `streamPrdText`, `generateStepPlan`)
+and the `ServiceUnavailableException` behavior stand as decided. Full detail in Part 2
+Task 7's status note.

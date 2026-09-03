@@ -61,18 +61,21 @@ const buildMockAiFeasibilityService = () => ({
   assess: jest.fn().mockReturnValue({ type: 'feasible' }),
 });
 
-// Defaults to "engine not configured" (GENERATION_ENGINE_URL unset) — every pre-#91 test's
-// world, and the flag-guarded fallback path (ADR-0036): sendUserMessage keeps using
-// aiUtilService.AIGateway unless a test explicitly opts into the engine.
+// Hard switch (ADR-0052): the engine is the only path, so every test's default world has
+// it configured. streamPrd defaults to an immediate 'done' (empty reply) so tests that
+// don't care about PRD streaming content don't have to mock it just to avoid iterating
+// `undefined`.
 const buildMockGenerationEngineClient = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
-  streamPrd: jest.fn(),
+  isConfigured: jest.fn().mockReturnValue(true),
+  streamPrd: jest.fn().mockImplementation(async function* () {
+    yield { type: 'done' };
+  }),
 });
 
-// Defaults to "engine not configured" — every pre-ADR-0048 test's world; the engine
-// path in generateStepPlan is opt-in per test via overrides.
+// Hard switch (ADR-0052): configured by default; a test that needs a real plan uses the
+// `enginePlan` helper (see `describe('AiService.approvePrd')`) to set generateSteps.
 const buildMockGenerationEnginePipelineClient = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
+  isConfigured: jest.fn().mockReturnValue(true),
   generateSteps: jest.fn(),
 });
 
@@ -124,6 +127,12 @@ const buildMockStepRepository = () => ({
 const buildMockVersionRepository = () => ({
   getAllVersions: jest.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-01-01T00:00:00.000Z' }]),
 });
+
+// Hard switch (ADR-0052): the engine's generateSteps is the only planner left — this sets
+// its resolved plan directly, replacing the old planToolCall(...) fed through
+// AIGatewayGenerate (the in-process planner these tests never actually exercise).
+const enginePlan = (pipelineClient: any, steps: Array<Record<string, any>>) =>
+  pipelineClient.generateSteps.mockResolvedValue({ steps });
 
 const buildMockResponse = () => {
   const closeHandlers: Array<() => void> = [];
@@ -196,6 +205,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     aiActiveRunService,
     aiFeasibilityService,
     generationEngineClient,
+    generationEnginePipelineClient,
   };
 };
 
@@ -220,7 +230,7 @@ describe('AiService.getCreditsBalance', () => {
 /** @group platform */
 describe('AiService.sendUserMessage', () => {
   it('streams chunks over SSE and persists the final AI message on success', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    const { service, aiUtilService, conversationRepo, messageRepo, generationEngineClient } = buildService();
 
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
@@ -228,26 +238,23 @@ describe('AiService.sendUserMessage', () => {
       .mockResolvedValueOnce({ id: 'user-msg-1' })
       .mockResolvedValueOnce({ id: 'ai-msg-1', content: 'Hello world' });
 
-    async function* chunks() {
-      yield 'Hello ';
-      yield 'world';
+    async function* events() {
+      yield { type: 'chunk', content: 'Hello ' };
+      yield { type: 'chunk', content: 'world' };
+      yield { type: 'done' };
     }
-    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+    generationEngineClient.streamPrd.mockReturnValue(events());
 
     const response = buildMockResponse();
 
     await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
 
-    expect(aiUtilService.AIGateway).toHaveBeenCalledWith(
-      'openai',
-      'send-message',
-      {
-        messages: [
-          { role: 'system', content: expect.any(String) },
-          { role: 'user', content: 'Hi' },
-        ],
-      },
-      'org-1'
+    expect(generationEngineClient.streamPrd).toHaveBeenCalledWith(
+      [
+        { role: 'system', content: expect.any(String) },
+        { role: 'user', content: 'Hi' },
+      ],
+      expect.any(AbortSignal)
     );
     expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'chunk', { content: 'Hello ' });
     expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'chunk', { content: 'world' });
@@ -277,11 +284,15 @@ describe('AiService.sendUserMessage', () => {
   });
 
   it('initializes the SSE stream and starts a heartbeat for an active stream', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    const { service, aiUtilService, conversationRepo, messageRepo, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
-    aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
+    generationEngineClient.streamPrd.mockReturnValue(
+      (async function* () {
+        yield { type: 'done' };
+      })()
+    );
 
     const response = buildMockResponse();
 
@@ -291,42 +302,20 @@ describe('AiService.sendUserMessage', () => {
     expect(aiUtilService.startHeartbeat).toHaveBeenCalledWith(response);
   });
 
-  // Ticket #64: the persisted AI message carries the provider's token usage so
-  // getThreadTokenUsage has real numbers to sum.
-  it('captures the AI SDK usage promise into the persisted message metadata', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+  // Hard switch (ADR-0052): the engine's streamPrd never surfaces token usage (ADR-0027),
+  // and there's no in-process AIGateway fallback left to fall back on for it — every
+  // PRD-conversation message now persists with metadata: undefined. Named consequence,
+  // not silently dropped: getThreadTokenUsage sums nothing for these going forward.
+  it('does not fail message persistence when the engine surfaces no usage (which is now always)', async () => {
+    const { service, conversationRepo, messageRepo, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
-    async function* chunks() {
-      yield 'Hi';
+    async function* events() {
+      yield { type: 'chunk', content: 'Hi' };
+      yield { type: 'done' };
     }
-    aiUtilService.AIGateway.mockResolvedValue({
-      textStream: chunks(),
-      usage: Promise.resolve({ promptTokens: 12, completionTokens: 4, totalTokens: 16 }),
-    });
-
-    const response = buildMockResponse();
-
-    await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
-
-    expect(messageRepo.createOne).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        metadata: { usage: { promptTokens: 12, completionTokens: 4 } },
-      })
-    );
-  });
-
-  it('does not fail message persistence when the provider result has no usage', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
-    messageRepo.findLatestByConversationId.mockResolvedValue([]);
-    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
-    async function* chunks() {
-      yield 'Hi';
-    }
-    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+    generationEngineClient.streamPrd.mockReturnValue(events());
 
     const response = buildMockResponse();
 
@@ -337,11 +326,15 @@ describe('AiService.sendUserMessage', () => {
   });
 
   it('registers an active run at stream start and ends it when the stream finishes', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, aiActiveRunService } = buildService();
+    const { service, conversationRepo, messageRepo, aiActiveRunService, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
-    aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
+    generationEngineClient.streamPrd.mockReturnValue(
+      (async function* () {
+        yield { type: 'done' };
+      })()
+    );
 
     const response = buildMockResponse();
 
@@ -352,11 +345,13 @@ describe('AiService.sendUserMessage', () => {
   });
 
   it('ends the active run even when the stream fails', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, aiActiveRunService } = buildService();
+    const { service, conversationRepo, messageRepo, aiActiveRunService, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValue({ id: 'user-msg-1' });
-    aiUtilService.AIGateway.mockRejectedValue(new Error('LLM gateway timed out'));
+    generationEngineClient.streamPrd.mockImplementation(() => {
+      throw new Error('Generation engine unreachable');
+    });
 
     const response = buildMockResponse();
 
@@ -366,15 +361,16 @@ describe('AiService.sendUserMessage', () => {
   });
 
   it('grounds every request in a PRD-focused system prompt (Generate conversations only ever propose a PRD, never build)', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    const { service, conversationRepo, messageRepo, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
 
-    async function* chunks() {
-      yield 'ok';
+    async function* events() {
+      yield { type: 'chunk', content: 'ok' };
+      yield { type: 'done' };
     }
-    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+    generationEngineClient.streamPrd.mockReturnValue(events());
 
     await service.sendUserMessage(
       { conversationId: 'conv-1', content: 'Build me a CRM' },
@@ -383,13 +379,13 @@ describe('AiService.sendUserMessage', () => {
       'org-1'
     );
 
-    const [, , promptBody] = aiUtilService.AIGateway.mock.calls[0];
-    expect(promptBody.messages[0]).toEqual({ role: 'system', content: expect.stringContaining('PRD') });
-    expect(promptBody.messages[0].content).toContain('Product Requirements Document');
+    const [budgetedMessages] = generationEngineClient.streamPrd.mock.calls[0];
+    expect(budgetedMessages[0]).toEqual({ role: 'system', content: expect.stringContaining('PRD') });
+    expect(budgetedMessages[0].content).toContain('Product Requirements Document');
   });
 
   it('includes prior conversation history (as role-mapped messages) before the new message', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+    const { service, conversationRepo, messageRepo, generationEngineClient } = buildService();
 
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
@@ -398,10 +394,11 @@ describe('AiService.sendUserMessage', () => {
     ]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-2' }).mockResolvedValueOnce({ id: 'ai-msg-2' });
 
-    async function* chunks() {
-      yield 'ok';
+    async function* events() {
+      yield { type: 'chunk', content: 'ok' };
+      yield { type: 'done' };
     }
-    aiUtilService.AIGateway.mockResolvedValue({ textStream: chunks() });
+    generationEngineClient.streamPrd.mockReturnValue(events());
 
     await service.sendUserMessage(
       { conversationId: 'conv-1', content: 'follow up' },
@@ -410,18 +407,14 @@ describe('AiService.sendUserMessage', () => {
       'org-1'
     );
 
-    expect(aiUtilService.AIGateway).toHaveBeenCalledWith(
-      'openai',
-      'send-message',
-      {
-        messages: [
-          { role: 'system', content: expect.any(String) },
-          { role: 'user', content: 'first message' },
-          { role: 'assistant', content: 'first reply' },
-          { role: 'user', content: 'follow up' },
-        ],
-      },
-      'org-1'
+    expect(generationEngineClient.streamPrd).toHaveBeenCalledWith(
+      [
+        { role: 'system', content: expect.any(String) },
+        { role: 'user', content: 'first message' },
+        { role: 'assistant', content: 'first reply' },
+        { role: 'user', content: 'follow up' },
+      ],
+      expect.any(AbortSignal)
     );
   });
 
@@ -454,12 +447,14 @@ describe('AiService.sendUserMessage', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('sends an SSE error event and ends the response when the AI gateway fails mid-stream', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+  it('sends an SSE error event and ends the response when the engine fails mid-stream', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValue({ id: 'user-msg-1' });
-    aiUtilService.AIGateway.mockRejectedValue(new Error('LLM gateway timed out'));
+    generationEngineClient.streamPrd.mockImplementation(() => {
+      throw new Error('LLM gateway timed out');
+    });
 
     const response = buildMockResponse();
 
@@ -575,8 +570,8 @@ describe('AiService.sendUserMessage', () => {
     expect(messageRepo.createOne).not.toHaveBeenCalled();
   });
 
-  it('fits the assembled prompt to the model context window before sending it to the gateway', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo } = buildService();
+  it('fits the assembled prompt to the model context window before sending it to the engine', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
     messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
@@ -586,7 +581,11 @@ describe('AiService.sendUserMessage', () => {
       { role: 'user', content: 'Hi' },
     ];
     aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({ messages: budgetedMessages, truncated: [{}] });
-    aiUtilService.AIGateway.mockResolvedValue({ textStream: (async function* () {})() });
+    generationEngineClient.streamPrd.mockReturnValue(
+      (async function* () {
+        yield { type: 'done' };
+      })()
+    );
 
     await service.sendUserMessage(
       { conversationId: 'conv-1', content: 'Hi' },
@@ -602,12 +601,7 @@ describe('AiService.sendUserMessage', () => {
         expect.objectContaining({ role: 'user', content: 'Hi' }),
       ])
     );
-    expect(aiUtilService.AIGateway).toHaveBeenCalledWith(
-      'openai',
-      'send-message',
-      { messages: budgetedMessages },
-      'org-1'
-    );
+    expect(generationEngineClient.streamPrd).toHaveBeenCalledWith(budgetedMessages, expect.any(AbortSignal));
   });
 
   it('assembles the app inventory and asks the feasibility service before calling the LLM', async () => {
@@ -829,10 +823,6 @@ describe('AiService.getThreadTokenUsage (ticket #64)', () => {
 
 /** @group platform */
 describe('AiService.approvePrd', () => {
-  const planToolCall = (steps: Array<{ type: string; description: string }>) => ({
-    toolCalls: [{ toolName: 'proposeStepPlan', args: { steps } }],
-  });
-
   const createTableToolCall = (args: any) => ({
     toolCalls: [{ toolName: 'createTable', args }],
   });
@@ -855,8 +845,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('generates a step plan, persists Steps in order, and executes a single CreateTable step end to end', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
@@ -864,9 +862,8 @@ describe('AiService.approvePrd', () => {
     ]);
     messageRepo.createOne.mockResolvedValue({ id: 'failure-msg' }); // unused on the success path
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateTable', description: 'Create a customers table' }])
-    ).mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateTable', description: 'Create a customers table' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')));
 
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
@@ -946,19 +943,26 @@ describe('AiService.approvePrd', () => {
   });
 
   it('retries a failing step and succeeds on a later attempt, telling the retry what went wrong', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateTable', description: 'Create a customers table' }]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateTable', description: 'Create a customers table' }])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers_v2')));
+      createTableToolCall(oneColumnTable('customers'))
+    ).mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers_v2')));
 
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
@@ -978,8 +982,10 @@ describe('AiService.approvePrd', () => {
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
     expect(agentsService.CreateTable).toHaveBeenCalledTimes(2);
-    // The retry's per-step call is told what the previous attempt's error was.
-    const secondCallPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[2][2];
+    // The retry's per-step call is told what the previous attempt's error was. Hard switch
+    // (ADR-0052) removed the planning call from this array, so the retry is now index 1
+    // (was 2): index 0 is the first execution attempt.
+    const secondCallPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[1][2];
     expect(secondCallPromptBody.messages[0].content).toContain('already exists');
     expect(stepRepository.updateOne).toHaveBeenCalledWith(
       'step-1',
@@ -989,8 +995,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('stops after exhausting retries, keeps prior succeeded Artifacts, and posts a failure message', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
@@ -998,13 +1012,11 @@ describe('AiService.approvePrd', () => {
     ]);
     messageRepo.createOne.mockResolvedValue({ id: 'failure-msg-1' });
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create a customers table' },
-        { type: 'CreateTable', description: 'Create an orders table' },
-      ])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table' },
+      { type: 'CreateTable', description: 'Create an orders table' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
       // 3 attempts for the second step, all fail
       .mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')))
       .mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')))
@@ -1070,7 +1082,15 @@ describe('AiService.approvePrd', () => {
   });
 
   it('fails a step whose type has no handler immediately, without spending any retries on it (ADR-0006 defense-in-depth — all v1 STEP_TYPES have handlers as of this ticket, so this exercises the guard directly rather than a reachable-via-the-planner path)', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([
@@ -1078,12 +1098,7 @@ describe('AiService.approvePrd', () => {
     ]);
     messageRepo.createOne.mockResolvedValue({ id: 'failure-msg' });
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      // The mock stands in for the LLM, so it can return a type outside STEP_TYPES even
-      // though the real zod schema wouldn't let the model do this — verifying the
-      // SUPPORTED_STEP_TYPES guard itself still holds if that ever changes.
-      planToolCall([{ type: 'CreateWorkflow', description: 'Run a workflow' }])
-    );
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateWorkflow', description: 'Run a workflow' }]);
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -1097,9 +1112,8 @@ describe('AiService.approvePrd', () => {
     const response = buildMockResponse();
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
-    // Only the plan-generation call happened — no per-step LLM call or agentsService call
-    // for a step type with no handler at all.
-    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(1);
+    // No per-step LLM call or agentsService call for a step type with no handler at all.
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
     expect(agentsService.CreateTable).not.toHaveBeenCalled();
     expect(agentsService.CreateComponent).not.toHaveBeenCalled();
     expect(agentsService.CreateQuery).not.toHaveBeenCalled();
@@ -1152,6 +1166,7 @@ describe('AiService.approvePrd', () => {
 
   it('resolves appVersionId from the conversation.appId (VersionRepository.getAllVersions, first version) and creates a Page component', async () => {
     const {
+      generationEnginePipelineClient,
       service,
       aiUtilService,
       conversationRepo,
@@ -1176,9 +1191,8 @@ describe('AiService.approvePrd', () => {
       { id: 'version-2', createdAt: '2026-02-01T00:00:00.000Z' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateComponent', description: 'Create the Orders page' }])
-    ).mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateComponent', description: 'Create the Orders page' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
 
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
@@ -1206,8 +1220,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('picks the earliest-created version even when VersionRepository.getAllVersions returns them out of order', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository, versionRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      stepRepository,
+      versionRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1225,9 +1247,8 @@ describe('AiService.approvePrd', () => {
       { id: 'version-middle', createdAt: '2026-02-01T00:00:00.000Z' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateComponent', description: 'Create the Orders page' }])
-    ).mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateComponent', description: 'Create the Orders page' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -1245,7 +1266,15 @@ describe('AiService.approvePrd', () => {
   });
 
   it('creates a query from a CreateQuery step', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, stepRepository } = buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1257,9 +1286,10 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List orders' }]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List orders' }])
-    ).mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'table-uuid' }));
+      queryToolCall({ name: 'list_orders', table_id: 'table-uuid' })
+    );
 
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
@@ -1281,8 +1311,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('retries an unrecognized component type (the model can self-correct, unlike an unsupported Step type)', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1294,16 +1332,15 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateComponent', description: 'Create a page' }]);
+    // 'Calendar' is deliberately outside SUPPORTED_COMPONENT_TYPES — a plausible thing for
+    // the model to reach for, and not something this build can create. If it ever joins the
+    // allow-list, the errorMessage assertion below fails loudly rather than this attempt
+    // quietly falling through to some later validation (which is how 'Form' rotted this
+    // test — and how 'Chart' did, until ticket #13 added it).
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateComponent', description: 'Create a page' }])
-    )
-      // 'Calendar' is deliberately outside SUPPORTED_COMPONENT_TYPES — a plausible thing for
-      // the model to reach for, and not something this build can create. If it ever joins the
-      // allow-list, the errorMessage assertion below fails loudly rather than this attempt
-      // quietly falling through to some later validation (which is how 'Form' rotted this
-      // test — and how 'Chart' did, until ticket #13 added it).
-      .mockResolvedValueOnce(componentToolCall({ type: 'Calendar', name: 'x' }))
-      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
+      componentToolCall({ type: 'Calendar', name: 'x' })
+    ).mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }));
 
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
@@ -1341,8 +1378,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('rejects a Table step whose pageId does not match any Page created in this plan, then succeeds once the retry references the real one', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1354,14 +1399,12 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateComponent', description: 'Create the Orders page' },
-        { type: 'CreateQuery', description: 'List orders' },
-        { type: 'CreateComponent', description: 'Add a table of orders to the page' },
-      ])
-    )
-      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateComponent', description: 'Create the Orders page' },
+      { type: 'CreateQuery', description: 'List orders' },
+      { type: 'CreateComponent', description: 'Add a table of orders to the page' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
       .mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'tjdb-orders-uuid' }))
       // Attempt 1: hallucinated pageId that doesn't match the real Page artifact below.
       .mockResolvedValueOnce(
@@ -1441,8 +1484,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('rejects a component step whose parentComponentId does not match a Container/Form created in this plan, then succeeds once the retry references the real one (increment 4)', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1454,14 +1505,12 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateComponent', description: 'Create the Orders page' },
-        { type: 'CreateComponent', description: 'Add a container to the page' },
-        { type: 'CreateComponent', description: 'Add a text input inside the container' },
-      ])
-    )
-      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateComponent', description: 'Create the Orders page' },
+      { type: 'CreateComponent', description: 'Add a container to the page' },
+      { type: 'CreateComponent', description: 'Add a text input inside the container' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Container', pageId: 'page-1', title: 'Sidebar' }))
       // Attempt 1: hallucinated parentComponentId that doesn't match the real Container below.
       .mockResolvedValueOnce(
@@ -1547,8 +1596,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('rejects a header/footer suffix on a real Container, then succeeds once the retry targets the real ModalV2 header slot', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1560,15 +1617,13 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateComponent', description: 'Create the Orders page' },
-        { type: 'CreateComponent', description: 'Add a container to the page' },
-        { type: 'CreateComponent', description: 'Add a modal to the page' },
-        { type: 'CreateComponent', description: 'Add a text into the modal header' },
-      ])
-    )
-      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateComponent', description: 'Create the Orders page' },
+      { type: 'CreateComponent', description: 'Add a container to the page' },
+      { type: 'CreateComponent', description: 'Add a modal to the page' },
+      { type: 'CreateComponent', description: 'Add a text into the modal header' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Container', pageId: 'page-1', title: 'Sidebar' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'ModalV2', pageId: 'page-1', triggerButtonLabel: 'Open' }))
       // Attempt 1: "-header" on a real Container is invalid — Container has no slots.
@@ -1663,8 +1718,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('nests a widget into a Tabs pane by index, rejects an out-of-range pane, and accepts a bare Listview id as its row template', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1676,16 +1739,14 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateComponent', description: 'Create the Orders page' },
-        { type: 'CreateComponent', description: 'Add a 2-tab bar to the page' },
-        { type: 'CreateComponent', description: 'Add a listview to the page' },
-        { type: 'CreateComponent', description: 'Add text into the second tab pane' },
-        { type: 'CreateComponent', description: 'Add text into the listview row template' },
-      ])
-    )
-      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateComponent', description: 'Create the Orders page' },
+      { type: 'CreateComponent', description: 'Add a 2-tab bar to the page' },
+      { type: 'CreateComponent', description: 'Add a listview to the page' },
+      { type: 'CreateComponent', description: 'Add text into the second tab pane' },
+      { type: 'CreateComponent', description: 'Add text into the listview row template' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Tabs', pageId: 'page-1', tabs: ['One', 'Two'] }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Listview', pageId: 'page-1' }))
       // Attempt 1: pane index 2 is out of range for a 2-tab bar (only 0 and 1 exist).
@@ -1807,8 +1868,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('rejects a bare Tabs id as its own parentComponentId — a pane index must be given', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -1820,14 +1889,12 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateComponent', description: 'Create the Orders page' },
-        { type: 'CreateComponent', description: 'Add a tab bar to the page' },
-        { type: 'CreateComponent', description: 'Add text directly onto the tab bar' },
-      ])
-    )
-      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateComponent', description: 'Create the Orders page' },
+      { type: 'CreateComponent', description: 'Add a tab bar to the page' },
+      { type: 'CreateComponent', description: 'Add text directly onto the tab bar' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Tabs', pageId: 'page-1' }))
       .mockResolvedValueOnce(
         componentToolCall({ type: 'Text', pageId: 'page-1', text: 'Oops', parentComponentId: 'tabs-1' })
@@ -1907,6 +1974,7 @@ describe('AiService.approvePrd', () => {
   it('rejects a newParentComponentId that resolves to a component of the wrong type, then succeeds once the retry targets a real Container', async () => {
     const agentsService = { ...buildMockAgentsService(), MoveComponent: jest.fn() };
     const {
+      generationEnginePipelineClient,
       service,
       aiUtilService,
       conversationRepo,
@@ -1933,16 +2001,14 @@ describe('AiService.approvePrd', () => {
       ].join('\n')
     );
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'MoveComponent', description: 'Move the label into the sidebar' }])
-    )
-      // Attempt 1: newParentComponentId resolves to a real component, but a Text, not a
-      // Container/Form/Listview.
-      .mockResolvedValueOnce({
-        toolCalls: [
-          { toolName: 'moveComponent', args: { componentId: 'text-1', newParentComponentId: 'text-1' } },
-        ],
-      })
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'MoveComponent', description: 'Move the label into the sidebar' },
+    ]);
+    // Attempt 1: newParentComponentId resolves to a real component, but a Text, not a
+    // Container/Form/Listview.
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce({
+      toolCalls: [{ toolName: 'moveComponent', args: { componentId: 'text-1', newParentComponentId: 'text-1' } }],
+    })
       // Attempt 2 (retry): the real Container.
       .mockResolvedValueOnce({
         toolCalls: [
@@ -1987,8 +2053,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('builds a working page end to end: CreateTable → CreateComponent(Page) → CreateQuery → CreateComponent(Table), each step referencing the real prior artifacts', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2000,15 +2074,13 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD: build me an app to track orders' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create an orders table' },
-        { type: 'CreateComponent', description: 'Create the Orders page' },
-        { type: 'CreateQuery', description: 'List orders' },
-        { type: 'CreateComponent', description: 'Add a table of orders to the page' },
-      ])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create an orders table' },
+      { type: 'CreateComponent', description: 'Create the Orders page' },
+      { type: 'CreateQuery', description: 'List orders' },
+      { type: 'CreateComponent', description: 'Add a table of orders to the page' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
       .mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'tjdb-orders-uuid' }))
       .mockResolvedValueOnce(
@@ -2083,12 +2155,14 @@ describe('AiService.approvePrd', () => {
     const response = buildMockResponse();
     await service.approvePrd('conv-1', 'PRD: build me an app to track orders', USER, PERMISSIONS, response as any);
 
-    // The CreateQuery step's prompt includes the real table id CreateTable produced.
-    const queryStepPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[3][2];
+    // The CreateQuery step's prompt includes the real table id CreateTable produced. Hard
+    // switch (ADR-0052) removed the planning call from this array, so execution-attempt
+    // indices shift down by 1 (was 3, now 2): 0=CreateTable, 1=CreateComponent(page).
+    const queryStepPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[2][2];
     expect(queryStepPromptBody.messages[0].content).toContain('tjdb-orders-uuid');
 
     // The final CreateComponent(Table) step's prompt includes the real Page id and query name.
-    const tableStepPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[4][2];
+    const tableStepPromptBody = aiUtilService.AIGatewayGenerate.mock.calls[3][2];
     expect(tableStepPromptBody.messages[0].content).toContain('page-1');
     expect(tableStepPromptBody.messages[0].content).toContain('list_orders');
 
@@ -2103,8 +2177,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it("a CreateTable step's Artifact content includes the table's real columns (not just id/table_name)", async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2115,9 +2197,8 @@ describe('AiService.approvePrd', () => {
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateTable', description: 'Create an orders table' }])
-    ).mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateTable', description: 'Create an orders table' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('orders')));
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -2149,8 +2230,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('creates a Button component on a page created earlier in the plan (pageId validation applies to every widget type, not just Table)', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2161,13 +2250,11 @@ describe('AiService.approvePrd', () => {
     messageRepo.findLatestByConversationId.mockResolvedValue([
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateComponent', description: 'Create the Orders page' },
-        { type: 'CreateComponent', description: 'Add a Save button' },
-      ])
-    )
-      .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateComponent', description: 'Create the Orders page' },
+      { type: 'CreateComponent', description: 'Add a Save button' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Orders' }))
       // Attempt 1: hallucinated pageId — rejected and retried.
       .mockResolvedValueOnce(componentToolCall({ type: 'Button', pageId: 'made-up', text: 'Save' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Button', pageId: 'page-1', text: 'Save' }));
@@ -2223,6 +2310,7 @@ describe('AiService.approvePrd', () => {
     'dispatches a %s CreateComponent step to AgentsService.CreateComponent with the model-supplied props',
     async (type, props) => {
       const {
+        generationEnginePipelineClient,
         service,
         aiUtilService,
         conversationRepo,
@@ -2241,14 +2329,13 @@ describe('AiService.approvePrd', () => {
       messageRepo.findLatestByConversationId.mockResolvedValue([
         { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
       ]);
+      enginePlan(generationEnginePipelineClient, [
+        { type: 'CreateComponent', description: 'Create the page' },
+        { type: 'CreateComponent', description: `Add a ${type}` },
+      ]);
       aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-        planToolCall([
-          { type: 'CreateComponent', description: 'Create the page' },
-          { type: 'CreateComponent', description: `Add a ${type}` },
-        ])
-      )
-        .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Page' }))
-        .mockResolvedValueOnce(componentToolCall({ type, ...(props as object) }));
+        componentToolCall({ type: 'Page', name: 'Page' })
+      ).mockResolvedValueOnce(componentToolCall({ type, ...(props as object) }));
 
       stepRepository.createOne
         .mockResolvedValueOnce({
@@ -2291,8 +2378,16 @@ describe('AiService.approvePrd', () => {
   );
 
   it('creates a Form bound to a table created earlier in the plan, passing the real columns through', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2317,14 +2412,12 @@ describe('AiService.approvePrd', () => {
       },
     ];
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create a customers table' },
-        { type: 'CreateComponent', description: 'Create the Customers page' },
-        { type: 'CreateComponent', description: 'Add a form to create customers' },
-      ])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table' },
+      { type: 'CreateComponent', description: 'Create the Customers page' },
+      { type: 'CreateComponent', description: 'Add a form to create customers' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
       .mockResolvedValueOnce(
         componentToolCall({ type: 'Form', pageId: 'page-1', tableId: 'tjdb-uuid', title: 'New customer' })
@@ -2393,8 +2486,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('rejects a Form step whose tableId does not match any table created earlier in this plan, then succeeds once the retry references the real one', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2406,14 +2507,12 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create a customers table' },
-        { type: 'CreateComponent', description: 'Create the Customers page' },
-        { type: 'CreateComponent', description: 'Add a form to create customers' },
-      ])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table' },
+      { type: 'CreateComponent', description: 'Create the Customers page' },
+      { type: 'CreateComponent', description: 'Add a form to create customers' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
       // Attempt 1: hallucinated tableId.
       .mockResolvedValueOnce(
@@ -2495,8 +2594,16 @@ describe('AiService.approvePrd', () => {
   // covers the harder case #6's check exists for — a pageId that does match a prior component,
   // just not a Page.
   it('rejects a Form step whose pageId names another widget rather than the Page it sits on, then succeeds once the retry references the real Page', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2508,15 +2615,13 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create a customers table' },
-        { type: 'CreateComponent', description: 'Create the Customers page' },
-        { type: 'CreateComponent', description: 'Add a Save button' },
-        { type: 'CreateComponent', description: 'Add a form to create customers' },
-      ])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table' },
+      { type: 'CreateComponent', description: 'Create the Customers page' },
+      { type: 'CreateComponent', description: 'Add a Save button' },
+      { type: 'CreateComponent', description: 'Add a form to create customers' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
       .mockResolvedValueOnce(componentToolCall({ type: 'Button', pageId: 'page-1', text: 'Save' }))
       // Attempt 1: pageId names the Button — a real id, from a real CreateComponent step, that
@@ -2595,8 +2700,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('builds an edit-mode Form bound to a Table widget created earlier in the plan on the same underlying table', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2621,30 +2734,28 @@ describe('AiService.approvePrd', () => {
       },
     ];
 
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table' },
+      { type: 'CreateComponent', description: 'Create the Customers page' },
+      { type: 'CreateQuery', description: 'List customers' },
+      { type: 'CreateComponent', description: 'Add a customers table' },
+      { type: 'CreateComponent', description: 'Add a form to edit customers' },
+    ]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create a customers table' },
-        { type: 'CreateComponent', description: 'Create the Customers page' },
-        { type: 'CreateQuery', description: 'List customers' },
-        { type: 'CreateComponent', description: 'Add a customers table' },
-        { type: 'CreateComponent', description: 'Add a form to edit customers' },
-      ])
+      createTableToolCall({
+        table_name: 'customers',
+        columns: [
+          { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
+          {
+            column_name: 'name',
+            data_type: 'character varying',
+            is_primary_key: false,
+            is_not_null: true,
+            is_unique: false,
+          },
+        ],
+      })
     )
-      .mockResolvedValueOnce(
-        createTableToolCall({
-          table_name: 'customers',
-          columns: [
-            { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
-            {
-              column_name: 'name',
-              data_type: 'character varying',
-              is_primary_key: false,
-              is_not_null: true,
-              is_unique: false,
-            },
-          ],
-        })
-      )
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
       .mockResolvedValueOnce(queryToolCall({ name: 'list_customers', table_id: 'tjdb-uuid' }))
       .mockResolvedValueOnce(
@@ -2742,8 +2853,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('rejects an edit-mode Form whose tableName does not match any Table widget in the plan, then succeeds once the retry references the real one', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2768,16 +2887,14 @@ describe('AiService.approvePrd', () => {
       },
     ];
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create a customers table' },
-        { type: 'CreateComponent', description: 'Create the Customers page' },
-        { type: 'CreateQuery', description: 'List customers' },
-        { type: 'CreateComponent', description: 'Add a customers table' },
-        { type: 'CreateComponent', description: 'Add a form to edit customers' },
-      ])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table' },
+      { type: 'CreateComponent', description: 'Create the Customers page' },
+      { type: 'CreateQuery', description: 'List customers' },
+      { type: 'CreateComponent', description: 'Add a customers table' },
+      { type: 'CreateComponent', description: 'Add a form to edit customers' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Customers' }))
       .mockResolvedValueOnce(queryToolCall({ name: 'list_customers', table_id: 'tjdb-uuid' }))
       .mockResolvedValueOnce(
@@ -2892,8 +3009,16 @@ describe('AiService.approvePrd', () => {
   });
 
   it('rejects an edit-mode Form whose referenced Table widget is bound to a different table, then succeeds once the retry matches them', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+    } = buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -2905,17 +3030,15 @@ describe('AiService.approvePrd', () => {
       { id: 'ai-msg-1', messageType: 'ai', content: 'PRD text' },
     ]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create a customers table' },
-        { type: 'CreateTable', description: 'Create a products table' },
-        { type: 'CreateComponent', description: 'Create the Catalog page' },
-        { type: 'CreateQuery', description: 'List products' },
-        { type: 'CreateComponent', description: 'Add a products table' },
-        { type: 'CreateComponent', description: 'Add a form to edit products' },
-      ])
-    )
-      .mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table' },
+      { type: 'CreateTable', description: 'Create a products table' },
+      { type: 'CreateComponent', description: 'Create the Catalog page' },
+      { type: 'CreateQuery', description: 'List products' },
+      { type: 'CreateComponent', description: 'Add a products table' },
+      { type: 'CreateComponent', description: 'Add a form to edit products' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')))
       .mockResolvedValueOnce(createTableToolCall(oneColumnTable('products')))
       .mockResolvedValueOnce(componentToolCall({ type: 'Page', name: 'Catalog' }))
       .mockResolvedValueOnce(queryToolCall({ name: 'list_products', table_id: 'tjdb-products-uuid' }))
@@ -3056,8 +3179,7 @@ describe('AiService.approvePrd', () => {
       ]);
     };
 
-    const plannedStepPlanCall = (calls) =>
-      calls.some(([, label]) => label === 'approve-prd-plan');
+    const plannedStepPlanCall = (calls) => calls.some(([, label]) => label === 'approve-prd-plan');
 
     it('plans steps through POST /generate/steps when the engine is configured, reusing the same persistence contract', async () => {
       const generationEnginePipelineClient = {
@@ -3114,7 +3236,10 @@ describe('AiService.approvePrd', () => {
       });
     });
 
-    it('falls back to the in-process planner when the engine call fails', async () => {
+    // Hard switch (ADR-0052): the in-process planner is gone — an engine failure or a
+    // missing GENERATION_ENGINE_URL now raises ServiceUnavailableException instead of
+    // falling back, surfaced through approvePrd's existing catch/'error' SSE contract.
+    it('raises ServiceUnavailableException (surfaced as an SSE error) when the engine call fails', async () => {
       const generationEnginePipelineClient = {
         isConfigured: jest.fn().mockReturnValue(true),
         generateSteps: jest.fn().mockRejectedValue(new Error('engine unreachable')),
@@ -3124,23 +3249,21 @@ describe('AiService.approvePrd', () => {
       });
 
       arrangeApprovedConversation(conversationRepo, messageRepo);
-      aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-        planToolCall([{ type: 'CreateTable', description: 'Create a customers table' }])
-      );
-      stepRepository.createOne.mockResolvedValue(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'));
 
-      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+      const response = buildMockResponse();
+      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
       expect(generationEnginePipelineClient.generateSteps).toHaveBeenCalledTimes(1);
-      // The fallback ran the in-process planner (its Step was persisted from the
-      // AIGatewayGenerate tool call).
-      expect(plannedStepPlanCall(aiUtilService.AIGatewayGenerate.mock.calls)).toBe(true);
-      expect(stepRepository.createOne).toHaveBeenCalledWith(
-        expect.objectContaining({ order: 0, type: 'CreateTable', description: 'Create a customers table' })
+      expect(plannedStepPlanCall(aiUtilService.AIGatewayGenerate.mock.calls)).toBe(false);
+      expect(stepRepository.createOne).not.toHaveBeenCalled();
+      expect(aiUtilService.sendSSE).toHaveBeenCalledWith(
+        response,
+        'error',
+        expect.objectContaining({ message: expect.stringContaining('engine unreachable') })
       );
     });
 
-    it('uses the in-process planner when the engine is not configured (regression guard)', async () => {
+    it('raises ServiceUnavailableException (surfaced as an SSE error) when the engine is not configured', async () => {
       const generationEnginePipelineClient = {
         isConfigured: jest.fn().mockReturnValue(false),
         generateSteps: jest.fn(),
@@ -3150,22 +3273,24 @@ describe('AiService.approvePrd', () => {
       });
 
       arrangeApprovedConversation(conversationRepo, messageRepo);
-      aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-        planToolCall([{ type: 'CreateTable', description: 'Create a customers table' }])
-      );
-      stepRepository.createOne.mockResolvedValue(pendingStep('step-1', 0, 'CreateTable', 'Create a customers table'));
 
-      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
+      const response = buildMockResponse();
+      await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any);
 
       expect(generationEnginePipelineClient.generateSteps).not.toHaveBeenCalled();
-      expect(plannedStepPlanCall(aiUtilService.AIGatewayGenerate.mock.calls)).toBe(true);
+      expect(plannedStepPlanCall(aiUtilService.AIGatewayGenerate.mock.calls)).toBe(false);
+      expect(stepRepository.createOne).not.toHaveBeenCalled();
+      expect(aiUtilService.sendSSE).toHaveBeenCalledWith(
+        response,
+        'error',
+        expect.objectContaining({ message: expect.stringContaining('GENERATION_ENGINE_URL') })
+      );
     });
   });
 });
 
 /** @group platform */
 describe('AiService.approvePrd - queries against connected external data sources', () => {
-  const planToolCall = (steps: any[]) => ({ toolCalls: [{ toolName: 'proposeStepPlan', args: { steps } }] });
   const queryToolCall = (args: any) => ({ toolCalls: [{ toolName: 'createQuery', args }] });
 
   const WAREHOUSE = { id: 'ds-warehouse', name: 'Warehouse', kind: 'postgresql', tables: ['orders', 'customers'] };
@@ -3198,12 +3323,12 @@ describe('AiService.approvePrd - queries against connected external data sources
   };
 
   it("creates the query against the source the model picked, in that source's own query shape", async () => {
-    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, aiUtilService, agentsService, dataSourceInventoryService } =
+      buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List customers' }]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
-    ).mockResolvedValueOnce(
       queryToolCall({
         source: 'sql',
         name: 'list_customers',
@@ -3223,15 +3348,17 @@ describe('AiService.approvePrd - queries against connected external data sources
   });
 
   it('assembles the connected sources once per approval, not once per query step', async () => {
-    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, aiUtilService, agentsService, dataSourceInventoryService } =
+      buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateQuery', description: 'List customers' },
-        { type: 'CreateQuery', description: 'List orders' },
-      ])
-    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql: 'SELECT 1' }));
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateQuery', description: 'List customers' },
+      { type: 'CreateQuery', description: 'List orders' },
+    ]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(
+      queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
+    );
     agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'q' });
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
@@ -3243,13 +3370,20 @@ describe('AiService.approvePrd - queries against connected external data sources
   // Same reasoning as the pageId/queryName guards: the tool schema can only ask for a string,
   // so an id the model invented is caught here. Retryable - the model picks it per attempt.
   it('rejects a data source id that is not one of the connected sources, and retries', async () => {
-    const { service, aiUtilService, agentsService, stepRepository, dataSourceInventoryService } =
-      buildQueryStepService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      agentsService,
+      stepRepository,
+      dataSourceInventoryService,
+    } = buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
-    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-invented', sql: 'SELECT 1' }));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List customers' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(
+      queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-invented', sql: 'SELECT 1' })
+    );
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
@@ -3258,8 +3392,9 @@ describe('AiService.approvePrd - queries against connected external data sources
       'step-1',
       expect.objectContaining({ status: 'failed', errorMessage: expect.stringContaining('ds-invented') })
     );
-    // 1 planner call + 1 initial attempt + 2 retries, each asking the model again.
-    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(4);
+    // Hard switch (ADR-0052): planning no longer calls AIGatewayGenerate at all — 1
+    // initial attempt + 2 retries, each asking the model again.
+    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(3);
   });
 
   // The tool schema and the prompt both ask for one SELECT, and nothing here runs the
@@ -3272,13 +3407,20 @@ describe('AiService.approvePrd - queries against connected external data sources
     ['a write hidden behind a comment', 'SELECT 1 -- ok\nUPDATE customers SET name = 1'],
     ['a row lock', 'SELECT * FROM customers FOR UPDATE'],
   ])('refuses to store %s as a query', async (_name, sql) => {
-    const { service, aiUtilService, agentsService, stepRepository, dataSourceInventoryService } =
-      buildQueryStepService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      agentsService,
+      stepRepository,
+      dataSourceInventoryService,
+    } = buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
-    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql }));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List customers' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(
+      queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql })
+    );
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
@@ -3287,13 +3429,13 @@ describe('AiService.approvePrd - queries against connected external data sources
   });
 
   it('accepts a read that leads with a CTE', async () => {
-    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, aiUtilService, agentsService, dataSourceInventoryService } =
+      buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
     const sql = 'WITH recent AS (SELECT * FROM orders) SELECT * FROM recent';
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List recent orders' }]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List recent orders' }])
-    ).mockResolvedValueOnce(
       queryToolCall({ source: 'sql', name: 'recent_orders', data_source_id: 'ds-warehouse', sql })
     );
     agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'recent_orders' });
@@ -3308,13 +3450,20 @@ describe('AiService.approvePrd - queries against connected external data sources
   });
 
   it('refuses to store a query with no SQL at all rather than persisting an undefined body', async () => {
-    const { service, aiUtilService, agentsService, stepRepository, dataSourceInventoryService } =
-      buildQueryStepService();
+    const {
+      generationEnginePipelineClient,
+      service,
+      aiUtilService,
+      agentsService,
+      stepRepository,
+      dataSourceInventoryService,
+    } = buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
-    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse' }));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List customers' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(
+      queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse' })
+    );
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
@@ -3323,11 +3472,13 @@ describe('AiService.approvePrd - queries against connected external data sources
   });
 
   it('rejects an external query when nothing external is connected at all', async () => {
-    const { service, aiUtilService, agentsService, stepRepository } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, aiUtilService, agentsService, stepRepository } =
+      buildQueryStepService();
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
-    ).mockResolvedValue(queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql: 'SELECT 1' }));
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List customers' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValue(
+      queryToolCall({ source: 'sql', name: 'q', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
+    );
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
@@ -3336,12 +3487,14 @@ describe('AiService.approvePrd - queries against connected external data sources
   });
 
   it('still targets ToolJet DB when the model names no source, which is what every existing plan does', async () => {
-    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, aiUtilService, agentsService, dataSourceInventoryService } =
+      buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List orders' }]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List orders' }])
-    ).mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'table-uuid' }));
+      queryToolCall({ name: 'list_orders', table_id: 'table-uuid' })
+    );
     agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
@@ -3353,12 +3506,12 @@ describe('AiService.approvePrd - queries against connected external data sources
   });
 
   it("shows the planner and the query step the connected sources and each source's real tables", async () => {
-    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, aiUtilService, agentsService, dataSourceInventoryService } =
+      buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
 
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List customers' }]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
-    ).mockResolvedValueOnce(
       queryToolCall({ source: 'sql', name: 'list_customers', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
     );
     agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_customers' });
@@ -3374,32 +3527,23 @@ describe('AiService.approvePrd - queries against connected external data sources
     expect(queryStepPrompt).toContain('customers');
   });
 
-  // ADR-0018: an external source can never receive a CreateTable, so the planner has to be
-  // told that before it proposes one it cannot build.
-  it('tells the planner that tables cannot be created in a connected external source', async () => {
-    const { service, aiUtilService, agentsService, dataSourceInventoryService } = buildQueryStepService();
-    dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
-
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List customers' }])
-    ).mockResolvedValueOnce(
-      queryToolCall({ source: 'sql', name: 'list_customers', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
-    );
-    agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_customers' });
-
-    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
-
-    const plannerPrompt = aiUtilService.AIGatewayGenerate.mock.calls[0][2].messages[0].content;
-    expect(plannerPrompt).toMatch(/CreateTable/);
-    expect(plannerPrompt).toMatch(/ToolJet DB/);
-  });
+  // ADR-0018's planner-prompt guidance ("an external source can never receive a
+  // CreateTable") no longer applies — hard switch (ADR-0052) moved planning entirely to
+  // generationEnginePipelineClient.generateSteps, which this call site doesn't pass
+  // dataSources into at all, so there's no planner prompt left to assert on. The
+  // execution-time safety net (approvePrd's filteredSteps, stripping CreateTable when
+  // dataSourceId is set) still enforces the constraint independently — see its own
+  // coverage below. Flagged as a real gap in the Part 2 plan/PR notes, not fixed here:
+  // fixing it would mean wiring dataSources into the engine call, which is new scope
+  // beyond removing the fallback.
 
   it('says nothing about external data sources in any prompt when none are connected', async () => {
-    const { service, aiUtilService, agentsService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, aiUtilService, agentsService } = buildQueryStepService();
 
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateQuery', description: 'List orders' }]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateQuery', description: 'List orders' }])
-    ).mockResolvedValueOnce(queryToolCall({ name: 'list_orders', table_id: 'table-uuid' }));
+      queryToolCall({ name: 'list_orders', table_id: 'table-uuid' })
+    );
     agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
 
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
@@ -3410,14 +3554,14 @@ describe('AiService.approvePrd - queries against connected external data sources
     expect(queryStepPrompt).not.toContain('Connected data sources');
   });
   it('strips CreateTable steps from the plan when an external dataSourceId is provided', async () => {
-    const { service, agentsService, dataSourceInventoryService, aiUtilService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, agentsService, dataSourceInventoryService, aiUtilService } =
+      buildQueryStepService();
     dataSourceInventoryService.listQueryableSources.mockResolvedValue([WAREHOUSE]);
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create orders table' },
+      { type: 'CreateQuery', description: 'List orders' },
+    ]);
     aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        { type: 'CreateTable', description: 'Create orders table' },
-        { type: 'CreateQuery', description: 'List orders' },
-      ])
-    ).mockResolvedValueOnce(
       queryToolCall({ source: 'sql', name: 'list_orders', data_source_id: 'ds-warehouse', sql: 'SELECT 1' })
     );
     agentsService.CreateQuery.mockResolvedValue({ id: 'query-1', name: 'list_orders' });
@@ -3428,11 +3572,11 @@ describe('AiService.approvePrd - queries against connected external data sources
     expect(agentsService.CreateQuery).toHaveBeenCalled();
   });
   it('keeps CreateTable steps when no dataSourceId is provided (default ToolJet DB path)', async () => {
-    const { service, stepRepository, agentsService, aiUtilService } = buildQueryStepService();
+    const { generationEnginePipelineClient, service, stepRepository, agentsService, aiUtilService } =
+      buildQueryStepService();
     agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'orders' });
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([{ type: 'CreateTable', description: 'Create orders table' }])
-    ).mockResolvedValueOnce({ toolCalls: [] });
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateTable', description: 'Create orders table' }]);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce({ toolCalls: [] });
     await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
     const callTypes = stepRepository.createOne.mock.calls.map((c) => c[0].type);
     expect(callTypes).toContain('CreateTable');
@@ -3441,10 +3585,6 @@ describe('AiService.approvePrd - queries against connected external data sources
 
 /** @group platform */
 describe('AiService.previewPlan', () => {
-  const planToolCall = (steps: any[]) => ({
-    toolCalls: [{ toolName: 'proposeStepPlan', args: { steps } }],
-  });
-
   const customersTable = {
     table_name: 'customers',
     columns: [
@@ -3475,19 +3615,17 @@ describe('AiService.previewPlan', () => {
   };
 
   it('generates and persists a plan and returns CreateTable steps with their proposed table definitions', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    const { generationEnginePipelineClient, service, conversationRepo, messageRepo, stepRepository } = buildService();
 
     mockGenerateConversation(conversationRepo, messageRepo);
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        {
-          type: 'CreateTable',
-          description: 'Create a customers table',
-          table: customersTable,
-        },
-        { type: 'CreateComponent', description: 'Create a page' },
-      ])
-    );
+    enginePlan(generationEnginePipelineClient, [
+      {
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        table: customersTable,
+      },
+      { type: 'CreateComponent', description: 'Create a page' },
+    ]);
     stepRepository.createOne
       .mockResolvedValueOnce({
         id: 'step-1',
@@ -3565,18 +3703,16 @@ describe('AiService.previewPlan', () => {
   });
 
   it('strips CreateTable steps (with their table definitions) when an external dataSourceId is provided', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    const { generationEnginePipelineClient, service, conversationRepo, messageRepo, stepRepository } = buildService();
 
     mockGenerateConversation(conversationRepo, messageRepo);
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        {
-          type: 'CreateTable',
-          description: 'Create a customers table',
-          table: customersTable,
-        },
-      ])
-    );
+    enginePlan(generationEnginePipelineClient, [
+      {
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        table: customersTable,
+      },
+    ]);
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -3625,10 +3761,6 @@ describe('AiService.previewPlan', () => {
 });
 
 describe('AiService.approvePrd - previewed plans (ticket #20)', () => {
-  const planToolCall = (steps: any[]) => ({
-    toolCalls: [{ toolName: 'proposeStepPlan', args: { steps } }],
-  });
-
   const customersTable = {
     table_name: 'customers',
     columns: [
@@ -3809,7 +3941,8 @@ describe('AiService.approvePrd - previewed plans (ticket #20)', () => {
   });
 
   it('does not reuse pending Steps from a different (older) PRD message — a refined PRD gets a fresh plan', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    const { generationEnginePipelineClient, service, aiUtilService, conversationRepo, messageRepo, stepRepository } =
+      buildService();
 
     conversationRepo.findById.mockResolvedValue({
       id: 'conv-1',
@@ -3820,15 +3953,13 @@ describe('AiService.approvePrd - previewed plans (ticket #20)', () => {
       { id: 'user-msg-0', messageType: 'user', content: 'earlier' },
       { id: 'ai-msg-2', messageType: 'ai', content: 'refined PRD' },
     ]);
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(
-      planToolCall([
-        {
-          type: 'CreateTable',
-          description: 'Create a customers table',
-          table: customersTable,
-        },
-      ])
-    );
+    enginePlan(generationEnginePipelineClient, [
+      {
+        type: 'CreateTable',
+        description: 'Create a customers table',
+        table: customersTable,
+      },
+    ]);
     stepRepository.createOne.mockResolvedValue({
       id: 'step-1',
       conversationId: 'conv-1',
@@ -3844,7 +3975,9 @@ describe('AiService.approvePrd - previewed plans (ticket #20)', () => {
     await service.approvePrd('conv-1', 'refined PRD', USER, PERMISSIONS, response as any);
 
     expect(stepRepository.findPendingForMessage).toHaveBeenCalledWith('conv-1', 'ai-msg-2');
-    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(1);
+    // Hard switch (ADR-0052): planning no longer calls AIGatewayGenerate at all, and the
+    // planned table is well-formed so execution needs no LLM call either.
+    expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
   });
 });
 describe('AiService.rewindStep', () => {
@@ -5192,22 +5325,14 @@ const conversationRepoDefaults = (conversationRepo, messageRepo) => {
 
 describe('AiService.approvePrd - phases (ticket #21)', () => {
   it("persists the planner's phase label on each Step and carries it on the plan SSE event", async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository, generationEnginePipelineClient } =
+      buildService();
     conversationRepoDefaults(conversationRepo, messageRepo);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce({
-      toolCalls: [
-        {
-          toolName: 'proposeStepPlan',
-          args: {
-            steps: [
-              { type: 'CreateTable', description: 'Create a customers table', phase: 'Create data tables' },
-              { type: 'CreateComponent', description: 'Create a Home page', phase: 'Build the interface' },
-            ],
-          },
-        },
-      ],
-    });
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table', phase: 'Create data tables' },
+      { type: 'CreateComponent', description: 'Create a Home page', phase: 'Build the interface' },
+    ]);
 
     stepRepository.createOne
       .mockResolvedValueOnce({
@@ -5240,17 +5365,13 @@ describe('AiService.approvePrd - phases (ticket #21)', () => {
   });
 
   it('persists a blank planner phase as no phase at all (null on the Step, absent on the wire)', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository, generationEnginePipelineClient } =
+      buildService();
     conversationRepoDefaults(conversationRepo, messageRepo);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce({
-      toolCalls: [
-        {
-          toolName: 'proposeStepPlan',
-          args: { steps: [{ type: 'CreateTable', description: 'Create a customers table', phase: '   ' }] },
-        },
-      ],
-    });
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table', phase: '   ' },
+    ]);
     stepRepository.createOne.mockResolvedValue(pendingStepLike('step-1', 0, 'CreateTable', 'Create a customers table'));
 
     const response = buildMockResponse();
@@ -5405,19 +5526,10 @@ describe('AiService.skipStep (ticket #21)', () => {
 });
 
 describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
-  const twoStepPlanToolCall = () => ({
-    toolCalls: [
-      {
-        toolName: 'proposeStepPlan',
-        args: {
-          steps: [
-            { type: 'CreateTable', description: 'Create a customers table' },
-            { type: 'CreateTable', description: 'Create an orders table' },
-          ],
-        },
-      },
-    ],
-  });
+  const TWO_STEP_PLAN = [
+    { type: 'CreateTable', description: 'Create a customers table' },
+    { type: 'CreateTable', description: 'Create an orders table' },
+  ];
 
   const oneColumnTable = (table_name: string) => ({
     table_name,
@@ -5429,13 +5541,20 @@ describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
   });
 
   it('never starts a step the user skipped while it was pending, and reports it as step-skipped', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+      generationEnginePipelineClient,
+    } = buildService();
     conversationRepoDefaults(conversationRepo, messageRepo);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(twoStepPlanToolCall()).mockResolvedValueOnce(
-      createTableToolCall(oneColumnTable('customers'))
-    );
+    enginePlan(generationEnginePipelineClient, TWO_STEP_PLAN);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')));
 
     stepRepository.createOne
       .mockResolvedValueOnce({
@@ -5489,13 +5608,20 @@ describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
   });
 
   it('discards a skipped-while-running step: its Artifact is undone and does not count as succeeded', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+      generationEnginePipelineClient,
+    } = buildService();
     conversationRepoDefaults(conversationRepo, messageRepo);
 
-    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(twoStepPlanToolCall()).mockResolvedValueOnce(
-      createTableToolCall(oneColumnTable('customers'))
-    );
+    enginePlan(generationEnginePipelineClient, TWO_STEP_PLAN);
+    aiUtilService.AIGatewayGenerate.mockResolvedValueOnce(createTableToolCall(oneColumnTable('customers')));
 
     stepRepository.createOne
       .mockResolvedValueOnce({
@@ -5554,13 +5680,20 @@ describe('AiService.approvePrd - skip during execution (ticket #21)', () => {
   });
 
   it('skip wins over retry (ticket #4): a step skipped while its retries ran is reported skipped, not failed, and the plan continues', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, agentsService, artifactRepository, stepRepository } =
-      buildService();
+    const {
+      service,
+      aiUtilService,
+      conversationRepo,
+      messageRepo,
+      agentsService,
+      artifactRepository,
+      stepRepository,
+      generationEnginePipelineClient,
+    } = buildService();
     conversationRepoDefaults(conversationRepo, messageRepo);
 
+    enginePlan(generationEnginePipelineClient, TWO_STEP_PLAN);
     aiUtilService.AIGatewayGenerate
-      // plan
-      .mockResolvedValueOnce(twoStepPlanToolCall())
       // attempt 1 of step-1 fails
       .mockRejectedValueOnce(new Error('boom'))
       // attempt 2 succeeds — but the user skipped the step while attempt 1 was running
@@ -5718,40 +5851,10 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
     );
   });
 
-  it('fits the step-plan prompt to the context window before sending it', async () => {
-    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository } = buildService();
-    aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [{ toolName: 'proposeStepPlan', args: { steps: [{ type: 'createTable', description: 't' }] } }],
-    });
-    stepRepository.createOne.mockResolvedValue({
-      id: 'step-1',
-      type: 'CreateTable',
-      description: 't',
-      status: 'pending',
-    });
-    aiUtilService.fitMessagesToContextWindowForOrg.mockReturnValue({
-      messages: [
-        { role: 'system', content: 'system' },
-        { role: 'user', content: 'trimmed' },
-      ],
-      truncated: [],
-    });
-
-    // previewPlan loads a generate conversation of the caller's before planning.
-    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
-    messageRepo.findLatestByConversationId.mockResolvedValue([{ id: 'ai-msg-1', messageType: 'ai', content: 'PRD' }]);
-
-    await service.previewPlan('conv-1', USER, PERMISSIONS);
-
-    expect(aiUtilService.fitMessagesToContextWindowForOrg).toHaveBeenCalledWith(
-      'org-1',
-      expect.arrayContaining([expect.objectContaining({ role: 'system' }), expect.objectContaining({ role: 'user' })])
-    );
-    expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledWith(
-      'openai',
-      'approve-prd-plan',
-      expect.objectContaining({ system: 'system', messages: [{ role: 'user', content: 'trimmed' }] }),
-      'org-1'
-    );
-  });
+  // Hard switch (ADR-0052) removed the in-process step-plan prompt entirely — planning
+  // now forwards the raw PRD text + component index to
+  // generationEnginePipelineClient.generateSteps with no server-side context-window
+  // fitting step, so there is nothing left here to assert on (see
+  // 'AiService.generateStepPlan via the generation engine (ADR-0048)' for engine-path
+  // coverage).
 });

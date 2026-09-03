@@ -52,6 +52,16 @@ const buildService = (conversationType: 'generate' | 'learn') => {
     flushHeaders: jest.fn(),
   } as any;
 
+  // Hard switch (ADR-0052): generate-path sendUserMessage now requires the engine —
+  // configured by default here, with an immediate 'done' so tests that don't care about
+  // streamed content don't have to mock it themselves.
+  const generationEngineClient = {
+    isConfigured: jest.fn().mockReturnValue(true),
+    streamPrd: jest.fn().mockImplementation(async function* () {
+      yield { type: 'done' };
+    }),
+  };
+
   const service = new AiService(
     aiUtilService as any,
     conversationRepo as any,
@@ -85,10 +95,11 @@ const buildService = (conversationType: 'generate' | 'learn') => {
       cleanupStaleRuns: jest.fn().mockResolvedValue(0),
     } as any,
     { assess: jest.fn().mockReturnValue({ type: 'feasible' }) } as any,
-    { isConfigured: jest.fn().mockReturnValue(false), streamPrd: jest.fn() } as any
+    generationEngineClient as any,
+    { isConfigured: jest.fn().mockReturnValue(true), generateSteps: jest.fn() } as any
   );
 
-  return { service, aiUtilService, conversationRepo, messageRepo, response };
+  return { service, aiUtilService, conversationRepo, messageRepo, response, generationEngineClient };
 };
 
 describe('AiService @-mention references (ticket #27)', () => {
@@ -134,7 +145,7 @@ describe('AiService @-mention references (ticket #27)', () => {
   });
 
   it('sendUserMessage (generate) rides the mention context as a system message before history', async () => {
-    const { service, aiUtilService, messageRepo, response } = buildService('generate');
+    const { service, messageRepo, response, generationEngineClient } = buildService('generate');
 
     await service.sendUserMessage(
       { conversationId: 'conv-1', content: 'Wire @OrdersTable to run @create_order', references: REFERENCES },
@@ -143,16 +154,16 @@ describe('AiService @-mention references (ticket #27)', () => {
       'org-1'
     );
 
-    const [, , payload] = aiUtilService.AIGateway.mock.calls[0];
-    const mentionMessage = payload.messages.find(
+    const [messages] = generationEngineClient.streamPrd.mock.calls[0];
+    const mentionMessage = messages.find(
       (message: any) => message.role === 'system' && message.content.includes('@OrdersTable')
     );
     expect(mentionMessage).toBeDefined();
     expect(mentionMessage.content).toContain('id: comp-1');
     // The mention block sits between the PRD system prompt and the history (empty here).
-    expect(payload.messages[0].role).toBe('system');
-    expect(payload.messages[0].content).not.toContain('@OrdersTable');
-    expect(payload.messages[1]).toBe(mentionMessage);
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).not.toContain('@OrdersTable');
+    expect(messages[1]).toBe(mentionMessage);
     // And the references persist on the user message row.
     expect(messageRepo.createOne).toHaveBeenCalledWith(
       expect.objectContaining({ messageType: 'user', references: REFERENCES })
@@ -181,11 +192,11 @@ describe('AiService @-mention references (ticket #27)', () => {
   });
 
   it('sends neither path a mention block when the message has no references', async () => {
-    const { service, aiUtilService, response } = buildService('generate');
+    const { service, response, generationEngineClient } = buildService('generate');
 
     await service.sendUserMessage({ conversationId: 'conv-1', content: 'plain message' }, response, 'user-1', 'org-1');
 
-    const [, , payload] = aiUtilService.AIGateway.mock.calls[0];
-    expect(payload.messages.some((message: any) => message.content?.includes('@name'))).toBe(false);
+    const [messages] = generationEngineClient.streamPrd.mock.calls[0];
+    expect(messages.some((message: any) => message.content?.includes('@name'))).toBe(false);
   });
 });

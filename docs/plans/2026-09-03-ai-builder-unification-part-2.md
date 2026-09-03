@@ -88,20 +88,69 @@
 - [x] Тесты: для каждого executor — happy path (валидный payload используется как есть) + fallback path (невалидный/устаревший payload → LLM-вызов).
 - [x] Commit: `feat(ai): consume engine plan-time payload with execution-time validation, fallback on mismatch` (уже в main, до Part 2)
 
-### Task 7: Hard switch — удаление fallback (ADR-0052) — ⏸ BLOCKED on Task 6
-**Files:** `server/src/modules/ai/service.ts` (`sendUserMessage`, `generateStepPlan`, `regenerateAiMessage`), `server/src/modules/ai/prompt-library/` (delete), `PRD_SYSTEM_PROMPT`, `STEP_PLAN_SYSTEM_PROMPT`, `proposeStepPlanTool` (delete).
+### Task 7: Hard switch — удаление fallback (ADR-0052) ✅ done (2026-09-04)
+**Files:** `server/src/modules/ai/service.ts` (`sendUserMessage`'s `streamPrdText`, `generateStepPlan`), `server/test/modules/ai/unit/*.spec.ts`.
 
-> **Status note (2026-09-04):** not attempted. This task's own re-entry gate below requires
-> Task 6's live deploy to be smoke-tested first — removing the fallback before that is
-> verified would leave the AI Builder with no working generation path if the engine turns
-> out to be unreachable. Pick this up once Task 6 is done.
+> **Status note (2026-09-04):** Task 6's smoke test passed, so this was picked up in the
+> same session. Two of this task's own file-list premises turned out false — corrections
+> below, same pattern as Task 8a's refusal.
+>
+> **`regenerateAiMessage` was never in scope — it never called the engine.** Only two
+> `isConfigured()` soft-gates existed in the code (`streamPrdText` for `sendUserMessage`,
+> and `generateStepPlan`), not three. `regenerateAiMessage`'s PRD-regeneration path has
+> always called `aiUtilService.AIGatewayGenerate` unconditionally (confirmed via
+> `git log` — the engine was never wired into it since ticket #131). There was no
+> fallback there to remove; wiring it into the engine now would be new feature work, not
+> a hard switch, so it was left untouched.
+>
+> **`prompt-library/` must NOT be deleted.** It's still a live import for unrelated
+> features: `generateQuery` (`service.ts:47`) and `updateQuery`
+> (`services/query-update.ts:4`). Only `STEP_PLAN_SYSTEM_PROMPT` and
+> `proposeStepPlanTool` — both defined directly in `service.ts`, not in
+> `prompt-library/` — were actually dead once `generateStepPlan`'s in-process branch was
+> removed, and those two (plus their now-orphaned `STEP_TYPES`/`seedRowObject`/
+> `seedRowsObject` helpers) were deleted. `PRD_SYSTEM_PROMPT` also survives — it's still
+> read by `buildPrdMessages`, which `regenerateAiMessage` still uses.
+>
+> **Implementation:** `streamPrdText` and `generateStepPlan` now throw
+> `ServiceUnavailableException` (missing `GENERATION_ENGINE_URL`, or any engine-path
+> failure) instead of falling back — no new plumbing needed, both callers' existing
+> generic `catch` blocks already turn a thrown exception into an SSE `error` event
+> (`approvePrd`) or propagate it as a real HTTP error (`previewPlan`).
+>
+> **Two consequences surfaced, not silently absorbed:**
+> 1. Dropping the in-process fallback also dropped `usageSink` — the engine's `streamPrd`
+>    never surfaced token usage (ADR-0027), so every PRD-conversation message now
+>    persists `metadata: undefined`. `getThreadTokenUsage` sums nothing for these going
+>    forward. Follows directly from the engine's contract, not a bug, but a named
+>    behavior change ADR-0052 didn't call out.
+> 2. ADR-0018's planner-prompt guidance ("an external source can never receive a
+>    CreateTable") has no equivalent anymore: `generateStepPlan`'s engine call
+>    (`generateSteps(prd, undefined, componentIndex, organizationId)`) doesn't pass
+>    `dataSources` at all, so there's no prompt left to carry that hint. The
+>    execution-time safety net (`approvePrd`'s `filteredSteps`, stripping `CreateTable`
+>    when `dataSourceId` is set) still enforces the constraint independently, so behavior
+>    is unaffected — but the planner is no longer told about it in advance. Test coverage
+>    for the removed prompt guidance was deleted rather than faked.
+>
+> Test suite: ~50 tests across `service.spec.ts`/`ai.service.spec.ts`/
+> `mention-references.spec.ts` assumed the removed fallback as their default world
+> (`generationEngineClient`/`generationEnginePipelineClient` now default to configured);
+> converted to exercise the engine path instead. `npm run test:ai` — 588/588 green (run
+> against Node 24, this fork's actual Node version — see the `sanitize-html` fix below).
+>
+> **Unrelated bug fixed along the way:** `jest.ai-unit.config.js` couldn't run at all
+> under Node 24 — `sanitize-html`'s `htmlparser2` dependency ships an ESM-only dist that
+> `require()` chokes on. Mocked offline (`test/__mock__/sanitize-html.ts`), same pattern
+> as the existing `isolated-vm`/`got` mocks; the AI Builder specs never exercised real
+> HTML sanitization anyway.
 
-- [ ] Один PR на все три call-сайта: убрать in-process генерацию, оставить только движок.
-- [ ] Отсутствие `GENERATION_ENGINE_URL` → fail-fast `ServiceUnavailableException` (не silent fallback).
-- [ ] Удалить `prompt-library/`, `PRD_SYSTEM_PROMPT`, `STEP_PLAN_SYSTEM_PROMPT`, `proposeStepPlanTool`.
-- [ ] Гейт по ADR-0052 re-entry condition: задача открывается только после Task 5 (паритет каталога) + Task 6 (деплой подтверждён smoke-тестом).
-- [ ] Гейт: `npm run test:ai` зелёный без prompt-library-тестов (удалить/перенести соответствующие спеки).
-- [ ] Commit: `feat(ai): hard switch to generation engine, remove in-process prompt fallback`
+- [x] Один PR на все три call-сайта — фактически два реальных call-сайта (`sendUserMessage`, `generateStepPlan`); `regenerateAiMessage` не было — см. заметку выше.
+- [x] Отсутствие `GENERATION_ENGINE_URL` → fail-fast `ServiceUnavailableException` (не silent fallback).
+- [x] Удалить `STEP_PLAN_SYSTEM_PROMPT`, `proposeStepPlanTool` (мёртвый код после удаления in-process ветки). `prompt-library/` и `PRD_SYSTEM_PROMPT` **не удалены** — оба всё ещё живые импорты (см. заметку выше).
+- [x] Гейт по ADR-0052 re-entry condition: Task 5 + Task 6 оба закрыты и подтверждены — выполнено.
+- [x] Гейт: `npm run test:ai` — 588/588 зелёных.
+- [x] Commit: `feat(ai): hard switch to generation engine, remove in-process prompt fallback`
 
 ### Task 8: Фронтенд — confirmation-гейт для UpdateTable + UI
 
