@@ -28,17 +28,50 @@
 - [x] Гейт: `component-catalog.test.ts` (уже написан в Части 1, Task 4) зеленеет — 35/35 ключей покрыты; полный `npm test` движка 178/178.
 - [x] Commit: `feat(engine): catalog parity 11→35, re-tokenize styles to fork design tokens`
 
-### Task 6: Деплой движка на TrueNAS — ⏸ NOT DONE, requires manual action
-**Files:** `deploy/truenas/generation-engine.compose.yaml`, `deploy/truenas/smoke-test-generation-engine.sh` (ADR-0032).
+### Task 6: Деплой движка на TrueNAS ✅ done (2026-09-04, infra-only, SSH `truenas_admin@10.10.20.2`)
+**Files:** `deploy/truenas/generation-engine.compose.yaml`, `deploy/truenas/smoke-test-generation-engine.sh` (ADR-0032), `generation-engine/Dockerfile` (fix).
 
-> **Status note (2026-09-04):** an agentic session cannot reach the user's TrueNAS box —
-> this is a real infrastructure deploy, out of reach from any git worktree. Left for the
-> user to do manually. Tasks 7 stays blocked on this (see its own status note) until done.
+> **Status note (2026-09-04):** SSH access to the TrueNAS box was provided this session,
+> so this got done live rather than staying a manual-only task.
+>
+> Fixed a real bug found along the way: `generation-engine/Dockerfile`'s `npm ci` /
+> `npm ci --omit=dev` failed inside `node:22.15.1-slim` with `ERESOLVE` — the repo-root
+> `.npmrc` (`legacy-peer-deps=true`) isn't copied into the engine's build context, so the
+> flag that makes `npm ci` succeed locally wasn't applied in Docker. Added
+> `--legacy-peer-deps` to both `npm ci` invocations in the Dockerfile; image now builds
+> clean (`docker build -t generation-engine:local generation-engine/`).
+>
+> Deploy path taken (both hosts `x86_64`, no rebuild-for-arch needed):
+> `docker save generation-engine:local | ssh ... 'sudo docker load'`, then
+> `docker network create --driver bridge tooljet-shared` (previously didn't exist), then
+> `midclt call -j app.create` with `custom_app: true` and the compose file's service block
+> as `custom_compose_config_string` — installed as a properly TrueNAS-managed custom app
+> (not a bare `docker compose up`, which is how the pre-existing orphan below was made).
+>
+> **Divergence from CLAUDE.md's Deployment Context, surfaced not silently absorbed:** the
+> TrueNAS box has **no `tooljet-ce:local` production app** matching the documented
+> "port 8083, `LANGUAGE=ru`" setup. The only related container found was an *orphaned*
+> `ix-tooljet-min-tooljet-1` (vanilla `tooljet/tooljet-ce:latest`, crash-looping on
+> `wait-for-it.sh` — missing host:port env, and untracked by `midclt app.query`, i.e. not
+> a real TrueNAS-managed app). Left untouched — out of Task 6's scope and too destructive
+> to touch on an ambiguous mandate. **This means Task 7's `GENERATION_ENGINE_URL` wiring
+> to a live server is unverified** — only the engine's own reachability is proven here.
+> Stubbing/rebuilding the actual prod ToolJet app is a separate, undocumented project.
+>
+> Smoke test run **verbatim** (script copied to `/tmp/smoke-test.sh` on the TrueNAS host,
+> executed inside a throwaway `curlimages/curl` container on the `tooljet-shared` network
+> since no host port is published, per ADR-0032):
+> ```
+> $ docker run --rm --network tooljet-shared -e GENERATION_ENGINE_URL=http://generation-engine:3100 \
+>     -v /tmp/smoke-test.sh:/smoke-test.sh curlimages/curl:latest sh /smoke-test.sh
+> Checking http://generation-engine:3100/health ...
+> OK: {"status":"ok"}
+> ```
 
-- [ ] Развернуть `generation-engine` как TrueNAS custom app по существующему compose-файлу (ADR-0032): shared `external: true` docker network, без публикации хост-порта.
-- [ ] Прогнать `smoke-test-generation-engine.sh` против живого деплоя — done-условие задачи.
-- [ ] Явно зафиксировать в задаче/ADR: отдельного rollback-плана не требуется — до Task 7 (hard switch) недоступность движка эквивалентна текущему silent fallback.
-- [ ] Commit/note: деплой инфраструктурный, если нет кода для коммита — зафиксировать факт деплоя и вывод smoke-теста в PR-описании или в этом плане.
+- [x] Развернуть `generation-engine` как TrueNAS custom app по существующему compose-файлу (ADR-0032): shared `external: true` docker network (`tooljet-shared`, created), без публикации хост-порта.
+- [x] Прогнать `smoke-test-generation-engine.sh` против живого деплоя — прошёл (вывод выше).
+- [x] Rollback-план не требуется (как и было зафиксировано в Global Constraints) — до Task 7 недоступность движка эквивалентна текущему silent fallback.
+- [x] Инфраструктурный деплой + фикс `generation-engine/Dockerfile` (`--legacy-peer-deps`) — код-фикс идёт отдельным коммитом/PR; факт деплоя и вывод smoke-теста зафиксированы здесь.
 
 ### Task 6.5: Потребление `props.generatedStep` (hint-with-override) ✅ already done pre-Part-2
 **Files:** step executors для non-table типов, `server/src/modules/ai/service.ts` (там же, где `props.generatedStep` сейчас не читается — ADR-0048).
