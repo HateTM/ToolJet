@@ -32,15 +32,15 @@ export const CustomClearIndicator = (props) => {
 export const FileInput = (props) => {
   const {
     id,
-    height,
+    height = 60,
     component,
-    fireEvent,
-    darkMode,
+    fireEvent = () => {},
+    darkMode = false,
     styles = {},
     properties = {},
     validation = {},
-    setExposedVariable,
-    setExposedVariables,
+    setExposedVariable = () => {},
+    setExposedVariables = () => {},
     dataCy,
   } = props;
 
@@ -367,17 +367,6 @@ FileInput.propTypes = {
   setExposedVariable: PropTypes.func,
   setExposedVariables: PropTypes.func,
   dataCy: PropTypes.string,
-};
-
-FileInput.defaultProps = {
-  height: 60,
-  darkMode: false,
-  styles: {},
-  properties: {},
-  validation: {},
-  fireEvent: () => {},
-  setExposedVariable: () => {},
-  setExposedVariables: () => {},
 };
 
 export default FileInput;

@@ -10,7 +10,16 @@ const ENVIRONMENT_OPTIONS = [
   { label: 'Released app', value: 'canAccessReleased', key: 'canAccessReleased' },
 ];
 
-export function EnvironmentSelect(props) {
+export function EnvironmentSelect(rawProps) {
+  const props = {
+    allOption: {
+      label: 'All environments',
+      value: '*',
+      isAllField: true,
+    },
+    options: ENVIRONMENT_OPTIONS,
+    ...rawProps,
+  };
   const darkMode = localStorage.getItem('darkMode') === 'true';
 
   const InputOption = ({ getStyles, Icon, isDisabled, isFocused, isSelected, children, innerProps, ...rest }) => {
@@ -203,14 +212,5 @@ export function EnvironmentSelect(props) {
     />
   );
 }
-
-EnvironmentSelect.defaultProps = {
-  allOption: {
-    label: 'All environments',
-    value: '*',
-    isAllField: true,
-  },
-  options: ENVIRONMENT_OPTIONS,
-};
 
 export { ENVIRONMENT_OPTIONS };

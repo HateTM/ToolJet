@@ -16,16 +16,16 @@ const UploadArea = ({
   isVisible,
   isLoading,
   isMandatory,
-  uiErrorMessage,
+  uiErrorMessage = '.',
   onFocus,
   onBlur,
-  borderRadius,
-  height,
+  borderRadius = 6,
+  height = '100%',
   instructionText,
-  minSize,
-  maxSize,
-  maxCount,
-  fileTypeCategory,
+  minSize = 0,
+  maxSize = Number.POSITIVE_INFINITY,
+  maxCount = Number.POSITIVE_INFINITY,
+  fileTypeCategory = '*/*',
   selectedFilesLength,
   id,
   dataCy,
@@ -129,17 +129,6 @@ UploadArea.propTypes = {
   maxSize: PropTypes.number,
   maxCount: PropTypes.number,
   fileTypeCategory: PropTypes.string,
-};
-
-UploadArea.defaultProps = {
-  borderRadius: 6,
-  boxShadow: '',
-  height: '100%',
-  uiErrorMessage: '.',
-  minSize: 0,
-  maxSize: Number.POSITIVE_INFINITY,
-  maxCount: Number.POSITIVE_INFINITY,
-  fileTypeCategory: '*/*',
 };
 
 export default UploadArea;

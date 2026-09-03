@@ -2,7 +2,19 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import FileUpload from './FileUpload';
 
-const FileUploadComponent = (props) => {
+const fileUploadDefaultProps = {
+  type: 'single',
+  onFilesChange: () => {},
+  width: '300px',
+  label: '',
+  helperText: '',
+  required: false,
+  disabled: false,
+  acceptedFormats: '',
+};
+
+const FileUploadComponent = (rawProps) => {
+  const props = { ...fileUploadDefaultProps, ...rawProps };
   return <FileUpload {...props} />;
 };
 
@@ -19,15 +31,4 @@ FileUploadComponent.propTypes = {
   disabled: PropTypes.bool,
   acceptedFormats: PropTypes.string,
   maxSize: PropTypes.number,
-};
-
-FileUploadComponent.defaultProps = {
-  type: 'single',
-  onFilesChange: () => {},
-  width: '300px',
-  label: '',
-  helperText: '',
-  required: false,
-  disabled: false,
-  acceptedFormats: '',
 };

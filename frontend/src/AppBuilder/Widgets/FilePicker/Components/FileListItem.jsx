@@ -6,7 +6,16 @@ import Trash from '@/_ui/Icon/solidIcons/Trash';
 import '../style.scss';
 import { generateCypressDataCy } from '@/modules/common/helpers/cypressHelpers';
 
-const FileListItem = ({ fileName, fileSize, fileType, onDelete, onClick, error, isUploading, isUploaded }) => {
+const FileListItem = ({
+  fileName,
+  fileSize,
+  fileType,
+  onDelete,
+  onClick,
+  error = null,
+  isUploading = false,
+  isUploaded = false,
+}) => {
   const itemClasses = clsx('file-list-item', {
     error: !!error,
     uploading: isUploading,
@@ -60,12 +69,6 @@ FileListItem.propTypes = {
   error: PropTypes.string,
   isUploading: PropTypes.bool,
   isUploaded: PropTypes.bool,
-};
-
-FileListItem.defaultProps = {
-  error: null,
-  isUploading: false,
-  isUploaded: false,
 };
 
 export default FileListItem;

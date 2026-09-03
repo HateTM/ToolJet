@@ -6,14 +6,31 @@ import { noop } from 'lodash';
 import { useDropdownContext } from './DropdownProvider';
 import OverflowTooltip from '@/_components/OverflowTooltip';
 
+const dropdownRestDefaults = {
+  width: '170px',
+  placeholder: '',
+  name: '',
+  id: '',
+  size: 'medium',
+  disabled: false,
+  label: '',
+  'aria-label': '',
+  required: false,
+  leadingIcon: false,
+  trailingAction: '',
+  helperText: '',
+  className: '',
+};
+
 const DropdownComponent = ({
   options = {},
   onClose = noop,
   container,
   theme = 'light',
   showItemOverflowTooltip = false,
-  ...props
+  ...restProps
 }) => {
+  const props = { ...dropdownRestDefaults, ...restProps };
   const [open, setOpen] = useState(false);
   const [isValid, setIsValid] = useState(null);
   const [message, setMessage] = useState('');
@@ -157,21 +174,4 @@ DropdownComponent.propTypes = {
   helperText: PropTypes.string,
   container: PropTypes.oneOfType([PropTypes.func, PropTypes.object]),
   className: PropTypes.string,
-};
-
-DropdownComponent.defaultProps = {
-  options: {},
-  width: '170px',
-  placeholder: '',
-  name: '',
-  id: '',
-  size: 'medium',
-  disabled: false,
-  label: '',
-  'aria-label': '',
-  required: false,
-  leadingIcon: false,
-  trailingAction: '',
-  helperText: '',
-  className: '',
 };

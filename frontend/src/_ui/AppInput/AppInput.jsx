@@ -3,11 +3,11 @@ import PropTypes from 'prop-types';
 import './AppInput.scss';
 
 const InputField = ({
-  value,
-  label,
+  value = '',
+  label = '',
   placeholder = '',
   errorMessage,
-  type = 'input',
+  type = 'text',
   onChange,
   disabled,
   className = '',
@@ -60,13 +60,6 @@ InputField.propTypes = {
   placeholder: PropTypes.string,
   type: PropTypes.string,
   onChange: PropTypes.func.isRequired,
-};
-
-InputField.defaultProps = {
-  value: '',
-  label: '',
-  placeholder: '',
-  type: 'text',
 };
 
 export default InputField;
