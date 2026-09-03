@@ -49,10 +49,10 @@
 - [x] Commit (TypeORM-часть): `feat(server): TypeORM 0.3 → 1.0` (`c8c53e0718`). NestJS 12 — отдельный будущий коммит после снятия блокера.
 
 **2c. Frontend: React 18→19**
-- [ ] Compat-аудит: legacy react-bootstrap, PropType, findDOMNode; codemod'ы React 19.
-- [ ] react/react-dom + @types, webpack/babel; гейт: `npm run typecheck` + smoke `npm test` + storybook.
-- [ ] Проверено (2026-09-03): `react-bootstrap@2.10.10` (latest) имеет открытый peer-диапазон `react: ">=16.14.0"` — верхней границы нет, `npm install` React 19 не заблокирует. Реальный риск — не install-time блокер, а рантайм (legacy Context API, `findDOMNode`, deprecation-warnings), см. следующий пункт по codemod'ам/аудиту. ADR-0051 нужен только если аудит найдёт непереносимые паттерны, не заводить его превентивно.
-- [ ] Commit: `chore(frontend): React 19`
+- [x] Compat-аудит: legacy react-bootstrap, PropType, findDOMNode; codemod'ы React 19. Сделано в PR #143: 2 сайта `ReactDOM.render`→`createRoot(...).render(...)`; `defaultProps` убран с 20 функциональных компонентов в пользу default-параметров (заодно исправлен скрытый баг в `AppInput`'s `InputField` — деструктуризация default для `type` теперь совпадает с тем, что раньше форсировал `defaultProps` в рантайме).
+- [x] react/react-dom + @types, webpack/babel; гейт: `npm run typecheck` + smoke `npm test` — **частично**: `typecheck` и чистый `npm run build` из чистого `node_modules` верифицированы (заодно найден и исправлен реальный пробел: чистый `npm install`/`npm ci` падал с ERESOLVE на `@emoji-mart/react`/`@sentry/react`, залатано через `frontend/.npmrc` с `force=true`). **Не сделано**: storybook-смоук и интерактивный браузерный тест `react-bootstrap` Overlay/Modal/Popover — блокеры окружения (`browser-use`: нет Chrome в песочнице; `chrome-devtools-mcp`: битый кэш Chrome-бинаря, не долечен до конца). Если всплывёт регрессия в react-bootstrap-heavy UI (дропдауны/модалки/попперы) — начинать оттуда.
+- [x] Проверено (2026-09-03): `react-bootstrap@2.10.10` (latest) имеет открытый peer-диапазон `react: ">=16.14.0"` — верхней границы нет, `npm install` React 19 не заблокирует. Реальный риск — не install-time блокер, а рантайм (legacy Context API, `findDOMNode`, deprecation-warnings). Никакой подтверждённой несовместимости не найдено (browser-смоук выше не завершён, так что это не финальная гарантия) — ADR-0051 **не заведён**, не превентивно.
+- [x] Commit: `feat(frontend): React 18→19` (PR #143, squash `8631024f1a`, branch `feat/frontend-react19` удалена).
 
 **2d. Tooling:** Cypress latest, root dev-deps, `.nvmrc`/npm-пины — одним PR `chore: tooling 2026`.
 
