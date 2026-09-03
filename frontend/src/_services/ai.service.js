@@ -158,8 +158,8 @@ async function skipStep(body) {
 // body: { conversationId, stepId }. Ticket #77 / ADR-0025: records the user's explicit
 // go-ahead on a CreateTable step targeting a connected PostgreSQL source (a
 // 'step-awaiting-confirmation' SSE event on the approve-prd stream). Not SSE itself — the
-// backend's execution loop poll picks the new status up (see AiService.confirmStep).
-// TODO(#77 follow-up): no run-UI affordance calls this yet — see the ticket's PR body.
+// backend's execution loop poll picks the new status up (see AiService.confirmStep). Called
+// from the step-list confirmation banner's Confirm button (aiBuilderStore's confirmStep action).
 async function confirmStep(body) {
   const requestOptions = { method: 'POST', headers: authHeader(), credentials: 'include', body: JSON.stringify(body) };
   return fetch(`${config.apiUrl}/ai/conversation/confirm-step`, requestOptions).then(handleResponse);

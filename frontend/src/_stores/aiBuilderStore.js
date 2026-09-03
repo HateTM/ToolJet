@@ -48,6 +48,7 @@ const initialState = {
   // id of the step whose skip (ticket #21) is currently being recorded, or null — only one
   // skip request in flight at a time, so double-clicks can't fire duplicate skip-step calls.
   skippingStepId: null,
+  confirmingStepId: null,
   // Whether the "undo this build" action (ticket #15) is in flight — only one rewind-style
   // undo can run at a time, so a double click can't fire two discards.
   undoingBuild: false,
@@ -672,6 +673,26 @@ const useAiBuilderStore = create(
               false,
               'aiBuilder/approvePrd/step-failed'
             );
+          } else if (type === 'step-awaiting-confirmation') {
+            // Ticket #77 / ADR-0053: a CreateTable/UpdateTable step targeting an external
+            // Postgres source is paused for the user's go-ahead. This event only carries the
+            // step's id (not a 1-based index like the others), so look it up by id.
+            set(
+              (state) => {
+                const step = state.steps.find((s) => s.id === data.stepId);
+                if (step) {
+                  step.status = 'awaiting_confirmation';
+                  step.confirmation = {
+                    tableName: data.tableName,
+                    columns: data.columns,
+                    targetConnection: data.targetConnection,
+                    seedRowCount: data.seedRowCount,
+                  };
+                }
+              },
+              false,
+              'aiBuilder/approvePrd/step-awaiting-confirmation'
+            );
           } else if (type === 'interrupt') {
             // ADR-0044: the running plan is paused server-side (its SSE connection stays
             // open — this event does not end the stream). isGenerating stays true so the
@@ -853,6 +874,43 @@ const useAiBuilderStore = create(
             },
             false,
             'aiBuilder/skipStep/settled'
+          );
+        }
+      },
+
+      // Confirms a step paused in 'awaiting_confirmation' (ticket #77 / ADR-0053: CreateTable or
+      // UpdateTable against an external Postgres source). Mirrors skipStep's shape — this only
+      // records the intent, the authoritative status transition arrives over the SSE stream.
+      confirmStep: async (stepId) => {
+        const conversationId = get().currentConversationId;
+        if (!conversationId || !stepId || get().confirmingStepId) return null;
+
+        set(
+          (state) => {
+            state.confirmingStepId = stepId;
+          },
+          false,
+          'aiBuilder/confirmStep/start'
+        );
+
+        try {
+          return await aiService.confirmStep({ conversationId, stepId });
+        } catch (error) {
+          set(
+            (state) => {
+              state.error = buildErrorMessage(error, 'Failed to confirm the step');
+            },
+            false,
+            'aiBuilder/confirmStep/error'
+          );
+          return null;
+        } finally {
+          set(
+            (state) => {
+              state.confirmingStepId = null;
+            },
+            false,
+            'aiBuilder/confirmStep/settled'
           );
         }
       },

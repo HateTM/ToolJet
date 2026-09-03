@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Hammer,
   SkipForward,
+  PauseCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
@@ -327,7 +328,59 @@ const StepStatusIcon = ({ status }) => {
   if (status === 'failed') return <X width="14" height="14" className="tw-text-icon-danger" />;
   // Ticket #21: a skipped step produced no Artifact — distinct from both succeeded and failed.
   if (status === 'skipped') return <SkipForward width="14" height="14" className="tw-text-icon-weak" />;
+  // Ticket #77 / ADR-0053: paused pending the user's go-ahead on an external-DB DDL step.
+  if (status === 'awaiting_confirmation')
+    return <PauseCircle width="14" height="14" className="tw-text-icon-warning" />;
   return <Circle width="10" height="10" className="tw-text-icon-weak" />;
+};
+
+// Ticket #77 / ADR-0053: inline, non-blocking banner for a CreateTable/UpdateTable step
+// paused on 'awaiting_confirmation' (targets an external Postgres connection). Confirm calls
+// the dedicated confirm-step endpoint; Reject reuses the existing skip-step plumbing — the
+// backend treats a skipped 'awaiting_confirmation' step as "declined, no DDL issued".
+const StepConfirmationBanner = ({ step, stepIndex, onConfirm, confirmingStepId, onSkip, skippingStepId }) => {
+  const { t } = useTranslation();
+  const confirmation = step.confirmation || {};
+  const isConfirming = confirmingStepId === step.id;
+  const isRejecting = skippingStepId === step.id;
+  return (
+    <div
+      className="tw-mt-1 tw-flex tw-flex-col tw-gap-1.5 tw-rounded-md tw-border tw-border-solid tw-border-border-warning-weak tw-bg-background-warning-weak tw-p-2 tw-text-xs"
+      data-cy={`ai-builder-confirmation-banner-${stepIndex}`}
+    >
+      <span className="tw-text-text-default">
+        {t(
+          'leftSidebar.AI Builder.awaitingConfirmationBanner',
+          'This step will run against an external connection "{{connection}}": table "{{table}}" ({{columns}} columns, {{rows}} seed rows).',
+          {
+            connection: confirmation.targetConnection?.name,
+            table: confirmation.tableName,
+            columns: confirmation.columns?.length ?? 0,
+            rows: confirmation.seedRowCount ?? 0,
+          }
+        )}
+      </span>
+      <div className="tw-flex tw-gap-2">
+        <Button
+          size="small"
+          onClick={() => onConfirm(step.id)}
+          disabled={Boolean(confirmingStepId) || Boolean(skippingStepId)}
+          data-cy={`ai-builder-confirm-step-${stepIndex}`}
+        >
+          {isConfirming ? <Spinner size="small" /> : tAiBuilder(t, 'confirmStep', 'Confirm')}
+        </Button>
+        <Button
+          size="small"
+          variant="outline"
+          onClick={() => onSkip(step.id)}
+          disabled={Boolean(confirmingStepId) || Boolean(skippingStepId)}
+          data-cy={`ai-builder-reject-step-${stepIndex}`}
+        >
+          {isRejecting ? <Spinner size="small" /> : tAiBuilder(t, 'rejectStep', 'Reject')}
+        </Button>
+      </div>
+    </div>
+  );
 };
 
 // Groups the flat ordered step list (ticket #21) into consecutive runs sharing the same
@@ -364,6 +417,8 @@ export const StepProgressList = ({
   onSkip,
   skippable,
   skippingStepId,
+  onConfirm,
+  confirmingStepId,
   isExecuting,
   onUndoBuild,
   undoingBuild,
@@ -410,6 +465,16 @@ export const StepProgressList = ({
                   )}
                   {step.status === 'succeeded' && step.artifact?.content?.seed && (
                     <SeedReportSection seed={step.artifact.content.seed} />
+                  )}
+                  {step.status === 'awaiting_confirmation' && step.id && (
+                    <StepConfirmationBanner
+                      step={step}
+                      stepIndex={stepIndex}
+                      onConfirm={onConfirm}
+                      confirmingStepId={confirmingStepId}
+                      onSkip={onSkip}
+                      skippingStepId={skippingStepId}
+                    />
                   )}
                 </div>
                 {step.status === 'succeeded' && step.id && (
@@ -508,6 +573,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     isPreviewing,
     rewindingStepId,
     skippingStepId,
+    confirmingStepId,
     undoingBuild,
     interrupt,
     isAnsweringInterrupt,
@@ -529,6 +595,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
     discardPendingPlan,
     rewindStep,
     skipStep,
+    confirmStep,
     undoBuild,
     answerInterrupt,
     voteMessage,
@@ -551,6 +618,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.isPreviewing,
       state.rewindingStepId,
       state.skippingStepId,
+      state.confirmingStepId,
       state.undoingBuild,
       state.interrupt,
       state.isAnsweringInterrupt,
@@ -572,6 +640,7 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
       state.discardPendingPlan,
       state.rewindStep,
       state.skipStep,
+      state.confirmStep,
       state.undoBuild,
       state.answerInterrupt,
       state.voteMessage,
@@ -875,6 +944,8 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
           onSkip={skipStep}
           skippable={isApproving}
           skippingStepId={skippingStepId}
+          onConfirm={confirmStep}
+          confirmingStepId={confirmingStepId}
           isExecuting={isApproving}
           onUndoBuild={undoBuild}
           undoingBuild={undoingBuild}
