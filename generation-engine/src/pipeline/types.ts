@@ -98,6 +98,7 @@ export interface EvaluationVerdict {
  */
 export const STEP_TYPES = [
   'CreateTable',
+  'UpdateTable',
   'CreateQuery',
   'CreateComponent',
   'UpdateComponent',

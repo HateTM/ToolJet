@@ -1,21 +1,21 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { COMPONENT_CATALOG } from '../../src/catalogs/component-catalog';
 import { getComponent, getComponentTriggers, isValidTrigger, listComponentNames } from '../../src/catalogs';
 
-// The fork's server/src/modules/ai/helpers/componentsMeta.json covers exactly this set (11
-// widgets) -- AC #92 requires at least this coverage.
-const FORK_COMPONENT_SET = [
-  'Table',
-  'Button',
-  'Text',
-  'TextInput',
-  'Container',
-  'Form',
-  'Chart',
-  'Image',
-  'Checkbox',
-  'DropdownV2',
-  'Modal',
-];
+// The fork's server/src/modules/ai/helpers/componentsMeta.json is the source of truth for
+// which components the fork actually supports -- AC #92 requires at least this coverage.
+// Read live (not hardcoded) so this guard tracks the fork's real allow-list: the fork
+// currently has 35 keys, the catalog only 11 (Part 2, Task 5 closes the gap) -- expect this
+// test red until then.
+const FORK_COMPONENT_SET: string[] = Object.keys(
+  JSON.parse(
+    fs.readFileSync(
+      path.join(__dirname, '../../../server/src/modules/ai/helpers/componentsMeta.json'),
+      'utf8'
+    )
+  )
+);
 
 describe('component catalog', () => {
   it('covers at least the fork componentsMeta.json component set', () => {

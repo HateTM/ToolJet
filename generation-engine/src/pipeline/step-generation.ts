@@ -17,8 +17,9 @@ export interface StepGenerationStageDeps {
 
 /**
  * Step-generation stage (ADR-0048) — closes the engine's parity debt: STEP_TYPES
- * declares nine step types, but before this stage only tables had a payload path
- * (per-entity). Runs after step-plan: takes every non-CreateTable step of the plan,
+ * declares ten step types, but before this stage only tables had a payload path
+ * (per-entity). Runs after step-plan: takes every non-table step of the plan (both
+ * CreateTable and UpdateTable stay per-entity's concern, ADR-0028/ADR-0041),
  * generates its tool-call payload through deps.generateStepPayload, and stores the
  * result on `artifacts.generatedSteps`, keyed by the step's index in the plan.
  *
@@ -37,8 +38,8 @@ export function buildStepGenerationStage(deps: StepGenerationStageDeps): Pipelin
       const generatedSteps: GeneratedStep[] = [];
       for (let index = 0; index < artifacts.stepPlan.steps.length; index++) {
         const step = artifacts.stepPlan.steps[index];
-        if (step.type === 'CreateTable') {
-          continue; // table payloads are per-entity's concern (ADR-0028)
+        if (step.type === 'CreateTable' || step.type === 'UpdateTable') {
+          continue; // table payloads are per-entity's concern (ADR-0028, ADR-0041)
         }
         if (!STEP_PAYLOAD_TOOL_NAMES[step.type]) {
           throw new Error(`step-generation has no payload contract for step type "${step.type}" (step ${index})`);

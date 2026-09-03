@@ -53,6 +53,7 @@ Example: AI Builder bug → search `server/src/modules/ai/` + `frontend/src/modu
 - Check `frontend/src/_ui/` before adding a new UI primitive. Icons: Tabler or Lucide only. Imports via `@/` alias, not deep relative paths.
 - Backend: parameterized queries only, no string-concatenated SQL. No API keys/secrets in client-side code.
 - Branch prefixes: `feature/<issue-id>-<name>`, `fix/<issue-id>-<name>`, `docs/<name>`, `chore/<name>`; short imperative commit subjects; `Closes #<id>` when applicable. Issues tracked via `gh issue` against `HateTM/ToolJet` (origin, not upstream), not upstream.
+- Every branch with commits must go through a PR against `main` and be merged (squash) via `gh pr create` / `gh pr merge` — never leave finished work sitting only on a pushed branch, and never merge directly without a PR.
 - Full frontend/backend convention list: `.github/copilot-instructions.md`.
 
 
