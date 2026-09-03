@@ -6,6 +6,12 @@ Inherits: ADR-0028 (pipeline stage sequence), ADR-0040 (step-plan as the termina
 planning stage), ADR-0036 (flag-guard shape for GENERATION_ENGINE_URL), ADR-0027
 (streaming boundary), ADR-0044 (interrupt model — unchanged).
 
+> **Superseded (partially) by [ADR-0052](0052-hard-switch-to-generation-engine.md)**:
+> decision 5's silent fallback to the in-process planner is scheduled for removal
+> once the engine is deployed and catalog parity is verified (Part 2, Tasks 5–7 of
+> the active unification plan). Until that removal lands, the fallback described
+> below remains the live behavior.
+
 ## Context
 
 The engine's `STEP_TYPES` (generation-engine/src/pipeline/types.ts) declares all nine

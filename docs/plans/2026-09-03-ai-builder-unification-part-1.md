@@ -60,9 +60,9 @@
 > **Номер скорректирован 2026-09-03**: план изначально резервировал `ADR-0050` под hard-switch, но PR #135 (Task 2b) занял `0050` под defer-NestJS-12 ADR (`docs/adr/0050-defer-nestjs-12-upgrade-pending-satellite-support.md`) без ревизии этой ссылки. `0051` тоже занят условно (Task 2c, react-bootstrap блокер, если понадобится) — следующий свободный номер на 2026-09-03 это `0052`. Проверить `ls docs/adr/ | grep -E "^005[0-9]"` перед стартом Task 3 на случай, если 0051/0052 будут заняты к тому моменту.
 
 **Files:** Create `docs/adr/0052-hard-switch-to-generation-engine.md`; modify `0036`, `0048`, `CONTEXT.md`.
-- [ ] Decision: после деплоя и паритет-проверки fallback удаляется; отсутствие `GENERATION_ENGINE_URL` = fail-fast `ServiceUnavailableException`; Learn/fix-with-AI/copilot не затрагиваются; ADR-0036 d1 и ADR-0048 d5 — Superseded.
-- [ ] Баннеры в 0036/0048; термины `Prompt owner`, `Hard switch` в CONTEXT.md.
-- [ ] Commit: `docs(adr): ADR-0052 hard switch to generation engine, supersede silent fallback`
+- [x] Decision: после деплоя и паритет-проверки fallback удаляется; отсутствие `GENERATION_ENGINE_URL` = fail-fast `ServiceUnavailableException`; Learn/fix-with-AI/copilot не затрагиваются; ADR-0036 d1 и ADR-0048 d5 — Superseded.
+- [x] Баннеры в 0036/0048; термины `Prompt owner`, `Hard switch` в CONTEXT.md.
+- [x] Commit: `docs(adr): ADR-0052 hard switch to generation engine, supersede silent fallback`
 
 ### Task 4: Двусторонние sync-гварды (TDD: сначала падающий тест)
 **Files:** Create `server/test/modules/ai/unit/engine-contract-sync.spec.ts`, `generation-engine/test/fork-contract-sync.test.ts`; modify `generation-engine/test/catalogs/component-catalog.test.ts`, `generation-engine/src/pipeline/types.ts:99-109`.

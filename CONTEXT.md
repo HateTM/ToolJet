@@ -125,6 +125,28 @@ _Avoid_: Mention, reference, attachment
 **Generation engine (`generation-engine/`)**:
 A standalone Node/TypeScript service built on Fastify (ADR-0029) — the owner of the fork's generation prompts (`generation-engine/src/prompts/*.ts`, ticket #93, ADR-0030, `prompts/index.ts` as the sole import surface) and of the component/event catalogs. Three endpoints: `POST /generate/prd` — token-by-token PRD text over SSE via `streamText`, using its own `OPENAI_BASE_URL`/`OPENAI_API_KEY`/`AI_MODEL` env until effective LLM config per request (ADR-0027, ADR-0031); `POST /generate/run` — the full from-scratch pipeline (see Pipeline stage) over SSE (#121); `POST /generate/steps` — an approved PRD in, a step plan JSON out, running the pipeline minus classify/PRD (ADR-0048). Stateless by design: no ORM/RBAC/DB dependency, no persistence of its own — it proposes, ToolJet executes. `AiService` proxies PRD streaming through `GenerationEngineClient` (ADR-0036) and step planning through `GenerationEnginePipelineClient` (ADR-0048) when `GENERATION_ENGINE_URL` is set, falling back to the in-process paths otherwise; that silent fallback is scheduled for removal by the hard switch (ADR-0052; renumbered from the plan's original 0050, which was claimed by the NestJS-12-defer ADR — see `docs/plans/2026-09-03-ai-builder-unification-part-1.md` Task 3). Auth: static `ENGINE_API_KEY` bearer token on every endpoint except `/health`, fail-closed (ADR-0032 amendment). Built by the root `build` orchestration chain (`build:generation-engine`); at runtime it deploys as its own container (ADR-0032), separate from the `tooljet-ce:local` image.
 
+**Prompt owner**:
+The Generation engine, exclusively: `generation-engine/src/prompts/*.ts` (ticket #93,
+ADR-0030) is the sole source of the fork's generation prompts once the hard switch
+(ADR-0052) lands. Pre-switch, the in-process `prompt-library/` (server) still holds a
+duplicate set for the fallback paths (ADR-0036, ADR-0048); those are scheduled for
+deletion in the same Part 2 Task 7 that removes the fallback, not maintained in
+parallel as a second source of truth.
+_Avoid_: Prompt source, generation prompts (when the ambiguity between the two
+current copies matters)
+
+**Hard switch**:
+The Part 2 Task 7 change (ADR-0052) that removes the in-process fallback for PRD
+streaming and step planning: a missing/unreachable Generation engine becomes a hard
+`ServiceUnavailableException` instead of a silent degrade to the pre-engine
+in-process path. Gated on engine deploy (ADR-0032, Part 2 Task 6) and catalog/
+step-type parity (Part 2 Task 5) both landing first. Distinct from the
+flag-guarded rollout it replaces (ADR-0036, ADR-0048 decision 5) and scoped only to
+the two call sites those ADRs guarded — `sendUserDocsMessage`/Fix with AI/Copilot
+never had an engine path and are unaffected.
+_Avoid_: Fallback removal, engine cutover (when the ambiguity with the ADR-0036
+env-var flip — which is not this — matters)
+
 **Component/event catalogs (`generation-engine/src/catalogs/`)**: Built from scratch in ticket #92 per ADR-0033 — not migrated from the fork's `server/src/modules/ai/helpers/componentsMeta.json` (an 11-widget post-hoc validator) or the single hardcoded event in `agents.service.ts`. Two vocabularies (ADR-0037): the **component catalog** (`ComponentCatalogEntry`, one per widget — properties with a value-shape plus the component's own `triggers`) and the **event catalog** (`EventActionSpec`, keyed by the kebab-case `actionId` the `event_handler` entity actually persists, e.g. `run-query` — sourced from `ActionTypes.js`, not the unrelated camelCase `ACTIONS` code-hint list). Consumed by the pipeline's prompt assembly (`src/pipeline/prompt-assembly.ts`, which serializes `toPromptContext()` into generation prompts — per-entity generation and the LLD stage consult it). The component catalog covers 11 core generation types and is scheduled to reach the fork's full 36-type allow-list in the active unification plan (Part 2, Task 5).
 
 **Effective LLM config**:

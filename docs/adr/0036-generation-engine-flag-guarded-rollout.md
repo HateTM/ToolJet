@@ -4,6 +4,12 @@ Date: 2026-09-01
 Ticket: #91 (Generation engine: SSE endpoint + server-side proxy)
 Status: Accepted
 
+> **Superseded (partially) by [ADR-0052](0052-hard-switch-to-generation-engine.md)**:
+> the Decision section's flag-guarded fallback is scheduled for removal once the
+> engine is deployed and catalog parity is verified (Part 2, Tasks 5–7 of the active
+> unification plan). Until that removal lands, the fallback described below remains
+> the live behavior.
+
 ## Context
 
 Issue #91 asks the server's PRD-streaming call sites to replace their in-process generation
