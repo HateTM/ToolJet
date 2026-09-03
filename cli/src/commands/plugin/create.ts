@@ -1,5 +1,4 @@
-import { Command, Flags, CliUx } from '@oclif/core';
-import * as inquirer from 'inquirer';
+import { Args, Command, Flags, ux } from '@oclif/core';
 
 const execa = require('execa');
 const path = require('path');
@@ -16,9 +15,12 @@ export default class Create extends Command {
 
   static examples = [`$ tooljet plugin create <name> --type=<database | api | cloud-storage> [--build]`];
 
-  static args = [{ name: 'plugin_name', description: 'Name of the plugin', required: true }];
+  static args = {
+    plugin_name: Args.string({ description: 'Name of the plugin', required: true }),
+  };
 
   async run(): Promise<void> {
+    const { default: inquirer } = await import('inquirer');
     const { args, flags } = await this.parse(Create);
 
     if (Number(args.plugin_name)) {
@@ -28,7 +30,7 @@ export default class Create extends Command {
 
     let { type } = flags;
 
-    const name = await CliUx.ux.prompt('Enter plugin display name');
+    const { name } = await inquirer.prompt([{ name: 'name', message: 'Enter plugin display name', type: 'input' }]);
 
     if (Number(name)) {
       this.log('\x1b[41m%s\x1b[0m', 'Error : Plugin Display name can not be a number');
@@ -81,7 +83,7 @@ export default class Create extends Command {
       }
     });
 
-    CliUx.ux.action.start('creating plugin');
+    ux.action.start('creating plugin');
 
     await runner(hygenArgs, {
       templates: defaultTemplates,
@@ -109,23 +111,16 @@ export default class Create extends Command {
     const jsonString = JSON.stringify(pluginsJson, null, 2);
     fs.writeFileSync(path.join('server', 'src', 'assets', 'marketplace', 'plugins.json'), jsonString);
 
-    CliUx.ux.action.stop();
+    ux.action.stop();
 
     this.log('\x1b[42m', '\x1b[30m', `Plugin: ${args.plugin_name} created successfully`, '\x1b[0m');
 
     if (flags.build) {
-      CliUx.ux.action.start('building plugins');
+      ux.action.start('building plugins');
       await execa('npm', ['run', 'build', '--workspaces'], { cwd: pluginsPath });
-      CliUx.ux.action.stop();
+      ux.action.stop();
     }
 
-    const tree = CliUx.ux.tree();
-    tree.insert(pluginsPath);
-
-    const subtree = CliUx.ux.tree();
-    subtree.insert(`${args.plugin_name}`);
-    tree.nodes[pluginsPath].insert('plugins', subtree);
-
-    tree.display();
+    this.log(`${pluginsPath}\n└─ plugins\n   └─ ${args.plugin_name}`);
   }
 }
