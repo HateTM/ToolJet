@@ -4,8 +4,6 @@
 // user message.
 import { AiService } from '@modules/ai/service';
 
-const USER = { id: 'user-1', organizationId: 'org-1' } as any;
-
 const REFERENCES = [
   { type: 'component', id: 'comp-1', name: 'OrdersTable', widgetType: 'Table', pageName: 'Orders' },
   { type: 'query', id: 'query-1', name: 'create_order', kind: 'tooljetdb' },
