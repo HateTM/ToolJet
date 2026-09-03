@@ -23,10 +23,10 @@ Rules:
 
 export const updateQueryTool = tool({
   description: 'Update one existing data query by returning only the options that changed.',
-  parameters: z.object({
+  inputSchema: z.object({
     queryName: z.string().describe('Exact name of the existing query to update'),
     options: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .describe('Only the option keys that change, with their new values — everything omitted stays as-is'),
   }),
 });

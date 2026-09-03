@@ -226,6 +226,7 @@ type TableDefinition = z.infer<typeof tableDefinitionObject>;
 // ADR-0020 set for the table definition itself, so the preview renders the data (not a
 // query) and execution inserts exactly what was previewed, with no SQL surface anywhere.
 const seedRowObject = z.record(
+  z.string(),
   z.union([z.string(), z.number(), z.boolean(), z.null()]),
 );
 
@@ -329,7 +330,7 @@ export const resolveCreateTableTarget = (
 
 export const proposeStepPlanTool = tool({
   description: "Propose the ordered list of build steps for this PRD.",
-  parameters: z.object({
+  inputSchema: z.object({
     steps: z
       .array(
         z.object({
@@ -373,7 +374,7 @@ Use the optional indexes field when a table will be filtered, sorted, or joined 
 
 export const createTableTool = tool({
   description: "Create a ToolJet DB table with the given name and columns.",
-  parameters: tableDefinitionObject,
+  inputSchema: tableDefinitionObject,
 });
 
 // Ticket #111 / ADR-0041: update_table is a full replace of the table's column definition
@@ -395,9 +396,9 @@ Rules:
 export const updateTableTool = tool({
   description:
     "Replace an existing ToolJet DB table's column definition with the complete desired column list.",
-  parameters: tableDefinitionObject.extend({
+  inputSchema: tableDefinitionObject.extend({
     renames: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .optional()
       .describe(
         "Explicit old_column_name -> new_column_name renames. A renamed column keeps its data; omitting it from columns instead drops it and loses the data. A rename's old name must be a current column and must not also appear in columns.",
@@ -511,7 +512,7 @@ const PARENT_COMPONENT_ID_DESCRIPTION =
 const createComponentTool = tool({
   description:
     "Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal, TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker, Tabs, Listview, IFrame, FilePicker, ModalV2, TreeSelect, Html, PopoverMenu, ButtonGroupV2, DatePickerV2, Chat) on an existing Page.",
-  parameters: z.discriminatedUnion("type", [
+  inputSchema: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("Page"),
       name: z.string().describe('Short page title, e.g. "Orders"'),
@@ -1115,7 +1116,7 @@ Call updateComponent exactly once:
 const updateComponentTool = tool({
   description:
     "Change one or more properties/styles of an existing component, leaving everything else untouched. Return only the paths that changed.",
-  parameters: z.object({
+  inputSchema: z.object({
     componentId: z
       .string()
       .describe(
@@ -1146,7 +1147,7 @@ Call deleteComponent exactly once with componentId set to the real id of the tar
 const deleteComponentTool = tool({
   description:
     "Delete one existing component, along with any events attached to it.",
-  parameters: z.object({
+  inputSchema: z.object({
     componentId: z
       .string()
       .describe(
@@ -1165,7 +1166,7 @@ Call moveComponent exactly once with componentId set to the real id of the compo
 const moveComponentTool = tool({
   description:
     "Reparent one existing component into a different Container, Form or Listview, or back to the page root.",
-  parameters: z.object({
+  inputSchema: z.object({
     componentId: z
       .string()
       .describe(
@@ -1189,7 +1190,7 @@ Call deleteQuery exactly once with queryName set to the exact name of the target
 
 const deleteQueryTool = tool({
   description: "Delete one query this plan created earlier.",
-  parameters: z.object({
+  inputSchema: z.object({
     queryName: z
       .string()
       .describe("name of an already-created query (from this plan) to delete"),
@@ -1224,7 +1225,7 @@ Every id must come from the context below, never invented. Prefer ToolJet DB unl
 const createQueryTool = tool({
   description:
     "Create a query against an existing ToolJet DB table, or against a connected SQL, REST API, or plugin data source.",
-  parameters: z.discriminatedUnion("source", [
+  inputSchema: z.discriminatedUnion("source", [
     z.object({
       source: z.literal("tooljetdb"),
       name: z
@@ -1364,7 +1365,7 @@ Rules:
 
 const proposeFixTool = tool({
   description: "Propose a corrected value for the failing component property.",
-  parameters: z.object({
+  inputSchema: z.object({
     fixedValue: z
       .string()
       .describe(
@@ -1408,7 +1409,7 @@ Rules:
 
 const writeCodeTool = tool({
   description: "Return the complete query body the user described.",
-  parameters: z.object({
+  inputSchema: z.object({
     code: z
       .string()
       .describe(
@@ -1472,7 +1473,7 @@ Rules:
 const generateEventTool = tool({
   description:
     "Attach one event handler to a component or query that already exists in this plan.",
-  parameters: z.object({
+  inputSchema: z.object({
     targetName: z
       .string()
       .describe("Exact name of the component or query to attach the event to"),
@@ -1483,7 +1484,7 @@ const generateEventTool = tool({
       .string()
       .describe("The action to run, from the catalog (e.g. show-modal)"),
     params: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .optional()
       .describe(
         "Action-specific keys exactly as the catalog lists them for this actionId",
@@ -2199,7 +2200,11 @@ export class AiService implements IAiService {
       }
       if (engineResult) {
         return await this.persistProposedSteps(
-          engineResult.steps.map((step) => ({ ...step, type: step.type as StepType })),
+          engineResult.steps.map((step) => ({
+            ...step,
+            type: step.type as StepType,
+            table: step.table as TableDefinition | undefined,
+          })),
           conversationId,
           messageId,
           dataSources,
