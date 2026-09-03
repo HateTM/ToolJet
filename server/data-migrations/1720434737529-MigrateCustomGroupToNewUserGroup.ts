@@ -30,7 +30,9 @@ export class MigrateCustomGroupToNewUserGroup1720434737529 implements MigrationI
 
     const organizationIds = (
       await manager.find(Organization, {
-        select: ['id'],
+        select: {
+                  id: true,
+                },
       })
     ).map((organization) => organization.id);
 

@@ -43,7 +43,7 @@ export class PluginsServiceSelector {
     if (!isMarketplaceDev && this.plugins[pluginId]) {
       decoded = this.plugins[pluginId];
     } else {
-      const plugin = await this.pluginsRepository.findById(pluginId, ['indexFile']);
+      const plugin = await this.pluginsRepository.findById(pluginId, { indexFile: true });
       decoded = decode(plugin.indexFile.data.toString());
       this.plugins[pluginId] = decoded;
     }

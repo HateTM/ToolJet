@@ -15,7 +15,10 @@ export class NameResolverRepository {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const components = await manager.find(Component, {
         where: { id: In(componentIds) },
-        select: ['id', 'name'],
+        select: {
+                  id: true,
+                  name: true,
+                },
       });
 
       return components.reduce((acc, comp) => {
@@ -31,7 +34,10 @@ export class NameResolverRepository {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const pages = await manager.find(Page, {
         where: { id: In(pageIds) },
-        select: ['id', 'name'],
+        select: {
+                  id: true,
+                  name: true,
+                },
       });
 
       return pages.reduce((acc, page) => {
@@ -47,7 +53,10 @@ export class NameResolverRepository {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const queries = await manager.find(DataQuery, {
         where: { id: In(queryIds) },
-        select: ['id', 'name'],
+        select: {
+                  id: true,
+                  name: true,
+                },
       });
 
       return queries.reduce((acc, query) => {
@@ -63,7 +72,10 @@ export class NameResolverRepository {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const dataSources = await manager.find(DataSourceEntity, {
         where: { id: In(dataSourceIds) },
-        select: ['id', 'name'],
+        select: {
+                  id: true,
+                  name: true,
+                },
       });
 
       return dataSources.reduce((acc, ds) => {
@@ -79,7 +91,10 @@ export class NameResolverRepository {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const events = await manager.find(EventHandler, {
         where: { id: In(eventIds) },
-        select: ['id', 'name'],
+        select: {
+                  id: true,
+                  name: true,
+                },
       });
 
       return events.reduce((acc, event) => {
@@ -93,8 +108,14 @@ export class NameResolverRepository {
     return await dbTransactionWrap(async (manager: EntityManager) => {
       const component = await manager.findOne(Component, {
         where: { id: componentId },
-        relations: ['page'],
-        select: ['id', 'name', 'page'],
+        relations: {
+                     page: true,
+                   },
+        select: {
+                  id: true,
+                  name: true,
+                  page: true,
+                },
       });
 
       return {
@@ -114,7 +135,10 @@ export class NameResolverRepository {
       if (entityType === Target.component || entityType === Target.tableColumn || entityType === Target.tableAction) {
         const component = await manager.findOne(Component, {
           where: { id: entityId },
-          select: ['id', 'name'],
+          select: {
+                    id: true,
+                    name: true,
+                  },
         });
         return component?.name || 'Unknown Component';
       }
@@ -123,7 +147,10 @@ export class NameResolverRepository {
       if (entityType === Target.dataQuery) {
         const query = await manager.findOne(DataQuery, {
           where: { id: entityId },
-          select: ['id', 'name'],
+          select: {
+                    id: true,
+                    name: true,
+                  },
         });
         return query?.name || 'Unknown Query';
       }
@@ -132,7 +159,10 @@ export class NameResolverRepository {
       if (entityType === Target.page) {
         const page = await manager.findOne(Page, {
           where: { id: entityId },
-          select: ['id', 'name'],
+          select: {
+                    id: true,
+                    name: true,
+                  },
         });
         return page?.name || 'Unknown Page';
       }

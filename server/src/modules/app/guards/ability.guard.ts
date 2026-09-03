@@ -46,7 +46,7 @@ export abstract class AbilityGuard implements CanActivate {
     if (banned) {
       const org = await this.dataSource
         .getRepository(Organization)
-        .findOne({ where: { id: orgId }, select: ['id', 'name'] });
+        .findOne({ where: { id: orgId }, select: { id: true, name: true } });
       throw new ForbiddenException({
         message: JSON.stringify({ errorType: 'WORKSPACE_BANNED', workspaceName: org?.name }),
       });

@@ -77,7 +77,9 @@ export class FolderAppsService implements IFolderAppsService {
         if (orgGit) {
           const defaultBranch = await manager.findOne(WorkspaceBranch, {
             where: { organizationId: user.organizationId, isDefault: true },
-            select: ['id'],
+            select: {
+                      id: true,
+                    },
           });
           branchId = defaultBranch?.id;
         }

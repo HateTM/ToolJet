@@ -106,7 +106,7 @@ export class LicenseCountsService implements ILicenseCountsService {
               },
             },
             null,
-            ['organizationUsers', 'organizationUsers.organization'],
+            { organizationUsers: { organization: true } },
             { id: true },
             manager
           )
@@ -129,7 +129,7 @@ export class LicenseCountsService implements ILicenseCountsService {
               },
             },
             null,
-            ['organizationUsers', 'organizationUsers.organization'],
+            { organizationUsers: { organization: true } },
             { id: true },
             manager
           )
@@ -183,7 +183,7 @@ export class LicenseCountsService implements ILicenseCountsService {
               },
             },
             null,
-            ['organizationUsers', 'organizationUsers.organization'],
+            { organizationUsers: { organization: true } },
             { id: true },
             manager
           )
@@ -207,7 +207,7 @@ export class LicenseCountsService implements ILicenseCountsService {
               },
             },
             null,
-            ['organizationUsers', 'organizationUsers.organization'],
+            { organizationUsers: { organization: true } },
             { id: true },
             manager
           )
@@ -260,7 +260,9 @@ export class LicenseCountsService implements ILicenseCountsService {
     const statusList = [WORKSPACE_USER_STATUS.INVITED, WORKSPACE_USER_STATUS.ACTIVE];
 
     const users = await manager.find(User, {
-      select: ['id'],
+      select: {
+                id: true,
+              },
       where: {
         status: Not(USER_STATUS.ARCHIVED),
         organizationUsers: {
@@ -273,7 +275,12 @@ export class LicenseCountsService implements ILicenseCountsService {
           },
         },
       },
-      relations: ['organizationUsers', 'userPermissions', 'userPermissions.organization'],
+      relations: {
+                   organizationUsers: true,
+                   userPermissions: {
+                     organization: true,
+                   },
+                 },
     });
 
     // Extract unique user IDs
@@ -290,7 +297,9 @@ export class LicenseCountsService implements ILicenseCountsService {
             status: WORKSPACE_STATUS.ACTIVE, // No filter by organizationId for instance-specific logic
           },
         },
-        relations: ['organization'],
+        relations: {
+                     organization: true,
+                   },
       });
     } else {
       return manager.count(App, { where: { type: APP_TYPES.FRONT_END, organizationId } });

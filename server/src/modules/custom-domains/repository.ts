@@ -23,7 +23,9 @@ export class CustomDomainRepository extends Repository<CustomDomain> {
   async findActiveDomain(domain: string): Promise<CustomDomain | null> {
     return this.findOne({
       where: { domain: domain.toLowerCase(), status: 'active' },
-      relations: ['organization'],
+      relations: {
+                   organization: true,
+                 },
     });
   }
 

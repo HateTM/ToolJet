@@ -9,7 +9,7 @@ export class ReplaceTooljetDbTableNamesWithId1679604241777 implements MigrationI
   public async up(queryRunner: QueryRunner): Promise<void> {
     let progress = 0;
     const entityManager = queryRunner.manager;
-    const organizations = await entityManager.find(Organization, { select: ['id'] });
+    const organizations = await entityManager.find(Organization, { select: { id: true } });
     const orgCount = organizations.length;
     console.log(`Total Organizations: ${orgCount}`);
 
@@ -36,7 +36,10 @@ export class ReplaceTooljetDbTableNamesWithId1679604241777 implements MigrationI
         console.log(`App ${tjDbSource.apps_name}: ${tjDbSource.apps_id}`);
         const dataQueriesToReplaceWithIds = await entityManager.find(DataQuery, {
           where: { dataSourceId: tjDbSource.data_sources_id },
-          select: ['id', 'options'],
+          select: {
+                    id: true,
+                    options: true,
+                  },
         });
         console.log(`TjDb dataqueries: ${dataQueriesToReplaceWithIds.length}`);
 
@@ -46,7 +49,10 @@ export class ReplaceTooljetDbTableNamesWithId1679604241777 implements MigrationI
 
           const internalTable = await entityManager.findOne(InternalTable, {
             where: { organizationId: organization.id, tableName },
-            select: ['id', 'tableName'],
+            select: {
+                      id: true,
+                      tableName: true,
+                    },
           });
 
           // There was a bug wherein if the table name had changed, the name in app definition

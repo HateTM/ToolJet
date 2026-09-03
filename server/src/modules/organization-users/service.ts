@@ -87,7 +87,9 @@ export class OrganizationUsersService implements IOrganizationUsersService {
     await dbTransactionWrap(async (manager: EntityManager) => {
       const organizationUser = await manager.findOneOrFail(OrganizationUser, {
         where: { id, organizationId },
-        relations: ['user'],
+        relations: {
+                     user: true,
+                   },
       });
 
       await this.organizationUsersUtilService.throwErrorIfUserIsLastActiveAdmin(organizationUser?.user, organizationId);
@@ -125,7 +127,9 @@ export class OrganizationUsersService implements IOrganizationUsersService {
     await dbTransactionWrap(async (manager: EntityManager) => {
       const archivedUserWorkspaces = await manager.find(OrganizationUser, {
         where: { userId },
-        relations: ['user'],
+        relations: {
+                     user: true,
+                   },
       });
       await manager.update(
         OrganizationUser,
@@ -159,11 +163,18 @@ export class OrganizationUsersService implements IOrganizationUsersService {
     await dbTransactionWrap(async (manager: EntityManager) => {
       const targetUser = await manager.findOneOrFail(User, {
         where: { id: userId },
-        select: ['id', 'status', 'invitationToken', 'source'],
+        select: {
+                  id: true,
+                  status: true,
+                  invitationToken: true,
+                  source: true,
+                },
       });
       const unarchivedUserWorkspaces = await manager.find(OrganizationUser, {
         where: { userId },
-        relations: ['user'],
+        relations: {
+                     user: true,
+                   },
       });
       const { status, invitationToken } = targetUser;
       /* Special case. what if the user is archived when the status is invited. we were changing status to active before */
@@ -194,7 +205,10 @@ export class OrganizationUsersService implements IOrganizationUsersService {
   async unarchive(user: User, id: string, organizationId: string): Promise<void> {
     const organizationUser = await this.organizationUsersRepository.findOne({
       where: { id, organizationId },
-      relations: ['user', 'organization'],
+      relations: {
+                   user: true,
+                   organization: true,
+                 },
     });
 
     if (!(organizationUser && organizationUser.organization && organizationUser.user)) {

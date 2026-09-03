@@ -320,7 +320,9 @@ async function rotateOrgConstants(
   progress: RotationProgress
 ): Promise<void> {
   const constants = await entityManager.find(OrgEnvironmentConstantValue, {
-    relations: ['organizationConstant'],
+    relations: {
+                 organizationConstant: true,
+               },
   });
   progress.startTable('org_environment_constant_values', constants.length);
 
@@ -560,7 +562,9 @@ async function verifyRotation(entityManager: EntityManager, newKey: string): Pro
   // Test org constants
   const orgConstant = await entityManager.findOne(OrgEnvironmentConstantValue, {
     where: {},
-    relations: ['organizationConstant'],
+    relations: {
+                 organizationConstant: true,
+               },
   });
   if (orgConstant?.value) {
     const orgId = orgConstant.organizationConstant.organizationId;
@@ -633,7 +637,9 @@ async function testDecryptionWithOldKey(
   // Test org constants
   const orgConstant = await entityManager.findOne(OrgEnvironmentConstantValue, {
     where: {},
-    relations: ['organizationConstant'],
+    relations: {
+                 organizationConstant: true,
+               },
   });
   if (orgConstant?.value) {
     const orgId = orgConstant.organizationConstant.organizationId;

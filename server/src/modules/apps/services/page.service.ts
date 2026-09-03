@@ -543,7 +543,9 @@ export class PageService implements IPageService {
         if (deleteAssociatedPages && context) {
           const childPages = await manager.find(Page, {
             where: { appVersionId, pageGroupId: pageId },
-            select: ['id'],
+            select: {
+                      id: true,
+                    },
           });
           context.childPageIds = childPages.map((p) => p.id);
         }

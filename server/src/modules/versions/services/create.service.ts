@@ -240,7 +240,7 @@ export class VersionsCreateService implements IVersionsCreateService {
             where: { dataSourceId: newDsId, isDefault: true },
           });
           if (!defaultDsv) {
-            const ds = await manager.findOne(DataSource, { where: { id: newDsId }, select: ['id', 'name'] });
+            const ds = await manager.findOne(DataSource, { where: { id: newDsId }, select: { id: true, name: true } });
             defaultDsv = await manager.save(
               manager.create(DataSourceVersion, {
                 dataSourceId: newDsId,

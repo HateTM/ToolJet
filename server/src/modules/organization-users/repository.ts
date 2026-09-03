@@ -142,7 +142,10 @@ export class OrganizationUsersRepository extends Repository<OrganizationUser> {
       where: {
         invitationToken,
       },
-      relations: ['organization', 'user'],
+      relations: {
+                   organization: true,
+                   user: true,
+                 },
     });
   }
 

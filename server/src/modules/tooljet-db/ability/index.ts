@@ -42,7 +42,10 @@ export class FeatureAbilityFactory extends AbilityFactory<FEATURE_KEY, Subjects>
     if (!isEmpty(dataQueryId)) {
       dataQuery = await this.manager.findOne(DataQuery, {
         where: { id: dataQueryId },
-        relations: ['apps', 'appVersion'],
+        relations: {
+                     apps: true,
+                     appVersion: true,
+                   },
       });
     }
     // Non-workflow apps and modules carry is_public on app_versions; workflows keep it on apps.

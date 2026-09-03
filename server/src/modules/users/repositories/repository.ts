@@ -3,6 +3,7 @@ import {
   DataSource,
   EntityManager,
   FindOptionsOrder,
+  FindOptionsRelations,
   FindOptionsSelect,
   FindOptionsWhere,
   ILike,
@@ -135,7 +136,7 @@ export class UserRepository extends Repository<User> {
   getUser(
     options: FindOptionsWhere<User>,
     order?: FindOptionsOrder<User>,
-    relations?: string[],
+    relations?: FindOptionsRelations<User>,
     select?: FindOptionsSelect<User>,
     manager?: EntityManager
   ): Promise<User> {
@@ -152,7 +153,7 @@ export class UserRepository extends Repository<User> {
   getUsers(
     options: FindOptionsWhere<User>,
     order?: FindOptionsOrder<User>,
-    relations?: string[],
+    relations?: FindOptionsRelations<User>,
     select?: FindOptionsSelect<User>,
     manager?: EntityManager
   ): Promise<User[]> {
@@ -249,7 +250,11 @@ export class UserRepository extends Repository<User> {
               organization: { status: In([WORKSPACE_STATUS.ACTIVE, WORKSPACE_STATUS.ARCHIVE]) },
             },
           },
-          relations: ['organizationUsers', 'organizationUsers.organization'],
+          relations: {
+                       organizationUsers: {
+                         organization: true,
+                       },
+                     },
         });
 
         if (!user) {

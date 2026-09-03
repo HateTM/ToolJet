@@ -262,7 +262,10 @@ export class DataSourcesRepository extends Repository<DataSource> {
     const m = manager ?? this.manager;
     return m.findOneOrFail(DataSource, {
       where: { id: dataSourceId, organizationId },
-      relations: ['plugin', 'apps'],
+      relations: {
+                   plugin: true,
+                   apps: true,
+                 },
     });
   }
 
@@ -310,12 +313,15 @@ export class DataSourcesRepository extends Repository<DataSource> {
     const m = manager ?? this.manager;
     return m.findOne(DataSource, {
       where: { ...(dataSourceId ? { id: dataSourceId } : {}), dataQueries: { id: dataQueryId }, organizationId },
-      relations: ['dataQueries', 'plugin'],
+      relations: {
+                   dataQueries: true,
+                   plugin: true,
+                 },
     });
   }
 
   getDatasourceByPluginId(pluginId: string) {
-    return this.manager.find(DataSource, { where: { pluginId }, relations: ['dataQueries'] });
+    return this.manager.find(DataSource, { where: { pluginId }, relations: { dataQueries: true } });
   }
 
   getQueriesByDatasourceId(datasourceId: string, branchId?: string | null) {
@@ -331,6 +337,6 @@ export class DataSourcesRepository extends Repository<DataSource> {
         .where('ds.id = :datasourceId', { datasourceId })
         .getMany();
     }
-    return this.manager.find(DataSource, { where: { id: datasourceId }, relations: ['dataQueries'] });
+    return this.manager.find(DataSource, { where: { id: datasourceId }, relations: { dataQueries: true } });
   }
 }

@@ -216,13 +216,19 @@ export class VersionUtilService implements IVersionUtilService {
 
     const parentApp = await manager.findOne(App, {
       where: { id: appVersion.appId },
-      select: ['id', 'organizationId', 'type'],
+      select: {
+                id: true,
+                organizationId: true,
+                type: true,
+              },
     });
     if (!parentApp?.organizationId) return;
 
     const defaultBranch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId: parentApp.organizationId, isDefault: true },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
     if (!defaultBranch || defaultBranch.id !== appVersion.branchId) return;
 
@@ -232,7 +238,11 @@ export class VersionUtilService implements IVersionUtilService {
     // setupNewVersion below walks `dataSources` + `dataSources.dataQueries`.
     const sourceVersion = await manager.findOne(AppVersion, {
       where: { appId: appVersion.appId },
-      relations: ['dataSources', 'dataSources.dataQueries'],
+      relations: {
+                   dataSources: {
+                     dataQueries: true,
+                   },
+                 },
       order: { updatedAt: 'DESC' },
     });
 
@@ -366,7 +376,11 @@ export class VersionUtilService implements IVersionUtilService {
     const result = await dbTransactionWrap(async (manager: EntityManager) => {
       const versionFrom = await manager.findOneOrFail(AppVersion, {
         where: { id: versionFromId, appId: app.id },
-        relations: ['dataSources', 'dataSources.dataQueries'],
+        relations: {
+                     dataSources: {
+                       dataQueries: true,
+                     },
+                   },
       });
 
       const firstPriorityEnv = await this.appEnvironmentUtilService.get(organizationId, null, true, manager);
@@ -594,7 +608,7 @@ export class VersionUtilService implements IVersionUtilService {
 
       if (numVersions <= 1) {
         if (branchId) {
-          const branch = await manager.findOne(WorkspaceBranch, { where: { id: branchId }, select: ['name'] });
+          const branch = await manager.findOne(WorkspaceBranch, { where: { id: branchId }, select: { name: true } });
           const branchName = branch?.name ?? 'this';
           throw new ForbiddenException(
             `${branchName} (Draft) version is the head of the ${branchName} branch and cannot be deleted`
@@ -637,7 +651,7 @@ export class VersionUtilService implements IVersionUtilService {
   private async cleanupQueryFolderData(manager: EntityManager, versionId: string): Promise<void> {
     const folders = await manager.find(DataQueryFolder, { where: { appVersionId: versionId } });
     const folderIds = folders.map((f) => f.id);
-    const queries = await manager.find(DataQuery, { select: ['id'], where: { appVersionId: versionId } });
+    const queries = await manager.find(DataQuery, { select: { id: true }, where: { appVersionId: versionId } });
     const queryIds = queries.map((q) => q.id);
     const allChildIds = [...folderIds, ...queryIds];
 

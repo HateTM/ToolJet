@@ -31,7 +31,9 @@ export class AuthorizeWorkspaceGuard extends AuthGuard('jwt') {
       await dbTransactionWrap(async (manager: EntityManager) => {
         const org = await manager.findOne(Organization, {
           where: { id: organizationId },
-          select: ['id'],
+          select: {
+                    id: true,
+                  },
         });
         if (!org) {
           throw new NotFoundException();

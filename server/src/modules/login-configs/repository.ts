@@ -45,14 +45,19 @@ export class SSOConfigsRepository extends Repository<SSOConfigs> {
         organizationId,
         sso: sso as SSOType,
       },
-      relations: ['organization'],
+      relations: {
+                   organization: true,
+                 },
     });
   }
 
   async getConfigs(id: string): Promise<SSOConfigs> {
     const result: SSOConfigs = await this.findOne({
       where: { id, enabled: true },
-      relations: ['organization', 'oidcGroupSyncs'],
+      relations: {
+                   organization: true,
+                   oidcGroupSyncs: true,
+                 },
     });
     return result;
   }

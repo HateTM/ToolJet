@@ -38,7 +38,9 @@ export class CreateDefaultGroupInExistingWorkspace1720352990850 implements Migra
 
     const organizationIds = (
       await manager.find(Organization, {
-        select: ['id'],
+        select: {
+                  id: true,
+                },
       })
     ).map((organization) => organization.id);
 

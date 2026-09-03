@@ -31,7 +31,9 @@ export class AppCountGuard implements CanActivate {
     }
     const apps = await manager.find(App, {
       where: whereCondition,
-      relations: ['organization'],
+      relations: {
+                   organization: true,
+                 },
     });
 
     return apps.length;

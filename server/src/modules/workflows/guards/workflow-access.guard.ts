@@ -46,7 +46,9 @@ export class WorkflowAccessGuard implements CanActivate {
     // Workflows in ToolJet are AppVersions with type='workflow'
     const appVersion = await this.versionRepository.findOne({
       where: { id: appVersionId },
-      relations: ['app'],
+      relations: {
+                   app: true,
+                 },
     });
 
     if (!appVersion || appVersion.app?.type !== 'workflow') {

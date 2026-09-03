@@ -12,7 +12,9 @@ export class AddingUsersToRespectiveRolesBuilderAndEndUsers1720365772516 impleme
     const manager = queryRunner.manager;
     const organizationIds = (
       await manager.find(Organization, {
-        select: ['id'],
+        select: {
+                  id: true,
+                },
       })
     ).map((organization) => organization.id);
     await this.getAndConvertEditorBuilderUsers(manager, organizationIds);

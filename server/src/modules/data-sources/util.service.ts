@@ -320,7 +320,10 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
         if (branchId) {
           const branch = await manager.findOne(WorkspaceBranch, {
             where: { id: branchId },
-            select: ['id', 'isDefault'],
+            select: {
+                      id: true,
+                      isDefault: true,
+                    },
           });
           shouldUpdateDefault = !!branch?.isDefault;
         }
@@ -498,7 +501,9 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
         }
         const isGitEnabled = !!(await manager.findOne(WorkspaceBranch, {
           where: { organizationId, isDefault: true },
-          select: ['id'],
+          select: {
+                    id: true,
+                  },
         }));
 
         if (!isGitEnabled && name) {
@@ -668,23 +673,29 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
   async findAllByOrganization(organizationId: string): Promise<Pick<DataSource, 'id' | 'name' | 'kind'>[]> {
     return this.dataSourceRepository.find({
       where: { organizationId },
-      select: ['id', 'name', 'kind'],
+      select: {
+                id: true,
+                name: true,
+                kind: true,
+              },
     });
   }
 
   async findOneWithName(name: string, organizationId: string): Promise<DataSource> {
     return this.dataSourceRepository.findOneOrFail({
       where: { name: ILike(name), organizationId },
-      relations: [
-        'apps',
-        'dataSourceOptions',
-        'appVersion',
-        'appVersion.app',
-        'plugin',
-        'plugin.iconFile',
-        'plugin.manifestFile',
-        'plugin.operationsFile',
-      ],
+      relations: {
+                   apps: true,
+                   dataSourceVersions: true,
+                   appVersion: {
+                     app: true,
+                   },
+                   plugin: {
+                     iconFile: true,
+                     manifestFile: true,
+                     operationsFile: true,
+                   },
+                 },
     });
   }
 
@@ -696,15 +707,17 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
   ): Promise<DataSource> {
     const dataSource = await this.dataSourceRepository.findOneOrFail({
       where: { id: dataSourceId, organizationId },
-      relations: [
-        'apps',
-        'appVersion',
-        'appVersion.app',
-        'plugin',
-        'plugin.iconFile',
-        'plugin.manifestFile',
-        'plugin.operationsFile',
-      ],
+      relations: {
+                   apps: true,
+                   appVersion: {
+                     app: true,
+                   },
+                   plugin: {
+                     iconFile: true,
+                     manifestFile: true,
+                     operationsFile: true,
+                   },
+                 },
     });
 
     if (!environmentId) {
@@ -972,7 +985,10 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
       if (branchId) {
         const branch = await manager.findOne(WorkspaceBranch, {
           where: { id: branchId },
-          select: ['id', 'isDefault'],
+          select: {
+                    id: true,
+                    isDefault: true,
+                  },
         });
         shouldUpdateDefault = !!branch?.isDefault;
       }
@@ -1344,7 +1360,7 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
       const allEnvs = await this.appEnvironmentUtilService.getAllEnvironments(organizationId, manager);
 
       // Create default DataSourceVersion + DataSourceVersionOptions
-      const dataSource = await manager.findOne(DataSource, { where: { id: dataSourceId }, select: ['id', 'name'] });
+      const dataSource = await manager.findOne(DataSource, { where: { id: dataSourceId }, select: { id: true, name: true } });
       const dsv = manager.create(DataSourceVersion, {
         dataSourceId,
         name: dataSource?.name || 'v1',

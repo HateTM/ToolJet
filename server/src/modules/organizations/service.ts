@@ -2,7 +2,7 @@ import { ConflictException, Injectable, Logger, NotAcceptableException, NotImple
 import { Organization } from 'src/entities/organization.entity';
 import { isSuperAdmin } from 'src/helpers/utils.helper';
 import { dbTransactionWrap } from 'src/helpers/database.helper';
-import { EntityManager, In, Transaction } from 'typeorm';
+import { EntityManager, In } from 'typeorm';
 import { OrganizationRepository } from '@modules/organizations/repository';
 import { OrganizationStatusUpdateDto, OrganizationUpdateDto } from '@modules/organizations/dto';
 import { IOrganizationsService } from '@modules/organizations/interfaces/IService';

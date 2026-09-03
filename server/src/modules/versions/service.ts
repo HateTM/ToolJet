@@ -139,7 +139,10 @@ export class VersionService implements IVersionService {
     if (effectiveBranchId && app.type !== APP_TYPES.MODULE) {
       const branch = await this.versionRepository.manager.findOne(WorkspaceBranch, {
         where: { id: effectiveBranchId },
-        select: ['id', 'isDefault'],
+        select: {
+                  id: true,
+                  isDefault: true,
+                },
       });
       if (branch && !branch.isDefault) {
         result = result.filter((v) => v.versionType === AppVersionType.BRANCH);

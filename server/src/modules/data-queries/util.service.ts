@@ -100,7 +100,13 @@ export class DataQueriesUtilService implements IDataQueriesUtilService {
         dataQuery.appVersion = await dbTransactionWrap(async (manager: EntityManager) => {
           return manager.findOne(AppVersion, {
             where: { id: dataQuery.appVersionId },
-            select: ['id', 'versionType', 'branchId', 'isPublic', 'appName'],
+            select: {
+                      id: true,
+                      versionType: true,
+                      branchId: true,
+                      isPublic: true,
+                      appName: true,
+                    },
           });
         });
       }

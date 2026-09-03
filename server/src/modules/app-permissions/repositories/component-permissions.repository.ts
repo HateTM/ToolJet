@@ -15,7 +15,12 @@ export class ComponentPermissionsRepository extends Repository<ComponentPermissi
     return dbTransactionWrap(async (manager: EntityManager) => {
       const componentPermissions = await manager.find(ComponentPermission, {
         where: { componentId },
-        relations: ['users', 'users.user', 'users.permissionGroup'],
+        relations: {
+                     users: {
+                       user: true,
+                       permissionGroup: true,
+                     },
+                   },
       });
 
       return componentPermissions.map((permission) => {

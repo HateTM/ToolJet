@@ -42,7 +42,9 @@ export class CreateSampleDataSourceToExistingWorkspace1714626631309 implements M
 
   public async addSampleDB(entityManager: EntityManager, dataSourceService: IDataSourcesUtilService, envVar: any) {
     const workspaces = await entityManager.find(Organization, {
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
     for (const workspace of workspaces) {
       const { id: organizationId } = workspace;

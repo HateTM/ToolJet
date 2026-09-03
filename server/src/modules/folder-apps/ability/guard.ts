@@ -58,7 +58,11 @@ export class FeatureAbilityGuard extends AbilityGuard {
     if (isMutatingFolderApp && (request.body?.app_id || request.body?.app_ids?.length)) {
       const folder = await this.dataSource.manager.findOne(Folder, {
         where: { id: folderId, organizationId: request.user.organizationId },
-        select: ['id', 'createdBy', 'type'],
+        select: {
+                  id: true,
+                  createdBy: true,
+                  type: true,
+                },
       });
 
       const folderOwnedByUser = !!folder && folder.createdBy === request.user.id;
@@ -67,7 +71,11 @@ export class FeatureAbilityGuard extends AbilityGuard {
         // Single-app path: require both folder and app to be owned by the user.
         const app = await this.dataSource.manager.findOne(App, {
           where: { id: request.body.app_id, organizationId: request.user.organizationId },
-          select: ['id', 'userId', 'type'],
+          select: {
+                    id: true,
+                    userId: true,
+                    type: true,
+                  },
         });
         request.tj_allow_owner_folder_app_create =
           folderOwnedByUser && !!app && app.userId === request.user.id;

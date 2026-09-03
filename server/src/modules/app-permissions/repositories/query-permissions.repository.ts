@@ -15,7 +15,12 @@ export class QueryPermissionsRepository extends Repository<QueryPermission> {
     return dbTransactionWrap(async (manager: EntityManager) => {
       const queryPermissions = await manager.find(QueryPermission, {
         where: { queryId },
-        relations: ['users', 'users.user', 'users.permissionGroup'],
+        relations: {
+                     users: {
+                       user: true,
+                       permissionGroup: true,
+                     },
+                   },
       });
 
       return queryPermissions.map((permission) => {

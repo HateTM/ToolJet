@@ -54,7 +54,7 @@ export class AppInventoryService {
     const [app, pages, queries, buildHistory] = await Promise.all([
       this.appsRepository.findOneById(appId),
       this.pageService.findPagesForVersion(appVersionId),
-      this.dataQueryRepository.getMany({ appVersionId }, ['dataSource']),
+      this.dataQueryRepository.getMany({ appVersionId }, { dataSource: true }),
       this.summarizeBuildHistory(appId),
     ]);
 

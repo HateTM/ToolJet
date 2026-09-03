@@ -68,7 +68,9 @@ export class GranularPermissionsService implements IGranularPermissionsService {
     // Workflows keep name on apps.*.
     const defaultBranch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId, isDefault: true },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
 
     const qb = manager
@@ -175,7 +177,9 @@ export class GranularPermissionsService implements IGranularPermissionsService {
     const appIds = Array.from(new Set(apps.map((a) => a.id)));
     const defaultBranch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId, isDefault: true },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
 
     let metadataRows: Pick<AppVersion, 'appId' | 'appName' | 'slug' | 'icon' | 'isPublic'>[];

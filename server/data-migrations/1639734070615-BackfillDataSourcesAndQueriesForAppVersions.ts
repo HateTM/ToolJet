@@ -15,7 +15,10 @@ export class BackfillDataSourcesAndQueriesForAppVersions1639734070615 implements
   public async up(queryRunner: QueryRunner): Promise<void> {
     const entityManager = queryRunner.manager;
     const organizations = await entityManager.find(Organization, {
-      select: ['id', 'name'],
+      select: {
+                id: true,
+                name: true,
+              },
     });
 
     if (organizations.length === 0) {

@@ -195,14 +195,18 @@ export class SeedPushModulesBranch1776600000000 implements MigrationInterface {
         isStub: false,
       },
       order: { createdAt: 'DESC' },
-      relations: ['dataSources'],
+      relations: {
+                   dataSources: true,
+                 },
     });
     if (defaultBranchVersion) return defaultBranchVersion;
 
     if (app.currentVersionId) {
       const byCurrent = await em.findOne(AppVersion, {
         where: { id: app.currentVersionId },
-        relations: ['dataSources'],
+        relations: {
+                     dataSources: true,
+                   },
       });
       if (byCurrent) return byCurrent;
     }
@@ -210,7 +214,9 @@ export class SeedPushModulesBranch1776600000000 implements MigrationInterface {
     return em.findOne(AppVersion, {
       where: { appId: app.id, isStub: false },
       order: { createdAt: 'ASC' },
-      relations: ['dataSources'],
+      relations: {
+                   dataSources: true,
+                 },
     });
   }
 
@@ -260,12 +266,16 @@ export class SeedPushModulesBranch1776600000000 implements MigrationInterface {
       (sourceApp.currentVersionId
         ? await em.findOne(AppVersion, {
             where: { id: sourceApp.currentVersionId },
-            relations: ['dataSources'],
+            relations: {
+                         dataSources: true,
+                       },
           })
         : await em.findOne(AppVersion, {
             where: { appId: sourceApp.id },
             order: { createdAt: 'DESC' },
-            relations: ['dataSources'],
+            relations: {
+                         dataSources: true,
+                       },
           }));
     if (!sourceVersion) return null;
 

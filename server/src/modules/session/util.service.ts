@@ -285,7 +285,7 @@ export class SessionUtilService {
             },
           },
           null,
-          ['organizationUsers', 'organizationUsers.organization'],
+          { organizationUsers: { organization: true } },
           { id: true },
           manager
         )
@@ -395,7 +395,11 @@ export class SessionUtilService {
           ? currentOrganization
           : await manager.findOneOrFail(Organization, {
               where: { id: currentOrganizationId },
-              select: ['slug', 'name', 'id'],
+              select: {
+                        slug: true,
+                        name: true,
+                        id: true,
+                      },
             })
         : null;
 
@@ -521,7 +525,7 @@ export class SessionUtilService {
             status: USER_STATUS.ACTIVE,
           },
         },
-        relations: [SessionType.USER, SessionType.PAT], // Include PAT relation
+        relations: { [SessionType.USER]: true, [SessionType.PAT]: true }, // Include PAT relation
       });
 
       if (!session) {
@@ -573,7 +577,12 @@ export class SessionUtilService {
     return dbTransactionWrap(async (manager: EntityManager) => {
       const organization = await manager.findOneOrFail(Organization, {
         where: { id: slug },
-        select: ['id', 'slug', 'name', 'status'],
+        select: {
+                  id: true,
+                  slug: true,
+                  name: true,
+                  status: true,
+                },
       });
       if (organization && organization.status !== WORKSPACE_STATUS.ACTIVE)
         throw new BadRequestException('Organization is Archived');

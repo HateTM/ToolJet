@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import {
-  Connection,
+  DataSource,
   EntityManager,
   In,
   ObjectLiteral,
@@ -273,7 +273,10 @@ export class TooljetDbTableOperationsService {
   protected async viewTables(organizationId: string) {
     return await this.manager.find(InternalTable, {
       where: { organizationId },
-      select: ['id', 'tableName'],
+      select: {
+                id: true,
+                tableName: true,
+              },
       order: { tableName: 'ASC' },
     });
   }
@@ -1072,7 +1075,7 @@ export class TooljetDbTableOperationsService {
     queryJson,
     internalTableIdToNameMap,
 
-    tooljetDbTenantConnection: Connection
+    tooljetDbTenantConnection: DataSource
   ): SelectQueryBuilder<any> {
     const queryBuilder: SelectQueryBuilder<any> = tooljetDbTenantConnection.createQueryBuilder();
 
@@ -1404,7 +1407,10 @@ export class TooljetDbTableOperationsService {
         ...(type === 'TABLENAME' && { tableName: In(referenced_table_list) }),
         ...(type === 'TABLEID' && { id: In(referenced_table_list) }),
       },
-      select: ['tableName', 'id'],
+      select: {
+                tableName: true,
+                id: true,
+              },
     });
 
     const referenced_tables_info = {};

@@ -45,7 +45,10 @@ export class FeatureAbilityGuard extends AbilityGuard {
 
       const folder = await this.dataSource.manager.findOne(Folder, {
         where: { id: folderId, organizationId: user.organizationId },
-        select: ['id', 'createdBy'],
+        select: {
+                  id: true,
+                  createdBy: true,
+                },
       });
 
       request.tj_allow_owner_folder_manage = !!folder && folder.createdBy === user.id;

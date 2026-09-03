@@ -194,7 +194,7 @@ export class ComponentsService implements IComponentsService {
         if (component) {
           let resolvedParent = component.parent;
           if (moduleContainerId && !resolvedParent) {
-            const existing = await manager.findOne(Component, { where: { id: componentId }, select: ['id', 'type'] });
+            const existing = await manager.findOne(Component, { where: { id: componentId }, select: { id: true, type: true } });
             if (existing?.type !== 'ModuleContainer') {
               resolvedParent = moduleContainerId;
             }
@@ -317,8 +317,14 @@ export class ComponentsService implements IComponentsService {
   ): Promise<string | null> {
     const appVersion = await manager.findOne(AppVersion, {
       where: { id: appVersionId },
-      select: ['id', 'appId', 'homePageId'],
-      relations: ['app'],
+      select: {
+                id: true,
+                appId: true,
+                homePageId: true,
+              },
+      relations: {
+                   app: true,
+                 },
     });
 
     if (!appVersion?.app || appVersion.app.type !== APP_TYPES.MODULE) {
@@ -330,7 +336,9 @@ export class ComponentsService implements IComponentsService {
         type: 'ModuleContainer',
         pageId: appVersion.homePageId,
       },
-      select: ['id'],
+      select: {
+                id: true,
+              },
     });
 
     return moduleContainer?.id ?? null;
@@ -833,7 +841,9 @@ export class ComponentsService implements IComponentsService {
       const firstComponentId = Object.keys(layoutDiff)[0];
       const sampleComponent = await manager.findOne(Component, {
         where: { id: firstComponentId },
-        relations: ['page'],
+        relations: {
+                     page: true,
+                   },
       });
       if (sampleComponent?.page?.appVersionId) {
         await this.assertNoParentCycle(parentWrites, sampleComponent.page.appVersionId, manager);
@@ -874,7 +884,7 @@ export class ComponentsService implements IComponentsService {
       if (component) {
         let resolvedParent = component.parent;
         if (moduleContainerId && !resolvedParent) {
-          const existing = await manager.findOne(Component, { where: { id: componentId }, select: ['id', 'type'] });
+          const existing = await manager.findOne(Component, { where: { id: componentId }, select: { id: true, type: true } });
           if (existing?.type !== 'ModuleContainer') {
             resolvedParent = moduleContainerId;
           }

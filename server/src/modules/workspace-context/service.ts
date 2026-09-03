@@ -71,7 +71,11 @@ export class WorkspaceContextService {
           status: WORKSPACE_USER_STATUS.ACTIVE,
         },
       },
-      select: ['id', 'name', 'slug'],
+      select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
       order: { name: 'ASC' },
     });
 
@@ -236,7 +240,14 @@ export class WorkspaceContextService {
   private async fetchGlobalDataSources(organizationId: string): Promise<DataSourceSummary[]> {
     const dataSources = await this.dataSourcesRepository.find({
       where: { organizationId, scope: DataSourceScopes.GLOBAL },
-      select: ['id', 'name', 'kind', 'pluginId', 'scope', 'co_relation_id'],
+      select: {
+                id: true,
+                name: true,
+                kind: true,
+                pluginId: true,
+                scope: true,
+                co_relation_id: true,
+              },
       order: { name: 'ASC' },
     });
 
@@ -244,7 +255,15 @@ export class WorkspaceContextService {
 
     const versions = await this.dataSourcesRepository.manager.find(DataSourceVersion, {
       where: { dataSourceId: In(dataSources.map((ds) => ds.id)) },
-      select: ['id', 'name', 'isDefault', 'isActive', 'branchId', 'createdAt', 'dataSourceId'],
+      select: {
+                id: true,
+                name: true,
+                isDefault: true,
+                isActive: true,
+                branchId: true,
+                createdAt: true,
+                dataSourceId: true,
+              },
       order: { isDefault: 'DESC', createdAt: 'ASC' },
     });
 

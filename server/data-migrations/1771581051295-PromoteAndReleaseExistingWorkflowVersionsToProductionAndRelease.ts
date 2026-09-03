@@ -17,8 +17,12 @@ export class PromoteAndReleaseExistingWorkflowVersionsToProductionAndRelease1771
         const manager = queryRunner.manager;
 
         const organizations = await manager.find(Organization, {
-            select: ['id'],
-            relations: ['appEnvironments'],
+            select: {
+                      id: true,
+                    },
+            relations: {
+                         appEnvironments: true,
+                       },
         });
 
         const migrationProgress = new MigrationProgress(
@@ -36,14 +40,20 @@ export class PromoteAndReleaseExistingWorkflowVersionsToProductionAndRelease1771
 
             const workflowApps = await manager.find(App, {
                 where: { organizationId: organization.id, type: APP_TYPES.WORKFLOW },
-                select: ['id', 'currentVersionId'],
+                select: {
+                          id: true,
+                          currentVersionId: true,
+                        },
             });
 
             for (const app of workflowApps) {
                 const versions = await manager.find(AppVersion, {
                     where: { appId: app.id },
                     order: { createdAt: 'DESC' },
-                    select: ['id', 'createdAt'],
+                    select: {
+                              id: true,
+                              createdAt: true,
+                            },
                 });
 
                 if (!versions.length) continue;

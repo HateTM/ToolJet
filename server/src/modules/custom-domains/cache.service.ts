@@ -74,7 +74,7 @@ export class CustomDomainCacheService implements OnModuleInit {
   async rebuildOriginsSet(): Promise<void> {
     try {
       const redis = this.redisService.getClient();
-      const activeDomains = await this.repository.find({ where: { status: 'active' }, select: ['domain'] });
+      const activeDomains = await this.repository.find({ where: { status: 'active' }, select: { domain: true } });
       const origins = activeDomains.map((d) => `https://${d.domain}`);
       const pipeline = redis.pipeline();
       pipeline.del(this.ORIGINS_KEY);
