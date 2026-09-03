@@ -11,7 +11,6 @@ import OpenApi from '@/_ui/OpenAPI';
 import { Checkbox, CheckboxGroup } from '@/_ui/CheckBox';
 import CodeHinter from '@/AppBuilder/CodeEditor';
 import GoogleSheets from '@/_components/Googlesheets';
-import Slack from '@/_components/Slack';
 import Zendesk from '@/_components/Zendesk';
 import ApiEndpointInput from '@/_components/ApiEndpointInput';
 import ApiEndpointInputOld from './ApiEndpointInputOld';
@@ -242,8 +241,6 @@ const DynamicForm = ({
         return OAuth;
       case 'react-component-google-sheets':
         return GoogleSheets;
-      case 'react-component-slack':
-        return Slack;
       case 'react-component-oracle-wallet':
         return OracleWalletPicker;
       case 'codehinter':
@@ -499,7 +496,7 @@ const DynamicForm = ({
       }
       case 'react-component-oauth-authentication':
         return {
-          isGrpc: source === 'grpc' || source === 'grpcv2',
+          isGrpc: source === 'grpcv2',
           grant_type: options?.grant_type?.value,
           auth_type: options?.auth_type?.value,
           add_token_to: options?.add_token_to?.value,
@@ -531,7 +528,6 @@ const DynamicForm = ({
           isRestApi: source === 'restapi',
         };
       case 'react-component-google-sheets':
-      case 'react-component-slack':
       case 'react-component-zendesk':
       case 'react-component-sharepoint':
       case 'react-component-oauth':

@@ -300,9 +300,7 @@ class DataSourceManagerComponent extends React.Component {
     }
 
     const OAuthDs = [
-      'slack',
       'zendesk',
-      'googlesheets',
       'salesforce',
       'googlecalendar',
       'microsoft_graph',
@@ -452,17 +450,8 @@ class DataSourceManagerComponent extends React.Component {
 
   checkShouldRenderFooterComponent = (datasourceKind, datasourceOptions) => {
     switch (datasourceKind) {
-      case 'googlesheets': {
-        return datasourceOptions?.authentication_type?.value === 'service_account' ? true : false;
-      }
       case 'googlesheetsv2': {
         return datasourceOptions?.authentication_type?.value === 'service_account' ? true : false;
-      }
-      case 'bigquery': {
-        return datasourceOptions?.authentication_type?.value === 'service_account' ? true : false;
-      }
-      case 'databricks': {
-        return datasourceOptions?.authentication_type?.value === 'personal_access_token' ? true : false;
       }
       case 'quickbooks': {
         return false;
@@ -1094,9 +1083,7 @@ class DataSourceManagerComponent extends React.Component {
       ? `https://docs.tooljet.com/docs/marketplace/plugins/marketplace-plugin-${selectedDataSource?.kind}/`
       : `https://docs.tooljet.com/docs/data-sources/${selectedDataSource?.kind}`;
     const OAuthDs = [
-      'slack',
       'zendesk',
-      'googlesheets',
       'salesforce',
       'googlecalendar',
       'snowflake',

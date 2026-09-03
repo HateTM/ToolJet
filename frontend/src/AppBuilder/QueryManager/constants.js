@@ -101,7 +101,6 @@ export const schemaUnavailableOptions = {
     body_toggle: false,
     retry_network_errors: null,
   },
-  stripe: {},
   tooljetdb: {
     operation: '',
   },
