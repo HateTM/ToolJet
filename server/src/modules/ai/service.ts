@@ -4,60 +4,57 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-} from "@nestjs/common";
-import { randomUUID } from "crypto";
-import { Response } from "express";
-import { tool } from "ai";
-import { z } from "zod";
-import { IAiService } from "./interfaces/IService";
-import { AiUtilService } from "./util.service";
-import { AgentsService } from "./services/agents.service";
-import { SeedTableReport } from "./interfaces/IAgentsService";
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { Response } from 'express';
+import { tool } from 'ai';
+import { z } from 'zod';
+import { IAiService } from './interfaces/IService';
+import { AiUtilService } from './util.service';
+import { AgentsService } from './services/agents.service';
+import { SeedTableReport } from './interfaces/IAgentsService';
 import {
   UPDATE_QUERY_SYSTEM_PROMPT,
   updateQueryTool,
   mergeQueryUpdate,
   validateMergedQueryOptions,
-} from "./services/query-update";
-import { isSingleReadOnlyStatement } from "./services/query-security";
+} from './services/query-update';
+import { isSingleReadOnlyStatement } from './services/query-security';
 import {
   diffTableColumns,
   validateDesiredColumns,
   CurrentTjdbColumn,
   DesiredTjdbColumn,
-} from "./services/update-table-diff";
-import { resolveGeneratedStepArgs } from "./helpers/generated-step-args";
-import {
-  renderEventCatalogForPrompt,
-  normalizeEventId,
-  validateEventBody,
-} from "./services/event-catalog";
-import { AiConversationRepository } from "./repositories/ai-conversation.repository";
-import { AiConversationMessageRepository } from "./repositories/ai-conversation-message.repository";
-import { ArtifactRepository } from "./repositories/artifact.repository";
-import { StepRepository } from "./repositories/step.repository";
-import { AiResponseVoteRepository } from "./repositories/ai-response-vote.repository";
-import { AppInventoryService } from "./services/app-inventory.service";
+} from './services/update-table-diff';
+import { resolveGeneratedStepArgs } from './helpers/generated-step-args';
+import { renderEventCatalogForPrompt, normalizeEventId, validateEventBody } from './services/event-catalog';
+import { AiConversationRepository } from './repositories/ai-conversation.repository';
+import { AiConversationMessageRepository } from './repositories/ai-conversation-message.repository';
+import { ArtifactRepository } from './repositories/artifact.repository';
+import { StepRepository } from './repositories/step.repository';
+import { AiResponseVoteRepository } from './repositories/ai-response-vote.repository';
+import { AppInventoryService } from './services/app-inventory.service';
 import {
   DataSourceInventoryService,
   QueryableDataSource,
   renderConnectedDataSources,
-} from "./services/data-source-inventory.service";
-import { AiActiveRunService } from "./services/ai-active-run.service";
-import { generateQuery as generateQueryPrompts } from "./prompt-library";
-import { AiFeasibilityService } from "./services/ai-feasibility.service";
-import { GenerationEngineClient } from "./services/generation-engine-client";
-import { GenerationEnginePipelineClient } from "./services/generation-engine-pipeline-client";
-import { VersionRepository } from "@modules/versions/repository";
-import { Step, StepType } from "@entities/step.entity";
-import { Artifact } from "@entities/artifact.entity";
-import { AiConversation } from "@entities/ai_conversation.entity";
-import { AiConversationMessage } from "@entities/ai_conversation_message.entity";
-import { Completion, CopilotContext, ErrorContext, Suggestion } from "./types";
-import { User } from "@entities/user.entity";
-import { UserPermissions } from "@modules/ability/types";
+} from './services/data-source-inventory.service';
+import { AiActiveRunService } from './services/ai-active-run.service';
+import { generateQuery as generateQueryPrompts } from './prompt-library';
+import { AiFeasibilityService } from './services/ai-feasibility.service';
+import { GenerationEngineClient } from './services/generation-engine-client';
+import { GenerationEnginePipelineClient } from './services/generation-engine-pipeline-client';
+import { VersionRepository } from '@modules/versions/repository';
+import { Step, StepType } from '@entities/step.entity';
+import { Artifact } from '@entities/artifact.entity';
+import { AiConversation } from '@entities/ai_conversation.entity';
+import { AiConversationMessage } from '@entities/ai_conversation_message.entity';
+import { Completion, CopilotContext, ErrorContext, Suggestion } from './types';
+import { User } from '@entities/user.entity';
+import { UserPermissions } from '@modules/ability/types';
 
-const CONVERSATION_TYPES = ["generate", "learn"] as const;
+const CONVERSATION_TYPES = ['generate', 'learn'] as const;
 type ConversationType = (typeof CONVERSATION_TYPES)[number];
 
 // Grounds the assistant in the Generate-conversation contract (see CONTEXT.md's
@@ -81,70 +78,25 @@ Answer strictly from the app inventory below — the app's pages, the components
 
 You cannot change this app in this conversation — you have no ability to create, edit, or delete pages, components, queries, or tables here. If the user asks you to build or change something, do not attempt it and do not claim you have: tell them to use the "Start building" action on your answer, which opens a new build conversation carrying this question and answer over as context.`;
 
-// v1 step vocabulary (ADR-0002). The planner is free to propose any of these — see
-// ADR-0006 — even though only CreateTable has a real handler in this ticket. Ticket #67
-// extends the vocabulary with the two edit steps: a diff-merge into an existing query's
-// options and event wiring on components/queries the plan has created; ticket #66 adds
-// the UpdateComponent diff-patch edit step.
-const STEP_TYPES = [
-  "CreateTable",
-  "UpdateTable",
-  "CreateQuery",
-  "CreateComponent",
-  "UpdateComponent",
-  "DeleteComponent",
-  "MoveComponent",
-  "UpdateQuery",
-  "DeleteQuery",
-  "GenerateEvent",
-] as const;
-
-export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
-
-Call proposeStepPlan exactly once with the ordered list of steps needed to build what the PRD describes. Each step is one of:
-- CreateTable: creates a table. By default this creates a ToolJet DB table. If the PRD explicitly asks for the table to live in a connected PostgreSQL source (see the connected data sources below), set the optional data_source_id field to that source's id — every other connector kind never accepts a CreateTable step, only postgresql. Include the full table definition you propose in the optional table field — the user previews exactly that definition (tables, columns, foreign keys, indexes) before approving, and it is what gets created. A table name that already exists in the target source fails this step at plan time — pick a name you have not been shown as already existing there.
-  If the PRD asks for sample or starting data, also propose it in the optional seed_rows field: rows consistent with the table's columns, omitting auto-generated (serial) primary key columns. The user previews the exact rows before approving, and they are inserted into the table as part of this step. Never invent seed rows the PRD does not call for.
-- CreateQuery: creates a data query, either against a ToolJet DB table or against a data source the user has already connected.
-- CreateComponent: creates a UI element (a page or a widget on a page).
-- UpdateComponent: changes a component that already exists in this app (its text, a property, or a style) — never a component this same plan is about to create with CreateComponent (give that component its final properties directly instead). Reference the target by the id/name given in "Existing components already in this app" below; never invent one. Use this only when the PRD is asking to edit something that's already there.
-- DeleteComponent: removes a component that already exists in this app. Reference it by the id/name given in "Existing components already in this app" below; never invent one, and never target a component this same plan is about to create.
-- MoveComponent: reparents a component that already exists in this app into a different Container, Form or Listview (or back to the page root). Reference both by the id/name given in "Existing components already in this app" below; never invent one, never target a component this same plan is about to create, and never move into a ModalV2 or Tabs (not supported by this step — nest into those at create time with CreateComponent's parentComponentId instead).
-- UpdateQuery: changes an existing query the plan (or an earlier step) created — e.g. different columns, a filter, a limit. The model at execution time returns only the option keys that change; nothing else on the query is touched. Use this instead of a second CreateQuery for the same table.
-- DeleteQuery: removes a query this same plan created earlier — never a query outside this plan.
-- GenerateEvent: wires one event on a component or query the plan has already created (e.g. "the button opens the modal" is a GenerateEvent on the Button, not a new component). It never creates components or queries itself.
-
-
-Order matters: a table must exist before a query reads from it, and a query before a component that uses it. Give each step a short, specific description of what it builds.
-
-Also group the steps into a small number of named phases (ticket #21) — e.g. "Create data tables", "Create data queries", "Build the interface". Set each step's phase to a short human-readable phase name; consecutive steps that belong to the same phase must repeat the exact same phase string. Use between 1 and 4 phases, in execution order.`;
-
 // ToolJet DB's supported column types (server/src/modules/tooljet-db/types.ts's TJDB map).
 const TJDB_DATA_TYPES = [
-  "character varying",
-  "integer",
-  "bigint",
-  "serial",
-  "double precision",
-  "boolean",
-  "timestamp with time zone",
-  "jsonb",
+  'character varying',
+  'integer',
+  'bigint',
+  'serial',
+  'double precision',
+  'boolean',
+  'timestamp with time zone',
+  'jsonb',
 ] as const;
 
-export const TJDB_FOREIGN_KEY_ACTIONS = [
-  "RESTRICT",
-  "NO ACTION",
-  "CASCADE",
-  "SET NULL",
-  "SET DEFAULT",
-] as const;
+export const TJDB_FOREIGN_KEY_ACTIONS = ['RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'] as const;
 
 // The full definition of one ToolJet DB table, shared by the planner (which proposes it at
 // plan time so it can be previewed before approval, ticket #20) and the per-step createTable
 // tool (which historically was the only place a table's schema existed, at execution time).
 const tableDefinitionObject = z.object({
-  table_name: z
-    .string()
-    .describe("snake_case table name, unique within this app"),
+  table_name: z.string().describe('snake_case table name, unique within this app'),
   columns: z
     .array(
       z.object({
@@ -153,92 +105,56 @@ const tableDefinitionObject = z.object({
         is_primary_key: z.boolean(),
         is_not_null: z.boolean(),
         is_unique: z.boolean(),
-      }),
+      })
     )
     .min(1)
-    .describe("Exactly one column must have is_primary_key: true"),
+    .describe('Exactly one column must have is_primary_key: true'),
   foreign_keys: z
     .array(
       z.object({
         // One or more columns in this table that must reference a column (or columns)
         // in another table in this app.
-        column_names: z
-          .array(z.string())
-          .min(1)
-          .describe("Column(s) in this table that are referenced"),
-        referenced_table_name: z
-          .string()
-          .describe(
-            "Name of another table in this app that these columns reference",
-          ),
+        column_names: z.array(z.string()).min(1).describe('Column(s) in this table that are referenced'),
+        referenced_table_name: z.string().describe('Name of another table in this app that these columns reference'),
         referenced_column_names: z
           .array(z.string())
           .min(1)
-          .describe(
-            "Column(s) in referenced_table_name that these columns reference",
-          ),
+          .describe('Column(s) in referenced_table_name that these columns reference'),
         on_delete: z
           .enum(TJDB_FOREIGN_KEY_ACTIONS)
           .describe(
-            "Action when a referenced row is deleted; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
+            "Action when a referenced row is deleted; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'"
           )
           .optional(),
         on_update: z
           .enum(TJDB_FOREIGN_KEY_ACTIONS)
           .describe(
-            "Action when a referenced row is updated; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'",
+            "Action when a referenced row is updated; one of 'RESTRICT', 'NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT'"
           )
           .optional(),
-      }),
+      })
     )
     .optional()
     .describe(
-      "Relationships to other tables in this app. Omit this field to create a table with no foreign keys. " +
-        "Referenced tables must already exist in this app.",
+      'Relationships to other tables in this app. Omit this field to create a table with no foreign keys. ' +
+        'Referenced tables must already exist in this app.'
     ),
   indexes: z
     .array(
       z.object({
-        column_names: z
-          .array(z.string())
-          .min(1)
-          .describe("Column(s) in this table to index"),
-        is_unique: z
-          .boolean()
-          .optional()
-          .describe(
-            "Set true only when uniqueness must be enforced by the index",
-          ),
-      }),
+        column_names: z.array(z.string()).min(1).describe('Column(s) in this table to index'),
+        is_unique: z.boolean().optional().describe('Set true only when uniqueness must be enforced by the index'),
+      })
     )
     .optional()
     .describe(
-      "Indexes to create on this table for query performance (ticket #23). Omit when the table is small " +
-        "or every column already benefits from an existing constraint. Index foreign-key columns and " +
-        "columns frequently filtered or sorted on.",
+      'Indexes to create on this table for query performance (ticket #23). Omit when the table is small ' +
+        'or every column already benefits from an existing constraint. Index foreign-key columns and ' +
+        'columns frequently filtered or sorted on.'
     ),
 });
 
 type TableDefinition = z.infer<typeof tableDefinitionObject>;
-
-// One seed row the planner proposes for a table it also proposes (ticket #48): a plain
-// record of column name → primitive value. Structured rows, not SQL — the same principle
-// ADR-0020 set for the table definition itself, so the preview renders the data (not a
-// query) and execution inserts exactly what was previewed, with no SQL surface anywhere.
-const seedRowObject = z.record(
-  z.string(),
-  z.union([z.string(), z.number(), z.boolean(), z.null()]),
-);
-
-const seedRowsObject = z
-  .array(seedRowObject)
-  .min(1)
-  .max(50)
-  .describe(
-    "Seed rows to insert after this table is created. Only when the PRD asks for sample/starting data. " +
-      "Each row maps column names to values and must be consistent with the columns defined above; " +
-      "omit auto-generated (serial) primary key columns.",
-  );
 
 // A planned seed-rows array is trusted verbatim only when every row is a plain, non-empty
 // object of primitive-or-null values — anything looser is dropped at plan time rather than
@@ -250,14 +166,10 @@ const isWellFormedSeedRows = (rows: any): rows is Record<string, any>[] =>
   rows.every(
     (row) =>
       row &&
-      typeof row === "object" &&
+      typeof row === 'object' &&
       !Array.isArray(row) &&
       Object.keys(row).length > 0 &&
-      Object.values(row).every(
-        (value) =>
-          value === null ||
-          ["string", "number", "boolean"].includes(typeof value),
-      ),
+      Object.values(row).every((value) => value === null || ['string', 'number', 'boolean'].includes(typeof value))
   );
 
 // A planned table is trusted verbatim only when it could actually create a table: a real
@@ -266,32 +178,25 @@ const isWellFormedSeedRows = (rows: any): rows is Record<string, any>[] =>
 // Seed rows are only as good as their fit to the table they seed: every key must be a real
 // column of the planned table (ticket #48). Column order and completeness are not required —
 // a serial primary key may be omitted — but an unknown column would fail at insert time.
-const areSeedRowsConsistentWithTable = (
-  rows: Record<string, any>[],
-  table: TableDefinition,
-): boolean => {
-  const columnNames = new Set(
-    table.columns.map((column) => column.column_name),
-  );
-  return rows.every((row) =>
-    Object.keys(row).every((key) => columnNames.has(key)),
-  );
+const areSeedRowsConsistentWithTable = (rows: Record<string, any>[], table: TableDefinition): boolean => {
+  const columnNames = new Set(table.columns.map((column) => column.column_name));
+  return rows.every((row) => Object.keys(row).every((key) => columnNames.has(key)));
 };
 
 const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
   Boolean(
     table &&
-    typeof table.table_name === "string" &&
+    typeof table.table_name === 'string' &&
     table.table_name.trim() &&
     Array.isArray(table.columns) &&
     table.columns.length > 0 &&
     table.columns.every(
       (column: any) =>
         column &&
-        typeof column.column_name === "string" &&
+        typeof column.column_name === 'string' &&
         column.column_name.trim() &&
-        typeof column.data_type === "string",
-    ),
+        typeof column.data_type === 'string'
+    )
   );
 
 // Ticket #77 / ADR-0042: what a proposed CreateTable step's `data_source_id` resolves to,
@@ -303,21 +208,21 @@ const isWellFormedTableDefinition = (table: any): table is TableDefinition =>
 // (`dataSources[].tables`, from the same listTables introspection ADR-0019 already runs, per
 // ticket #77's implementation note — no second call); 'external' otherwise.
 export type CreateTableTargetResolution =
-  | { kind: "tjdb" }
-  | { kind: "external"; dataSource: QueryableDataSource }
-  | { kind: "collision"; dataSource: QueryableDataSource; message: string };
+  | { kind: 'tjdb' }
+  | { kind: 'external'; dataSource: QueryableDataSource }
+  | { kind: 'collision'; dataSource: QueryableDataSource; message: string };
 
 export const resolveCreateTableTarget = (
   dataSourceId: string | undefined,
   tableName: string | undefined,
-  dataSources: QueryableDataSource[],
+  dataSources: QueryableDataSource[]
 ): CreateTableTargetResolution => {
-  if (!dataSourceId) return { kind: "tjdb" };
+  if (!dataSourceId) return { kind: 'tjdb' };
   const target = dataSources.find((source) => source.id === dataSourceId);
-  if (!target || target.kind !== "postgresql") return { kind: "tjdb" };
+  if (!target || target.kind !== 'postgresql') return { kind: 'tjdb' };
   if (tableName && target.tables.includes(tableName)) {
     return {
-      kind: "collision",
+      kind: 'collision',
       dataSource: target,
       message:
         `A table named "${tableName}" already exists in the connected PostgreSQL source ` +
@@ -325,44 +230,8 @@ export const resolveCreateTableTarget = (
         `step cannot be built — pick a different table name, or target ToolJet DB instead.`,
     };
   }
-  return { kind: "external", dataSource: target };
+  return { kind: 'external', dataSource: target };
 };
-
-export const proposeStepPlanTool = tool({
-  description: "Propose the ordered list of build steps for this PRD.",
-  inputSchema: z.object({
-    steps: z
-      .array(
-        z.object({
-          type: z.enum(STEP_TYPES),
-          description: z
-            .string()
-            .describe("Short, specific description of what this step builds"),
-          // Only meaningful on CreateTable steps: the concrete table definition this step
-          // proposes, persisted as the Step's plannedTable and shown in the pre-approval
-          // schema preview (ticket #20).
-          table: tableDefinitionObject.optional(),
-          // Only meaningful on CreateTable steps (ticket #77 / ADR-0042): the id of a
-          // connected data source (from the connected-sources block) this step targets
-          // instead of ToolJet DB. Only honored when that source's kind is 'postgresql' —
-          // every other kind falls back to ToolJet DB unchanged (ADR-0018).
-          data_source_id: z.string().optional(),
-          // Only meaningful on CreateTable steps: the seed rows this step proposes to insert
-          // after the table is created (ticket #48), persisted as the Step's plannedSeedRows
-          // and shown in the pre-approval schema preview alongside the table.
-          seed_rows: seedRowsObject.optional(),
-          // The named phase this step belongs to (ticket #21). Optional so an older planner
-          // response without one still validates — a missing phase falls back to a single
-          // derived group on the client.
-          phase: z
-            .string()
-            .optional()
-            .describe("Short human-readable phase name this step belongs to"),
-        }),
-      )
-      .min(1),
-  }),
-});
 
 export const CREATE_TABLE_SYSTEM_PROMPT = `You design the exact schema for one ToolJet DB table, based on the PRD and the specific step you've been asked to build.
 
@@ -373,7 +242,7 @@ If this table's rows must always reference rows in another table in this app (fo
 Use the optional indexes field when a table will be filtered, sorted, or joined on columns beyond the primary key — most commonly the columns that foreign keys point from. Each index lists the column(s) to index; set is_unique only when uniqueness must be enforced. Don't index a column that is already the table's primary key, and omit indexes when they wouldn't help.`;
 
 export const createTableTool = tool({
-  description: "Create a ToolJet DB table with the given name and columns.",
+  description: 'Create a ToolJet DB table with the given name and columns.',
   inputSchema: tableDefinitionObject,
 });
 
@@ -394,14 +263,13 @@ Rules:
 - Foreign keys and indexes are not part of this update: leave them as they are.`;
 
 export const updateTableTool = tool({
-  description:
-    "Replace an existing ToolJet DB table's column definition with the complete desired column list.",
+  description: "Replace an existing ToolJet DB table's column definition with the complete desired column list.",
   inputSchema: tableDefinitionObject.extend({
     renames: z
       .record(z.string(), z.string())
       .optional()
       .describe(
-        "Explicit old_column_name -> new_column_name renames. A renamed column keeps its data; omitting it from columns instead drops it and loses the data. A rename's old name must be a current column and must not also appear in columns.",
+        "Explicit old_column_name -> new_column_name renames. A renamed column keeps its data; omitting it from columns instead drops it and loses the data. A rename's old name must be a current column and must not also appear in columns."
       ),
   }),
 });
@@ -412,54 +280,52 @@ export const updateTableTool = tool({
 // succeed since no handler exists), an unsupported *component* type is retried: the model
 // picks it per attempt, so a later retry can self-correct to a supported one.
 const SUPPORTED_COMPONENT_TYPES = [
-  "Page",
-  "Table",
-  "Button",
-  "Text",
-  "TextInput",
-  "Container",
-  "Form",
-  "Chart",
-  "Image",
-  "Checkbox",
-  "Dropdown",
-  "Modal",
+  'Page',
+  'Table',
+  'Button',
+  'Text',
+  'TextInput',
+  'Container',
+  'Form',
+  'Chart',
+  'Image',
+  'Checkbox',
+  'Dropdown',
+  'Modal',
   // Wave 1 (plan increment 3) — simple widgets, ported from the full platform catalog.
-  "TextArea",
-  "PasswordInput",
-  "NumberInput",
-  "EmailInput",
-  "Link",
-  "Divider",
-  "Icon",
-  "StarRating",
-  "Statistics",
-  "Tags",
-  "CurrencyInput",
-  "PhoneInput",
-  "Datepicker",
+  'TextArea',
+  'PasswordInput',
+  'NumberInput',
+  'EmailInput',
+  'Link',
+  'Divider',
+  'Icon',
+  'StarRating',
+  'Statistics',
+  'Tags',
+  'CurrencyInput',
+  'PhoneInput',
+  'Datepicker',
   // Wave 2 (plan increment 3) — more complex widgets. Placed standalone/empty, same as
   // Container/Modal above: nesting children into them isn't wired up yet (increment 4),
   // except ModalV2 — its body/header/footer slots accept parentComponentId (increment 4
   // follow-up, see executeComponentStep's parentComponentId validation below).
-  "Tabs",
-  "Listview",
-  "IFrame",
-  "FilePicker",
-  "ModalV2",
-  "TreeSelect",
-  "Html",
-  "PopoverMenu",
-  "ButtonGroupV2",
-  "DatePickerV2",
-  "Chat",
+  'Tabs',
+  'Listview',
+  'IFrame',
+  'FilePicker',
+  'ModalV2',
+  'TreeSelect',
+  'Html',
+  'PopoverMenu',
+  'ButtonGroupV2',
+  'DatePickerV2',
+  'Chat',
 ] as const;
 
 // Component types that place a widget on an existing Page — everything except 'Page'
 // itself (which creates one). Used to validate `pageId` uniformly across all of them.
-const PAGE_WIDGET_TYPES = SUPPORTED_COMPONENT_TYPES.filter(
-  (type) => type !== "Page",
-);
+const PAGE_WIDGET_TYPES = SUPPORTED_COMPONENT_TYPES.filter((type) => type !== 'Page');
 
 const CREATE_COMPONENT_SYSTEM_PROMPT = `You create one UI element for this step, based on the PRD and whatever earlier steps in this plan already created (listed below, if any).
 
@@ -511,592 +377,281 @@ const PARENT_COMPONENT_ID_DESCRIPTION =
 
 const createComponentTool = tool({
   description:
-    "Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal, TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker, Tabs, Listview, IFrame, FilePicker, ModalV2, TreeSelect, Html, PopoverMenu, ButtonGroupV2, DatePickerV2, Chat) on an existing Page.",
-  inputSchema: z.discriminatedUnion("type", [
+    'Create a Page, or a widget (Table, Button, Text, TextInput, Container, Form, Chart, Image, Checkbox, Dropdown, Modal, TextArea, PasswordInput, NumberInput, EmailInput, Link, Divider, Icon, StarRating, Statistics, Tags, CurrencyInput, PhoneInput, Datepicker, Tabs, Listview, IFrame, FilePicker, ModalV2, TreeSelect, Html, PopoverMenu, ButtonGroupV2, DatePickerV2, Chat) on an existing Page.',
+  inputSchema: z.discriminatedUnion('type', [
     z.object({
-      type: z.literal("Page"),
+      type: z.literal('Page'),
       name: z.string().describe('Short page title, e.g. "Orders"'),
     }),
     z.object({
-      type: z.literal("Table"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this table on",
-        ),
-      title: z.string().describe("Table title shown in the UI"),
-      queryName: z
-        .string()
-        .describe(
-          "name of an already-created query (from context) this table should display",
-        ),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Table'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this table on'),
+      title: z.string().describe('Table title shown in the UI'),
+      queryName: z.string().describe('name of an already-created query (from context) this table should display'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Button"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this button on",
-        ),
-      text: z.string().describe("Button label text"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Button'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this button on'),
+      text: z.string().describe('Button label text'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Text"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this text on",
-        ),
-      text: z.string().describe("Text content to display"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Text'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this text on'),
+      text: z.string().describe('Text content to display'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("TextInput"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this input on",
-        ),
-      label: z.string().describe("Input label"),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('TextInput'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this input on'),
+      label: z.string().describe('Input label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Container"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this container on",
-        ),
-      title: z.string().describe("Short container title"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Container'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this container on'),
+      title: z.string().describe('Short container title'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Form"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this form on",
-        ),
+      type: z.literal('Form'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this form on'),
       tableId: z
         .string()
         .describe(
-          "id of an already-created ToolJet DB table (from context) this form creates records in or edits records in",
+          'id of an already-created ToolJet DB table (from context) this form creates records in or edits records in'
         ),
-      title: z.string().describe("Form title"),
+      title: z.string().describe('Form title'),
       mode: z
-        .enum(["create", "edit"])
-        .default("create")
+        .enum(['create', 'edit'])
+        .default('create')
         .describe(
-          "'create' (default) wires a create_row query to submit; 'edit' wires an update_rows query keyed on the referenced Table's selectedRow and pre-fills the fields from it",
+          "'create' (default) wires a create_row query to submit; 'edit' wires an update_rows query keyed on the referenced Table's selectedRow and pre-fills the fields from it"
         ),
       tableName: z
         .string()
         .optional()
         .describe(
-          "name of an already-created Table widget (from context) whose selectedRow this form binds to — required when mode='edit'",
+          "name of an already-created Table widget (from context) whose selectedRow this form binds to — required when mode='edit'"
         ),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Chart"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this chart on",
-        ),
-      title: z.string().describe("Chart title shown in the UI"),
+      type: z.literal('Chart'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this chart on'),
+      title: z.string().describe('Chart title shown in the UI'),
       queryName: z
         .string()
         .optional()
-        .describe(
-          "name of an already-created query (from context) whose data this chart should plot",
-        ),
-      chartType: z
-        .enum(["line", "bar", "pie"])
-        .default("line")
-        .describe("Chart rendering style; default 'line'"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+        .describe('name of an already-created query (from context) whose data this chart should plot'),
+      chartType: z.enum(['line', 'bar', 'pie']).default('line').describe("Chart rendering style; default 'line'"),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Image"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this image on",
-        ),
-      source: z.string().describe("Image source URL"),
-      alternativeText: z.string().optional().describe("Alt text for the image"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Image'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this image on'),
+      source: z.string().describe('Image source URL'),
+      alternativeText: z.string().optional().describe('Alt text for the image'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Checkbox"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this checkbox on",
-        ),
-      label: z.string().describe("Checkbox label"),
-      defaultChecked: z
-        .boolean()
-        .optional()
-        .describe("Whether the checkbox starts checked (default false)"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Checkbox'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this checkbox on'),
+      label: z.string().describe('Checkbox label'),
+      defaultChecked: z.boolean().optional().describe('Whether the checkbox starts checked (default false)'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Dropdown"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this dropdown on",
-        ),
-      label: z.string().describe("Dropdown label"),
-      options: z
-        .array(z.string())
-        .min(1)
-        .describe("The choices to offer, as short strings, in display order"),
-      placeholder: z
-        .string()
-        .optional()
-        .describe("Placeholder shown before a choice is made"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Dropdown'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this dropdown on'),
+      label: z.string().describe('Dropdown label'),
+      options: z.array(z.string()).min(1).describe('The choices to offer, as short strings, in display order'),
+      placeholder: z.string().optional().describe('Placeholder shown before a choice is made'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Modal"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this modal on",
-        ),
-      title: z.string().describe("Modal title shown in its title bar"),
-      triggerButtonLabel: z
-        .string()
-        .optional()
-        .describe("Label of the default trigger button that opens the modal"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Modal'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this modal on'),
+      title: z.string().describe('Modal title shown in its title bar'),
+      triggerButtonLabel: z.string().optional().describe('Label of the default trigger button that opens the modal'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("TextArea"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this textarea on",
-        ),
-      label: z.string().describe("Textarea label"),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      value: z.string().optional().describe("Default value"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('TextArea'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this textarea on'),
+      label: z.string().describe('Textarea label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      value: z.string().optional().describe('Default value'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("PasswordInput"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this password input on",
-        ),
-      label: z.string().describe("Input label"),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('PasswordInput'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this password input on'),
+      label: z.string().describe('Input label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("NumberInput"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this number input on",
-        ),
-      label: z.string().describe("Input label"),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      defaultValue: z.number().optional().describe("Default numeric value"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('NumberInput'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this number input on'),
+      label: z.string().describe('Input label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      defaultValue: z.number().optional().describe('Default numeric value'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("EmailInput"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this email input on",
-        ),
-      label: z.string().describe("Input label"),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('EmailInput'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this email input on'),
+      label: z.string().describe('Input label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Link"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this link on",
-        ),
-      text: z.string().describe("Link text"),
-      url: z.string().describe("Link target URL"),
-      openInNewTab: z
-        .boolean()
-        .optional()
-        .describe("Whether the link opens in a new tab (default true)"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Link'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this link on'),
+      text: z.string().describe('Link text'),
+      url: z.string().describe('Link target URL'),
+      openInNewTab: z.boolean().optional().describe('Whether the link opens in a new tab (default true)'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Divider"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this divider on",
-        ),
-      label: z
-        .string()
-        .optional()
-        .describe("Optional label shown on the divider"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Divider'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this divider on'),
+      label: z.string().optional().describe('Optional label shown on the divider'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Icon"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this icon on",
-        ),
+      type: z.literal('Icon'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this icon on'),
       icon: z.string().describe('Tabler icon name, e.g. "IconHome2"'),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("StarRating"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this rating on",
-        ),
-      label: z.string().describe("Rating label"),
-      maxRating: z.number().optional().describe("Number of stars (default 5)"),
-      defaultSelected: z
-        .number()
-        .optional()
-        .describe("Number of stars selected by default"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('StarRating'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this rating on'),
+      label: z.string().describe('Rating label'),
+      maxRating: z.number().optional().describe('Number of stars (default 5)'),
+      defaultSelected: z.number().optional().describe('Number of stars selected by default'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Statistics"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this stat tile on",
-        ),
+      type: z.literal('Statistics'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this stat tile on'),
       primaryLabel: z.string().describe("Primary value's label"),
-      primaryValue: z
-        .union([z.string(), z.number()])
-        .describe("Primary value to display"),
+      primaryValue: z.union([z.string(), z.number()]).describe('Primary value to display'),
       secondaryLabel: z.string().optional().describe("Secondary value's label"),
-      secondaryValue: z
-        .union([z.string(), z.number()])
-        .optional()
-        .describe("Secondary value to display"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      secondaryValue: z.union([z.string(), z.number()]).optional().describe('Secondary value to display'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Tags"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place these tags on",
-        ),
-      tags: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Short tag strings to display; omit for a demo set of 4 tags",
-        ),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Tags'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place these tags on'),
+      tags: z.array(z.string()).optional().describe('Short tag strings to display; omit for a demo set of 4 tags'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("CurrencyInput"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this currency input on",
-        ),
-      label: z.string().describe("Input label"),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      defaultValue: z.number().optional().describe("Default numeric value"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('CurrencyInput'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this currency input on'),
+      label: z.string().describe('Input label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      defaultValue: z.number().optional().describe('Default numeric value'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("PhoneInput"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this phone input on",
-        ),
-      label: z.string().describe("Input label"),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('PhoneInput'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this phone input on'),
+      label: z.string().describe('Input label'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Datepicker"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this date picker on",
-        ),
-      defaultValue: z
-        .string()
-        .optional()
-        .describe('Default date, matching `format`, e.g. "01/01/2022"'),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      format: z
-        .string()
-        .optional()
-        .describe('Date format string (default "DD/MM/YYYY")'),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Datepicker'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this date picker on'),
+      defaultValue: z.string().optional().describe('Default date, matching `format`, e.g. "01/01/2022"'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      format: z.string().optional().describe('Date format string (default "DD/MM/YYYY")'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Tabs"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this tab bar on",
-        ),
-      tabs: z
-        .array(z.string())
-        .optional()
-        .describe("Tab titles, in order; omit for 3 stock tabs"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Tabs'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this tab bar on'),
+      tabs: z.array(z.string()).optional().describe('Tab titles, in order; omit for 3 stock tabs'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Listview"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this list on",
-        ),
+      type: z.literal('Listview'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this list on'),
       queryName: z
         .string()
         .optional()
         .describe(
-          "name of an already-created query (from context) whose rows this list should display; omit for stock demo rows",
+          'name of an already-created query (from context) whose rows this list should display; omit for stock demo rows'
         ),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("IFrame"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this iframe on",
-        ),
-      source: z.string().describe("URL to embed"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('IFrame'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this iframe on'),
+      source: z.string().describe('URL to embed'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("FilePicker"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this file picker on",
-        ),
-      label: z.string().optional().describe("Label shown above the picker"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('FilePicker'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this file picker on'),
+      label: z.string().optional().describe('Label shown above the picker'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("ModalV2"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this modal on",
-        ),
-      triggerButtonLabel: z
-        .string()
-        .optional()
-        .describe("Label of the default trigger button that opens the modal"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('ModalV2'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this modal on'),
+      triggerButtonLabel: z.string().optional().describe('Label of the default trigger button that opens the modal'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("TreeSelect"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this tree select on",
-        ),
-      label: z.string().optional().describe("Field label"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('TreeSelect'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this tree select on'),
+      label: z.string().optional().describe('Field label'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Html"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this HTML block on",
-        ),
-      html: z.string().describe("Raw HTML to render"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('Html'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this HTML block on'),
+      html: z.string().describe('Raw HTML to render'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("PopoverMenu"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this menu on",
-        ),
-      label: z.string().describe("Menu trigger label"),
-      options: z
-        .array(z.string())
-        .optional()
-        .describe("Menu option labels, in order; omit for 3 stock options"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('PopoverMenu'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this menu on'),
+      label: z.string().describe('Menu trigger label'),
+      options: z.array(z.string()).optional().describe('Menu option labels, in order; omit for 3 stock options'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("ButtonGroupV2"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this button group on",
-        ),
-      label: z.string().describe("Button group label"),
-      options: z
-        .array(z.string())
-        .optional()
-        .describe("Button labels, in order; omit for 3 stock buttons"),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('ButtonGroupV2'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this button group on'),
+      label: z.string().describe('Button group label'),
+      options: z.array(z.string()).optional().describe('Button labels, in order; omit for 3 stock buttons'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("DatePickerV2"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this date picker on",
-        ),
-      label: z.string().describe("Field label"),
-      defaultValue: z
-        .string()
-        .optional()
-        .describe('Default date, matching `format`, e.g. "01/01/2022"'),
-      placeholder: z.string().optional().describe("Placeholder text"),
-      format: z
-        .string()
-        .optional()
-        .describe('Date format string (default "DD/MM/YYYY")'),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+      type: z.literal('DatePickerV2'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this date picker on'),
+      label: z.string().describe('Field label'),
+      defaultValue: z.string().optional().describe('Default date, matching `format`, e.g. "01/01/2022"'),
+      placeholder: z.string().optional().describe('Placeholder text'),
+      format: z.string().optional().describe('Date format string (default "DD/MM/YYYY")'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
     z.object({
-      type: z.literal("Chat"),
-      pageId: z
-        .string()
-        .describe(
-          "id of an already-created Page (from context) to place this chat UI on",
-        ),
+      type: z.literal('Chat'),
+      pageId: z.string().describe('id of an already-created Page (from context) to place this chat UI on'),
       chatTitle: z
         .string()
         .optional()
-        .describe(
-          "Chat panel title; experimental — decorative only, no working send/receive",
-        ),
-      parentComponentId: z
-        .string()
-        .optional()
-        .describe(PARENT_COMPONENT_ID_DESCRIPTION),
+        .describe('Chat panel title; experimental — decorative only, no working send/receive'),
+      parentComponentId: z.string().optional().describe(PARENT_COMPONENT_ID_DESCRIPTION),
     }),
   ]),
 });
@@ -1115,24 +670,24 @@ Call updateComponent exactly once:
 
 const updateComponentTool = tool({
   description:
-    "Change one or more properties/styles of an existing component, leaving everything else untouched. Return only the paths that changed.",
+    'Change one or more properties/styles of an existing component, leaving everything else untouched. Return only the paths that changed.',
   inputSchema: z.object({
     componentId: z
       .string()
       .describe(
-        "id of the existing component to change, copied from the 'Existing components already in this app' list",
+        "id of the existing component to change, copied from the 'Existing components already in this app' list"
       ),
     properties: z
       .record(z.string(), z.unknown())
       .optional()
       .describe(
-        "Only the properties that changed, as { propName: newValue }. Omit or leave empty when nothing here changes.",
+        'Only the properties that changed, as { propName: newValue }. Omit or leave empty when nothing here changes.'
       ),
     styles: z
       .record(z.string(), z.unknown())
       .optional()
       .describe(
-        "Only the styles that changed, as { styleName: newValue }. Omit or leave empty when nothing here changes.",
+        'Only the styles that changed, as { styleName: newValue }. Omit or leave empty when nothing here changes.'
       ),
   }),
 });
@@ -1145,13 +700,12 @@ const DELETE_COMPONENT_SYSTEM_PROMPT = `You remove ONE existing component for th
 Call deleteComponent exactly once with componentId set to the real id of the target component, copied verbatim from the list below. Never invent one, and never target a component this same plan is about to create with CreateComponent.`;
 
 const deleteComponentTool = tool({
-  description:
-    "Delete one existing component, along with any events attached to it.",
+  description: 'Delete one existing component, along with any events attached to it.',
   inputSchema: z.object({
     componentId: z
       .string()
       .describe(
-        "id of the existing component to delete, copied from the 'Existing components already in this app' list",
+        "id of the existing component to delete, copied from the 'Existing components already in this app' list"
       ),
   }),
 });
@@ -1165,18 +719,16 @@ Call moveComponent exactly once with componentId set to the real id of the compo
 
 const moveComponentTool = tool({
   description:
-    "Reparent one existing component into a different Container, Form or Listview, or back to the page root.",
+    'Reparent one existing component into a different Container, Form or Listview, or back to the page root.',
   inputSchema: z.object({
     componentId: z
       .string()
-      .describe(
-        "id of the existing component to move, copied from the 'Existing components already in this app' list",
-      ),
+      .describe("id of the existing component to move, copied from the 'Existing components already in this app' list"),
     newParentComponentId: z
       .string()
       .optional()
       .describe(
-        "id of the existing Container, Form or Listview to move it into, copied from the same list; omit to move it to the page root",
+        'id of the existing Container, Form or Listview to move it into, copied from the same list; omit to move it to the page root'
       ),
   }),
 });
@@ -1189,11 +741,9 @@ const DELETE_QUERY_SYSTEM_PROMPT = `You remove ONE existing query for this step,
 Call deleteQuery exactly once with queryName set to the exact name of the target query, copied verbatim from the list below.`;
 
 const deleteQueryTool = tool({
-  description: "Delete one query this plan created earlier.",
+  description: 'Delete one query this plan created earlier.',
   inputSchema: z.object({
-    queryName: z
-      .string()
-      .describe("name of an already-created query (from this plan) to delete"),
+    queryName: z.string().describe('name of an already-created query (from this plan) to delete'),
   }),
 });
 
@@ -1206,7 +756,7 @@ const CREATE_QUERY_SYSTEM_PROMPT = [
     .systemPrompt()
     .replace(
       / Always return json without starting or ending with the word JSON or any other comments\. Do not include any additional text or explanations\.$/,
-      "",
+      ''
     ),
   `You create one data query for this step, based on the PRD, the table(s) already created earlier in this plan, and the connected data sources listed below (if any).
 
@@ -1217,94 +767,66 @@ Call createQuery exactly once with a short snake_case query name (components wil
 - source "plugin" — only when this step is meant to call a connected plugin data source (Slack, Airtable, Google Sheets, and similar) the user has already connected. Give that source's real id, the exact operation value from its "operations" list in the connected data sources below, and any fields that operation needs as key/value pairs — the fields are plugin-specific and not listed here, so infer them from the operation's name and the PRD (e.g. Slack's "send_message" needs a channel and a message).
 
 Every id must come from the context below, never invented. Prefer ToolJet DB unless the PRD or this step clearly asks for data that lives in a connected source.`,
-].join("\n\n");
+].join('\n\n');
 
 // Discriminated on `source` rather than left as one loose object, for the same reason
 // createComponentTool is: the two branches share only a name, and a single flat schema would
 // let the model return an SQL string with a ToolJet DB table id, which is unbuildable.
 const createQueryTool = tool({
   description:
-    "Create a query against an existing ToolJet DB table, or against a connected SQL, REST API, or plugin data source.",
-  inputSchema: z.discriminatedUnion("source", [
+    'Create a query against an existing ToolJet DB table, or against a connected SQL, REST API, or plugin data source.',
+  inputSchema: z.discriminatedUnion('source', [
     z.object({
-      source: z.literal("tooljetdb"),
+      source: z.literal('tooljetdb'),
       name: z
         .string()
-        .describe(
-          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
-        ),
-      table_id: z
-        .string()
-        .describe("id of an already-created ToolJet DB table (from context)"),
+        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
+      table_id: z.string().describe('id of an already-created ToolJet DB table (from context)'),
     }),
     z.object({
-      source: z.literal("sql"),
+      source: z.literal('sql'),
       name: z
         .string()
-        .describe(
-          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
-        ),
-      data_source_id: z
-        .string()
-        .describe("id of a connected data source (from the list in context)"),
+        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
+      data_source_id: z.string().describe('id of a connected data source (from the list in context)'),
       sql: z
         .string()
-        .describe(
-          "One SELECT statement against a table that data source has, e.g. SELECT * FROM orders LIMIT 100",
-        ),
+        .describe('One SELECT statement against a table that data source has, e.g. SELECT * FROM orders LIMIT 100'),
     }),
     z.object({
-      source: z.literal("restapi"),
+      source: z.literal('restapi'),
       name: z
         .string()
-        .describe(
-          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
-        ),
-      data_source_id: z
-        .string()
-        .describe("id of a connected REST API data source (from the list in context)"),
-      method: z
-        .enum(["get", "post", "put", "patch", "delete"])
-        .default("get")
-        .describe("HTTP method"),
+        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
+      data_source_id: z.string().describe('id of a connected REST API data source (from the list in context)'),
+      method: z.enum(['get', 'post', 'put', 'patch', 'delete']).default('get').describe('HTTP method'),
       url: z
         .string()
-        .describe(
-          "Request path relative to the data source's base URL, e.g. /users/{{components.userId.value}}",
-        ),
+        .describe("Request path relative to the data source's base URL, e.g. /users/{{components.userId.value}}"),
       headers: z
         .array(z.object({ key: z.string(), value: z.string() }))
         .optional()
-        .describe("Optional request headers"),
+        .describe('Optional request headers'),
       params: z
         .array(z.object({ key: z.string(), value: z.string() }))
         .optional()
-        .describe("Optional URL query parameters"),
-      body: z
-        .string()
-        .optional()
-        .describe("Optional raw request body, e.g. a JSON string, for post/put/patch"),
+        .describe('Optional URL query parameters'),
+      body: z.string().optional().describe('Optional raw request body, e.g. a JSON string, for post/put/patch'),
     }),
     z.object({
-      source: z.literal("plugin"),
+      source: z.literal('plugin'),
       name: z
         .string()
-        .describe(
-          "snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}",
-        ),
-      data_source_id: z
-        .string()
-        .describe("id of a connected plugin data source (from the list in context)"),
+        .describe('snake_case query name, unique within this app — referenced elsewhere as {{queries.<name>.data}}'),
+      data_source_id: z.string().describe('id of a connected plugin data source (from the list in context)'),
       operation: z
         .string()
-        .describe(
-          "one of that data source's operation values, copied verbatim from its \"operations\" list in context",
-        ),
+        .describe('one of that data source\'s operation values, copied verbatim from its "operations" list in context'),
       options: z
         .array(z.object({ key: z.string(), value: z.string() }))
         .optional()
         .describe(
-          "the operation's own fields as key/value pairs (plugin- and operation-specific, e.g. channel/message for Slack's send_message)",
+          "the operation's own fields as key/value pairs (plugin- and operation-specific, e.g. channel/message for Slack's send_message)"
         ),
     }),
   ]),
@@ -1322,16 +844,12 @@ const NO_TABLES_IN_EXTERNAL_SOURCES =
 const withConnectedDataSources = (
   body: string,
   dataSources: QueryableDataSource[],
-  { forPlanning = false }: { forPlanning?: boolean } = {},
+  { forPlanning = false }: { forPlanning?: boolean } = {}
 ): string => {
   const connectedSources = renderConnectedDataSources(dataSources);
   if (!connectedSources) return body;
 
-  return [
-    body,
-    connectedSources,
-    ...(forPlanning ? [NO_TABLES_IN_EXTERNAL_SOURCES] : []),
-  ].join("\n\n");
+  return [body, connectedSources, ...(forPlanning ? [NO_TABLES_IN_EXTERNAL_SOURCES] : [])].join('\n\n');
 };
 
 // SQL keywords that must not appear in a generated query, and the single-statement
@@ -1364,16 +882,10 @@ Rules:
 - explanation is one short plain-language sentence, written for someone who does not know why their binding broke. Do not restate the raw error.`;
 
 const proposeFixTool = tool({
-  description: "Propose a corrected value for the failing component property.",
+  description: 'Propose a corrected value for the failing component property.',
   inputSchema: z.object({
-    fixedValue: z
-      .string()
-      .describe(
-        "The complete replacement value for the property field, written verbatim into it",
-      ),
-    explanation: z
-      .string()
-      .describe("One short plain-language sentence explaining what was wrong"),
+    fixedValue: z.string().describe('The complete replacement value for the property field, written verbatim into it'),
+    explanation: z.string().describe('One short plain-language sentence explaining what was wrong'),
   }),
 });
 
@@ -1408,16 +920,10 @@ Rules:
 - explanation is one short plain-language sentence about what the code does, written for someone who is not going to read it line by line. Do not restate the code.`;
 
 const writeCodeTool = tool({
-  description: "Return the complete query body the user described.",
+  description: 'Return the complete query body the user described.',
   inputSchema: z.object({
-    code: z
-      .string()
-      .describe(
-        "The complete replacement body for the editor, in the editor's language",
-      ),
-    explanation: z
-      .string()
-      .describe("One short plain-language sentence about what the code does"),
+    code: z.string().describe("The complete replacement body for the editor, in the editor's language"),
+    explanation: z.string().describe('One short plain-language sentence about what the code does'),
   }),
 });
 
@@ -1436,19 +942,17 @@ const CURRENT_CODE_PROMPT_LIMIT = 20000;
 // absent or unrecognised one defaults to javascript rather than being passed through: `runjs`
 // is the overwhelmingly common surface, and a body silently generated in the wrong language is
 // not a degraded answer, it is an unusable one.
-const SUPPORTED_COPILOT_LANGUAGES = ["javascript", "python"];
-const DEFAULT_COPILOT_LANGUAGE = "javascript";
+const SUPPORTED_COPILOT_LANGUAGES = ['javascript', 'python'];
+const DEFAULT_COPILOT_LANGUAGE = 'javascript';
 
 // The fallback value arrives as parsed JSON from the request body, so it can't be circular —
 // but it can be large (a whole query result standing in for a Table's `data`), and a fix
 // prompt has no reason to carry more than enough of it to show the expected shape.
 const FALLBACK_VALUE_PROMPT_LIMIT = 500;
 
-const isNonEmptyString = (value: any): value is string =>
-  typeof value === "string" && value.trim().length > 0;
+const isNonEmptyString = (value: any): value is string => typeof value === 'string' && value.trim().length > 0;
 
-const isCodeTooLongToShow = (code: string): boolean =>
-  code.length > CURRENT_CODE_PROMPT_LIMIT;
+const isCodeTooLongToShow = (code: string): boolean => code.length > CURRENT_CODE_PROMPT_LIMIT;
 
 const summarizeFallbackValue = (value: any): string => {
   const serialized = JSON.stringify(value) ?? String(value);
@@ -1471,24 +975,15 @@ Rules:
 - One GenerateEvent attaches exactly one handler. If the PRD needs several events on the same target, that is several GenerateEvent steps.`;
 
 const generateEventTool = tool({
-  description:
-    "Attach one event handler to a component or query that already exists in this plan.",
+  description: 'Attach one event handler to a component or query that already exists in this plan.',
   inputSchema: z.object({
-    targetName: z
-      .string()
-      .describe("Exact name of the component or query to attach the event to"),
-    eventId: z
-      .string()
-      .describe("The event to react to, from the catalog (e.g. onClick)"),
-    actionId: z
-      .string()
-      .describe("The action to run, from the catalog (e.g. show-modal)"),
+    targetName: z.string().describe('Exact name of the component or query to attach the event to'),
+    eventId: z.string().describe('The event to react to, from the catalog (e.g. onClick)'),
+    actionId: z.string().describe('The action to run, from the catalog (e.g. show-modal)'),
     params: z
       .record(z.string(), z.any())
       .optional()
-      .describe(
-        "Action-specific keys exactly as the catalog lists them for this actionId",
-      ),
+      .describe('Action-specific keys exactly as the catalog lists them for this actionId'),
   }),
 });
 
@@ -1515,16 +1010,16 @@ export class AiService implements IAiService {
   private readonly logger = new Logger(AiService.name);
 
   private readonly SUPPORTED_STEP_TYPES: StepType[] = [
-    "CreateTable",
-    "UpdateTable",
-    "CreateComponent",
-    "CreateQuery",
-    "UpdateComponent",
-    "DeleteComponent",
-    "MoveComponent",
-    "UpdateQuery",
-    "DeleteQuery",
-    "GenerateEvent",
+    'CreateTable',
+    'UpdateTable',
+    'CreateComponent',
+    'CreateQuery',
+    'UpdateComponent',
+    'DeleteComponent',
+    'MoveComponent',
+    'UpdateQuery',
+    'DeleteQuery',
+    'GenerateEvent',
   ];
   private readonly MAX_STEP_ATTEMPTS = 3; // 1 initial attempt + 2 retries, per ticket acceptance criteria
 
@@ -1556,7 +1051,7 @@ export class AiService implements IAiService {
     private readonly aiActiveRunService: AiActiveRunService,
     private readonly aiFeasibilityService: AiFeasibilityService,
     private readonly generationEngineClient: GenerationEngineClient,
-    private readonly generationEnginePipelineClient: GenerationEnginePipelineClient,
+    private readonly generationEnginePipelineClient: GenerationEnginePipelineClient
   ) {}
 
   /**
@@ -1568,35 +1063,25 @@ export class AiService implements IAiService {
     conversationId: string,
     userId: string,
     organizationId: string,
-    response: Response,
+    response: Response
   ): Promise<() => void> {
-    await this.aiActiveRunService.beginRun(
-      conversationId,
-      userId,
-      organizationId,
-    );
+    await this.aiActiveRunService.beginRun(conversationId, userId, organizationId);
 
     const heartbeat = setInterval(() => {
       this.aiActiveRunService.touchRun(conversationId).catch((error) => {
-        this.logger.error(
-          `[activeRun] heartbeat failed for conversationId=${conversationId}`,
-          error?.message,
-        );
+        this.logger.error(`[activeRun] heartbeat failed for conversationId=${conversationId}`, error?.message);
       });
     }, 5000);
 
     const cleanup = () => {
       clearInterval(heartbeat);
       this.aiActiveRunService.endRun(conversationId).catch((error) => {
-        this.logger.error(
-          `[activeRun] endRun failed for conversationId=${conversationId}`,
-          error?.message,
-        );
+        this.logger.error(`[activeRun] endRun failed for conversationId=${conversationId}`, error?.message);
       });
     };
 
-    response.once("close", cleanup);
-    response.once("finish", cleanup);
+    response.once('close', cleanup);
+    response.once('finish', cleanup);
 
     return cleanup;
   }
@@ -1628,16 +1113,15 @@ export class AiService implements IAiService {
   private async loadConversationOfType(
     conversationId: string,
     expectedType: ConversationType,
-    userId: string,
+    userId: string
   ): Promise<AiConversation> {
-    const conversation =
-      await this.aiConversationRepository.findById(conversationId);
+    const conversation = await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException("Conversation not found");
+      throw new NotFoundException('Conversation not found');
     }
     if (conversation.conversationType !== expectedType) {
       throw new BadRequestException(
-        `This action is only available in a "${expectedType}" conversation, but this one is "${conversation.conversationType}"`,
+        `This action is only available in a "${expectedType}" conversation, but this one is "${conversation.conversationType}"`
       );
     }
     return conversation;
@@ -1651,38 +1135,34 @@ export class AiService implements IAiService {
     user: { name: string; greeting: string; description: string };
     suggestions: Array<{ icon: string; label: string; action: string }>;
   }> {
-    const name = firstName || "there";
+    const name = firstName || 'there';
 
     return {
       user: {
         name,
         greeting: `Hi ${name}, what would you like to build today?`,
-        description:
-          "Describe your app idea and I will help you turn it into a working ToolJet app.",
+        description: 'Describe your app idea and I will help you turn it into a working ToolJet app.',
       },
       suggestions: [
         {
-          icon: "inventory",
-          label: "Inventory tracker",
-          action:
-            "Build an inventory tracker for a small warehouse with low-stock alerts.",
+          icon: 'inventory',
+          label: 'Inventory tracker',
+          action: 'Build an inventory tracker for a small warehouse with low-stock alerts.',
         },
         {
-          icon: "crm",
-          label: "Customer CRM",
-          action:
-            "Build a simple CRM to track leads, contacts, and deal stages.",
+          icon: 'crm',
+          label: 'Customer CRM',
+          action: 'Build a simple CRM to track leads, contacts, and deal stages.',
         },
         {
-          icon: "dashboard",
-          label: "Support dashboard",
-          action:
-            "Build a support ticket dashboard for my team with status filters.",
+          icon: 'dashboard',
+          label: 'Support dashboard',
+          action: 'Build a support ticket dashboard for my team with status filters.',
         },
         {
-          icon: "form",
-          label: "Approval workflow",
-          action: "Build an approval workflow for employee expense requests.",
+          icon: 'form',
+          label: 'Approval workflow',
+          action: 'Build an approval workflow for employee expense requests.',
         },
       ],
     };
@@ -1693,37 +1173,29 @@ export class AiService implements IAiService {
    * off AiConversationMessage, one row per message — not per user, so a second vote just
    * overwrites the first rather than creating a duplicate).
    */
-  async voteAiMessage(
-    messageId: string,
-    voteType: string,
-    userId: string,
-  ): Promise<any> {
+  async voteAiMessage(messageId: string, voteType: string, userId: string): Promise<any> {
     if (!messageId || !voteType) {
-      throw new BadRequestException("messageId and voteType are required");
+      throw new BadRequestException('messageId and voteType are required');
     }
-    if (voteType !== "up" && voteType !== "down") {
+    if (voteType !== 'up' && voteType !== 'down') {
       throw new BadRequestException('voteType must be "up" or "down"');
     }
 
-    const message =
-      await this.aiConversationMessageRepository.findMessageById(messageId);
+    const message = await this.aiConversationMessageRepository.findMessageById(messageId);
     if (!message) {
-      throw new NotFoundException("Message not found");
+      throw new NotFoundException('Message not found');
     }
 
     // A vote is written against a conversation, so ownership is verified through it even though
     // the endpoint takes the message id directly (otherwise knowing a message UUID lets any user
     // attach a vote row to someone else's thread).
-    const conversation = await this.aiConversationRepository.findById(
-      message.aiConversationId,
-    );
+    const conversation = await this.aiConversationRepository.findById(message.aiConversationId);
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException("Message not found");
+      throw new NotFoundException('Message not found');
     }
 
-    const vote = voteType as "up" | "down";
-    const existingVote =
-      await this.aiResponseVoteRepository.findByMessageId(messageId);
+    const vote = voteType as 'up' | 'down';
+    const existingVote = await this.aiResponseVoteRepository.findByMessageId(messageId);
     if (existingVote) {
       await this.aiResponseVoteRepository.updateOne(existingVote.id, {
         voteType: vote,
@@ -1764,49 +1236,31 @@ export class AiService implements IAiService {
     user: User,
     userPermissions: UserPermissions,
     response: Response,
-    dataSourceId?: string,
+    dataSourceId?: string
   ): Promise<any> {
     if (!conversationId || !prd) {
-      throw new BadRequestException("conversationId and prd are required");
+      throw new BadRequestException('conversationId and prd are required');
     }
     const organizationId = user.organizationId;
 
     // Raised before any SSE header is written, so a Learn conversation's caller gets a real
     // non-2xx + JSON body (which the client's `onopen` handler surfaces) rather than a stream
     // that opens and then immediately errors.
-    const conversation = await this.loadConversationOfType(
-      conversationId,
-      "generate",
-      user.id,
-    );
+    const conversation = await this.loadConversationOfType(conversationId, 'generate', user.id);
 
-    const conversationMessages =
-      await this.aiConversationMessageRepository.findLatestByConversationId(
-        conversationId,
-      );
-    const prdMessage = [...conversationMessages]
-      .reverse()
-      .find((message) => message.messageType === "ai");
+    const conversationMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const prdMessage = [...conversationMessages].reverse().find((message) => message.messageType === 'ai');
     if (!prdMessage) {
-      throw new BadRequestException("No PRD message found to approve");
+      throw new BadRequestException('No PRD message found to approve');
     }
 
     this.aiUtilService.initSSE(response);
     this.aiUtilService.startHeartbeat(response);
-    const endActiveRun = await this.beginActiveRun(
-      conversation.id,
-      user.id,
-      user.organizationId,
-      response,
-    );
+    const endActiveRun = await this.beginActiveRun(conversation.id, user.id, user.organizationId, response);
 
     try {
       const appVersionId = await this.resolveAppVersionId(conversation.appId);
-      const dataSources =
-        await this.dataSourceInventoryService.listQueryableSources(
-          user,
-          userPermissions,
-        );
+      const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
       // Ticket #20: Steps persisted by an earlier previewPlan call for this same PRD message
       // are reused as-is — what the user previewed (including each CreateTable step's planned
       // table definition) is exactly what executes. A PRD refined after the preview produces a
@@ -1817,18 +1271,16 @@ export class AiService implements IAiService {
         organizationId,
         dataSources,
         appVersionId,
-        prd,
+        prd
       );
       // ADR-0018: when the user explicitly selects an external source, CreateTable steps
       // (which only make sense against ToolJet DB) are stripped from the plan before it is
       // persisted or executed. The planner is also told this constraint via the connected-
       // sources block, but the filter is the safety net — the planner can still propose one
       // in edge cases (e.g. when the prompt is long and the constraint is buried).
-      const filteredSteps = dataSourceId
-        ? steps.filter((step) => step.type !== "CreateTable")
-        : steps;
+      const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
 
-      this.aiUtilService.sendSSE(response, "plan", {
+      this.aiUtilService.sendSSE(response, 'plan', {
         steps: this.mapStepsForWire(filteredSteps),
       });
 
@@ -1847,19 +1299,12 @@ export class AiService implements IAiService {
         // Ticket #21: skip is checkpoint-based — a step the user skipped (while it was
         // pending, e.g. during an earlier step's execution) is detected here and never
         // starts, so no Artifact is made for it.
-        if (
-          (await this.stepRepository.findById(step.id))?.status === "skipped"
-        ) {
-          this.sendStepSkippedSSE(
-            response,
-            index,
-            filteredSteps.length,
-            step.description,
-          );
+        if ((await this.stepRepository.findById(step.id))?.status === 'skipped') {
+          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
           continue;
         }
-        await this.stepRepository.updateOne(step.id, { status: "running" });
-        this.aiUtilService.sendSSE(response, "step-progress", {
+        await this.stepRepository.updateOne(step.id, { status: 'running' });
+        this.aiUtilService.sendSSE(response, 'step-progress', {
           step: index + 1,
           of: filteredSteps.length,
           description: step.description,
@@ -1874,24 +1319,11 @@ export class AiService implements IAiService {
         // same calls rewindStep (ADR-0008) makes, so a skipped step never leaves anything
         // behind. Skip wins over retry (ticket #4): even a step that succeeded after all
         // MAX_STEP_ATTEMPTS is discarded here.
-        if (
-          outcome.skipped ||
-          (await this.stepRepository.findById(step.id))?.status === "skipped"
-        ) {
+        if (outcome.skipped || (await this.stepRepository.findById(step.id))?.status === 'skipped') {
           if (outcome.success && outcome.artifact) {
-            await this.discardStepArtifact(
-              step,
-              appVersionId,
-              organizationId,
-              outcome.artifact,
-            );
+            await this.discardStepArtifact(step, appVersionId, organizationId, outcome.artifact);
           }
-          this.sendStepSkippedSSE(
-            response,
-            index,
-            filteredSteps.length,
-            step.description,
-          );
+          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
           continue;
         }
 
@@ -1900,7 +1332,7 @@ export class AiService implements IAiService {
             type: step.type,
             artifact: outcome.artifact,
           });
-          this.aiUtilService.sendSSE(response, "step-done", {
+          this.aiUtilService.sendSSE(response, 'step-done', {
             step: index + 1,
             of: filteredSteps.length,
             artifact: outcome.artifact,
@@ -1908,20 +1340,19 @@ export class AiService implements IAiService {
           continue;
         }
 
-        const failureMessage =
-          await this.aiConversationMessageRepository.createOne({
-            aiConversationId: conversationId,
-            messageType: "ai",
-            content: `The build stopped at step ${index + 1} of ${filteredSteps.length} ("${step.description}"): ${outcome.errorMessage}`,
-            parentId: prdMessage.id,
-            isLatest: true,
-          });
-        this.aiUtilService.sendSSE(response, "step-failed", {
+        const failureMessage = await this.aiConversationMessageRepository.createOne({
+          aiConversationId: conversationId,
+          messageType: 'ai',
+          content: `The build stopped at step ${index + 1} of ${filteredSteps.length} ("${step.description}"): ${outcome.errorMessage}`,
+          parentId: prdMessage.id,
+          isLatest: true,
+        });
+        this.aiUtilService.sendSSE(response, 'step-failed', {
           step: index + 1,
           of: filteredSteps.length,
           message: outcome.errorMessage,
         });
-        this.aiUtilService.sendSSE(response, "done", {
+        this.aiUtilService.sendSSE(response, 'done', {
           message: failureMessage,
           succeeded: context.priorResults.length,
           total: filteredSteps.length,
@@ -1930,18 +1361,15 @@ export class AiService implements IAiService {
         return;
       }
 
-      this.aiUtilService.sendSSE(response, "done", {
+      this.aiUtilService.sendSSE(response, 'done', {
         succeeded: context.priorResults.length,
         total: filteredSteps.length,
       });
       response.end();
     } catch (error) {
-      this.logger.error(
-        `[approvePrd] conversationId=${conversationId} failed: ${error?.message}`,
-        error?.stack,
-      );
-      this.aiUtilService.sendSSE(response, "error", {
-        message: error?.message || "Failed to build the plan",
+      this.logger.error(`[approvePrd] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
+      this.aiUtilService.sendSSE(response, 'error', {
+        message: error?.message || 'Failed to build the plan',
       });
       response.end();
     } finally {
@@ -1957,53 +1385,33 @@ export class AiService implements IAiService {
    * re-running the planner, so the previewed plan is the executed plan. Previewing twice is
    * idempotent: the second call is served from the first call's pending Steps.
    */
-  async previewPlan(
-    conversationId: string,
-    user: User,
-    userPermissions: UserPermissions,
-    dataSourceId?: string,
-  ) {
+  async previewPlan(conversationId: string, user: User, userPermissions: UserPermissions, dataSourceId?: string) {
     if (!conversationId) {
-      throw new BadRequestException("conversationId is required");
+      throw new BadRequestException('conversationId is required');
     }
     // Same rules as approvePrd: generate conversations only, caller-owned, PRD message required.
-    const conversation = await this.loadConversationOfType(
-      conversationId,
-      "generate",
-      user.id,
-    );
+    const conversation = await this.loadConversationOfType(conversationId, 'generate', user.id);
 
     const organizationId = user.organizationId;
     const appVersionId = await this.resolveAppVersionId(conversation.appId);
-    const conversationMessages =
-      await this.aiConversationMessageRepository.findLatestByConversationId(
-        conversationId,
-      );
-    const prdMessage = [...conversationMessages]
-      .reverse()
-      .find((message) => message.messageType === "ai");
+    const conversationMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const prdMessage = [...conversationMessages].reverse().find((message) => message.messageType === 'ai');
     if (!prdMessage) {
-      throw new BadRequestException("No PRD message found to plan from");
+      throw new BadRequestException('No PRD message found to plan from');
     }
 
-    const dataSources =
-      await this.dataSourceInventoryService.listQueryableSources(
-        user,
-        userPermissions,
-      );
+    const dataSources = await this.dataSourceInventoryService.listQueryableSources(user, userPermissions);
     const steps = await this.resolvePlanForPrdMessage(
       conversationId,
       prdMessage,
       organizationId,
       dataSources,
-      appVersionId,
+      appVersionId
     );
 
     // Same ADR-0018 safety net as approvePrd: with an external source selected, CreateTable
     // steps (and their planned tables) are stripped from what the preview shows.
-    const filteredSteps = dataSourceId
-      ? steps.filter((step) => step.type !== "CreateTable")
-      : steps;
+    const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
     return { steps: this.mapStepsForWire(filteredSteps) };
   }
 
@@ -2011,14 +1419,10 @@ export class AiService implements IAiService {
    * Returns the active run for a conversation, or null if none. Ownership is enforced so a
    * caller cannot probe another user's conversations.
    */
-  async getActiveRun(
-    conversationId: string,
-    userId: string,
-  ): Promise<{ active: boolean; startedAt?: Date }> {
-    const conversation =
-      await this.aiConversationRepository.findById(conversationId);
+  async getActiveRun(conversationId: string, userId: string): Promise<{ active: boolean; startedAt?: Date }> {
+    const conversation = await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException("Conversation not found");
+      throw new NotFoundException('Conversation not found');
     }
 
     const run = await this.aiActiveRunService.findActiveRun(conversationId);
@@ -2041,12 +1445,9 @@ export class AiService implements IAiService {
     organizationId: string,
     dataSources: QueryableDataSource[],
     appVersionId: string,
-    prd?: string,
+    prd?: string
   ): Promise<Step[]> {
-    let steps = await this.stepRepository.findPendingForMessage(
-      conversationId,
-      prdMessage.id,
-    );
+    let steps = await this.stepRepository.findPendingForMessage(conversationId, prdMessage.id);
     if (!steps.length) {
       steps = await this.generateStepPlan(
         prd ?? prdMessage.content,
@@ -2054,7 +1455,7 @@ export class AiService implements IAiService {
         prdMessage.id,
         organizationId,
         dataSources,
-        appVersionId,
+        appVersionId
       );
     }
     return steps;
@@ -2099,12 +1500,9 @@ export class AiService implements IAiService {
   private async resolveAppVersionId(appId: string): Promise<string> {
     const versions = await this.versionRepository.getAllVersions(appId);
     if (!versions?.length) {
-      throw new Error("This app has no version to work with");
+      throw new Error('This app has no version to work with');
     }
-    const sorted = [...versions].sort(
-      (a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    );
+    const sorted = [...versions].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     return sorted[0].id;
   }
 
@@ -2122,26 +1520,23 @@ export class AiService implements IAiService {
       system: string;
       messages: Array<{ role: string; content: string }>;
     },
-    logContext: string,
+    logContext: string
   ): Promise<{
     system: string;
     messages: Array<{ role: string; content: string }>;
   }> {
-    const { messages: fitted, truncated } =
-      await this.aiUtilService.fitMessagesToContextWindowForOrg(
-        organizationId,
-        [{ role: "system", content: prompt.system }, ...prompt.messages],
-      );
+    const { messages: fitted, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(organizationId, [
+      { role: 'system', content: prompt.system },
+      ...prompt.messages,
+    ]);
     if (truncated.length) {
-      this.logger.warn(
-        `[${logContext}] context truncated: ${JSON.stringify(truncated)}`,
-      );
+      this.logger.warn(`[${logContext}] context truncated: ${JSON.stringify(truncated)}`);
     }
     // Pass 1 of the fitter always keeps the first system message (possibly trimmed to an
     // empty string), so the destructure below never loses the prompt to a dropped message.
     const [systemMessage, ...rest] = fitted;
     return {
-      system: systemMessage?.content ?? "",
+      system: systemMessage?.content ?? '',
       messages: rest,
     };
   }
@@ -2156,116 +1551,43 @@ export class AiService implements IAiService {
     messageId: string,
     organizationId: string,
     dataSources: QueryableDataSource[],
-    appVersionId: string,
+    appVersionId: string
   ): Promise<Step[]> {
-    // ADR-0048: when the generation engine is deployed, the approved PRD is planned by
-    // the engine's POST /generate/steps (its lld -> feature-planner -> per-entity ->
-    // step-plan -> step-generation -> evaluate pipeline) instead of the in-process
-    // AIGateway planner. The engine only proposes JSON steps — persistence below is the
-    // exact same contract; any engine failure (unreachable, non-200, malformed/empty
-    // plan, no effective org LLM config) is logged and falls back to the in-process
-    // path rather than failing the approval (silent fallback, ADR-0048 decision 5).
-    if (this.generationEnginePipelineClient.isConfigured()) {
-      let engineResult: Awaited<
-        ReturnType<typeof this.generationEnginePipelineClient.generateSteps>
-      > | undefined;
-      try {
-        const componentIndex = await this.appInventoryService.renderComponentIndex(appVersionId);
-        const result = await this.generationEnginePipelineClient.generateSteps(
-          prd,
-          undefined,
-          componentIndex,
-          organizationId
-        );
-        if (!result.steps?.length) {
-          throw new Error("The engine proposed an empty build plan");
-        }
-        // A malformed element shape would persist description-less steps rather than
-        // trip the documented "malformed plan" fallback (code-review finding).
-        if (
-          result.steps.some(
-            (step) => typeof step?.type !== "string" || typeof step?.description !== "string"
-          )
-        ) {
-          throw new Error("The engine returned a malformed step plan");
-        }
-        engineResult = result;
-      } catch (error: any) {
-        // Only engine-call failures fall back. Persistence errors are deliberately
-        // outside this catch: falling back on those would re-plan and double-persist
-        // steps that were already inserted (code-review finding).
-        this.logger.warn(
-          `[AiService] generation-engine step planning failed, falling back in-process: ${error?.message}`
-        );
-      }
-      if (engineResult) {
-        return await this.persistProposedSteps(
-          engineResult.steps.map((step) => ({
-            ...step,
-            type: step.type as StepType,
-            table: step.table as TableDefinition | undefined,
-          })),
-          conversationId,
-          messageId,
-          dataSources,
-          engineResult.generatedSteps
-        );
-      }
+    // Hard switch (ADR-0052): the engine's POST /generate/steps (its lld ->
+    // feature-planner -> per-entity -> step-plan -> step-generation -> evaluate
+    // pipeline) is now the only planner. A missing/unreachable engine, or a
+    // non-200/malformed/empty plan, raises ServiceUnavailableException instead of
+    // falling back to the old in-process AIGateway planner (ADR-0048, superseded).
+    if (!this.generationEnginePipelineClient.isConfigured()) {
+      throw new ServiceUnavailableException('Generation engine is not configured (GENERATION_ENGINE_URL unset)');
+    }
+    const componentIndex = await this.appInventoryService.renderComponentIndex(appVersionId);
+    let result: Awaited<ReturnType<typeof this.generationEnginePipelineClient.generateSteps>>;
+    try {
+      result = await this.generationEnginePipelineClient.generateSteps(prd, undefined, componentIndex, organizationId);
+    } catch (error: any) {
+      throw new ServiceUnavailableException(`Generation engine step planning failed: ${error?.message}`);
+    }
+    if (!result?.steps?.length) {
+      throw new ServiceUnavailableException('The engine proposed an empty build plan');
+    }
+    // A malformed element shape would persist description-less steps rather than
+    // trip this guard (code-review finding, carried over from the fallback path).
+    if (result.steps.some((step) => typeof step?.type !== 'string' || typeof step?.description !== 'string')) {
+      throw new ServiceUnavailableException('The engine returned a malformed step plan');
     }
 
-    // Ticket #66: the planner needs to know an UpdateComponent target actually exists before
-    // it can propose one — same "never invent an id" contract as the connected-sources block
-    // below.
-    const componentIndex =
-      await this.appInventoryService.renderComponentIndex(appVersionId);
-    const prompt = await this.budgetPromptForOrg(
-      organizationId,
-      {
-        system: STEP_PLAN_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: withConnectedDataSources(
-              `${prd}\n\n${componentIndex}`,
-              dataSources,
-              { forPlanning: true },
-            ),
-          },
-        ],
-      },
-      "generateStepPlan",
+    return await this.persistProposedSteps(
+      result.steps.map((step) => ({
+        ...step,
+        type: step.type as StepType,
+        table: step.table as TableDefinition | undefined,
+      })),
+      conversationId,
+      messageId,
+      dataSources,
+      result.generatedSteps
     );
-    const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-plan",
-      {
-        ...prompt,
-        tools: { proposeStepPlan: proposeStepPlanTool },
-        toolChoice: { type: "tool", toolName: "proposeStepPlan" },
-      },
-      organizationId,
-    );
-
-    const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== "proposeStepPlan") {
-      throw new Error("The assistant did not propose a build plan");
-    }
-
-    const { steps: proposedSteps } = call.args as {
-      steps: Array<{
-        type: StepType;
-        description: string;
-        table?: TableDefinition;
-        data_source_id?: string;
-        seed_rows?: any[];
-        phase?: string;
-      }>;
-    };
-    if (!proposedSteps?.length) {
-      throw new Error("The assistant proposed an empty build plan");
-    }
-
-    return this.persistProposedSteps(proposedSteps, conversationId, messageId, dataSources);
   }
 
   /**
@@ -2301,10 +1623,7 @@ export class AiService implements IAiService {
       // malformed one is dropped rather than persisted — execution then falls back to the
       // per-step LLM path instead of trusting a half-formed contract.
       const plannedTable =
-        proposed.type === "CreateTable" &&
-        isWellFormedTableDefinition(proposed.table)
-          ? proposed.table
-          : undefined;
+        proposed.type === 'CreateTable' && isWellFormedTableDefinition(proposed.table) ? proposed.table : undefined;
       // Ticket #48: seed rows ride on the same CreateTable steps, dropped when malformed —
       // execution then creates the table without seeding instead of trusting a half-formed
       // contract (same policy as a malformed planned table). Malformed includes rows that
@@ -2313,7 +1632,7 @@ export class AiService implements IAiService {
       // a hallucinated column fails at plan time (the preview never shows it) rather than
       // mid-execution. Rows are only trusted when the table definition they seed is too.
       const plannedSeedRows =
-        proposed.type === "CreateTable" &&
+        proposed.type === 'CreateTable' &&
         isWellFormedTableDefinition(proposed.table) &&
         isWellFormedSeedRows(proposed.seed_rows) &&
         areSeedRowsConsistentWithTable(proposed.seed_rows, proposed.table)
@@ -2323,12 +1642,8 @@ export class AiService implements IAiService {
       // collision or actually targeted externally — the per-step LLM fallback path (no
       // planned table) always stays on ToolJet DB, same as before this ticket.
       const targetResolution = plannedTable
-        ? resolveCreateTableTarget(
-            proposed.data_source_id,
-            plannedTable.table_name,
-            dataSources,
-          )
-        : { kind: "tjdb" as const };
+        ? resolveCreateTableTarget(proposed.data_source_id, plannedTable.table_name, dataSources)
+        : { kind: 'tjdb' as const };
       // Ticket #21: the planner-assigned phase name, trimmed; an absent/blank one persists
       // as null so the client's fallback grouping sees a consistent shape.
       const phase = proposed.phase?.trim() || null;
@@ -2336,7 +1651,7 @@ export class AiService implements IAiService {
       // collisionError merge keeps ADR-0042's terminal-failure shape intact.
       const generatedPayload = generatedSteps?.find((entry) => entry.index === index)?.payload;
       let props: any = generatedPayload ? { generatedStep: generatedPayload } : undefined;
-      if (targetResolution.kind === "collision") {
+      if (targetResolution.kind === 'collision') {
         props = {
           collisionError: targetResolution.message,
           ...(generatedPayload && { generatedStep: generatedPayload }),
@@ -2352,16 +1667,14 @@ export class AiService implements IAiService {
         // persisted without its planned table so executeCreateTableStep never takes the
         // deterministic create path, and props.collisionError is what it throws on
         // instead — surfaced through the normal step-failed channel, not a silent drop.
-        ...(targetResolution.kind !== "collision" &&
-          plannedTable && { plannedTable }),
-        ...(targetResolution.kind !== "collision" &&
-          plannedSeedRows && { plannedSeedRows }),
+        ...(targetResolution.kind !== 'collision' && plannedTable && { plannedTable }),
+        ...(targetResolution.kind !== 'collision' && plannedSeedRows && { plannedSeedRows }),
         ...(props && { props }),
-        ...(targetResolution.kind === "external" && {
+        ...(targetResolution.kind === 'external' && {
           targetDataSourceId: targetResolution.dataSource.id,
         }),
         ...(phase && { phase }),
-        status: "pending",
+        status: 'pending',
       });
       persisted.push(step);
     }
@@ -2381,7 +1694,7 @@ export class AiService implements IAiService {
   // fields directly instead of relying on narrowing to make them "exist".
   private async executeStepWithRetry(
     step: Step,
-    context: StepExecutionContext,
+    context: StepExecutionContext
   ): Promise<{
     success: boolean;
     artifact?: Artifact;
@@ -2391,7 +1704,7 @@ export class AiService implements IAiService {
     if (!this.SUPPORTED_STEP_TYPES.includes(step.type)) {
       const errorMessage = `Unsupported step type "${step.type}" — not yet implemented`;
       await this.stepRepository.updateOne(step.id, {
-        status: "failed",
+        status: 'failed',
         errorMessage,
       });
       return { success: false, errorMessage };
@@ -2400,19 +1713,14 @@ export class AiService implements IAiService {
     let lastError: string;
     for (let attempt = 1; attempt <= this.MAX_STEP_ATTEMPTS; attempt++) {
       try {
-        const { content, identifier, props } = await this.executeStep(
-          step,
-          context,
-          lastError,
-        );
+        const { content, identifier, props } = await this.executeStep(step, context, lastError);
 
         // Ticket #21: a step the user skipped mid-run must not be recorded with either
         // terminal status — the execution loop owns that transition (step-skipped), and
         // overwriting 'skipped' with 'succeeded'/'failed' here would make the skip silently
         // vanish. The Artifact row is still created, so the loop can undo the real change
         // this attempt already made before discarding it.
-        const skipped =
-          (await this.stepRepository.findById(step.id))?.status === "skipped";
+        const skipped = (await this.stepRepository.findById(step.id))?.status === 'skipped';
         const artifact = await this.artifactRepository.createOne({
           conversationId: step.conversationId,
           messageId: step.messageId,
@@ -2420,17 +1728,15 @@ export class AiService implements IAiService {
           identifier,
         });
         await this.stepRepository.updateOne(step.id, {
-          ...(skipped ? {} : { status: "succeeded" }),
+          ...(skipped ? {} : { status: 'succeeded' }),
           props,
           attempts: attempt,
           artifactId: artifact.id,
         });
         return { success: true, artifact, skipped };
       } catch (error) {
-        lastError = error?.message || "Step execution failed";
-        this.logger.warn(
-          `[approvePrd] step=${step.id} type=${step.type} attempt=${attempt} failed: ${lastError}`,
-        );
+        lastError = error?.message || 'Step execution failed';
+        this.logger.warn(`[approvePrd] step=${step.id} type=${step.type} attempt=${attempt} failed: ${lastError}`);
         await this.stepRepository.updateOne(step.id, {
           attempts: attempt,
           errorMessage: lastError,
@@ -2440,11 +1746,10 @@ export class AiService implements IAiService {
 
     // Same guard on the failed terminal write: a step skipped while its retries ran is
     // reported back as skipped, not failed — the plan continues instead of stopping.
-    const skipped =
-      (await this.stepRepository.findById(step.id))?.status === "skipped";
+    const skipped = (await this.stepRepository.findById(step.id))?.status === 'skipped';
     if (!skipped) {
       await this.stepRepository.updateOne(step.id, {
-        status: "failed",
+        status: 'failed',
         errorMessage: lastError,
       });
     }
@@ -2459,25 +1764,15 @@ export class AiService implements IAiService {
     step: Step,
     appVersionId: string,
     organizationId: string,
-    artifact: Artifact,
+    artifact: Artifact
   ): Promise<void> {
-    await this.agentsService.undoArtifact(
-      step.type,
-      appVersionId,
-      organizationId,
-      artifact.content,
-    );
+    await this.agentsService.undoArtifact(step.type, appVersionId, organizationId, artifact.content);
     await this.artifactRepository.deleteOne(artifact.id);
     await this.stepRepository.updateOne(step.id, { artifactId: null });
   }
 
-  private sendStepSkippedSSE(
-    response: Response,
-    index: number,
-    of: number,
-    description: string,
-  ): void {
-    this.aiUtilService.sendSSE(response, "step-skipped", {
+  private sendStepSkippedSSE(response: Response, index: number, of: number, description: string): void {
+    this.aiUtilService.sendSSE(response, 'step-skipped', {
       step: index + 1,
       of,
       description,
@@ -2487,28 +1782,28 @@ export class AiService implements IAiService {
   private async executeStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
     switch (step.type) {
-      case "CreateTable":
+      case 'CreateTable':
         return this.executeCreateTableStep(step, context, previousError);
-      case "UpdateTable":
+      case 'UpdateTable':
         return this.executeUpdateTableStep(step, context, previousError);
-      case "CreateComponent":
+      case 'CreateComponent':
         return this.executeComponentStep(step, context, previousError);
-      case "UpdateComponent":
+      case 'UpdateComponent':
         return this.executeUpdateComponentStep(step, context, previousError);
-      case "DeleteComponent":
+      case 'DeleteComponent':
         return this.executeDeleteComponentStep(step, context, previousError);
-      case "MoveComponent":
+      case 'MoveComponent':
         return this.executeMoveComponentStep(step, context, previousError);
-      case "CreateQuery":
+      case 'CreateQuery':
         return this.executeQueryStep(step, context, previousError);
-      case "UpdateQuery":
+      case 'UpdateQuery':
         return this.executeUpdateQueryStep(step, context, previousError);
-      case "DeleteQuery":
+      case 'DeleteQuery':
         return this.executeDeleteQueryStep(step, context, previousError);
-      case "GenerateEvent":
+      case 'GenerateEvent':
         return this.executeEventStep(step, context, previousError);
       default:
         throw new Error(`Unsupported step type "${step.type}"`);
@@ -2522,32 +1817,20 @@ export class AiService implements IAiService {
    * steps need real ids to reference — e.g. CreateQuery needs a CreateTable step's actual
    * table id, not just its human-readable table_name.
    */
-  private buildStepContextLines(
-    step: Step,
-    context: StepExecutionContext,
-    previousError?: string,
-  ): string {
-    const lines = [
-      `PRD:\n${context.prd}`,
-      `Step to build: ${step.description}`,
-    ];
+  private buildStepContextLines(step: Step, context: StepExecutionContext, previousError?: string): string {
+    const lines = [`PRD:\n${context.prd}`, `Step to build: ${step.description}`];
     if (context.priorResults.length) {
       const summary = context.priorResults
-        .map(
-          (result) =>
-            `- ${result.type} → ${JSON.stringify(result.artifact.content)}`,
-        )
-        .join("\n");
+        .map((result) => `- ${result.type} → ${JSON.stringify(result.artifact.content)}`)
+        .join('\n');
       lines.push(
-        `Already created earlier in this plan (reference real ids/names from here, never invent one):\n${summary}`,
+        `Already created earlier in this plan (reference real ids/names from here, never invent one):\n${summary}`
       );
     }
     if (previousError) {
-      lines.push(
-        `The previous attempt failed with: "${previousError}". Fix the issue and try again.`,
-      );
+      lines.push(`The previous attempt failed with: "${previousError}". Fix the issue and try again.`);
     }
-    return lines.join("\n\n");
+    return lines.join('\n\n');
   }
 
   // Maps a (planner-proposed or LLM-proposed) table definition into the params
@@ -2580,54 +1863,36 @@ export class AiService implements IAiService {
    * table path (which makes no LLM call) would burn all retries on it. Thrown errors are
    * retryable: on the LLM path the message is fed back as previousError.
    */
-  private async validateForeignKeys(
-    tableParams: any,
-    context: StepExecutionContext,
-  ): Promise<void> {
+  private async validateForeignKeys(tableParams: any, context: StepExecutionContext): Promise<void> {
     const foreignKeys = tableParams?.foreign_keys ?? [];
     if (!foreignKeys.length) return;
 
     // Malformed entries (legacy plans persisted before #23's schema) can't name a real
     // table — treat them as unknown so the error names them instead of printing "undefined".
     const referencedNames = foreignKeys.map((foreignKey) =>
-      typeof foreignKey?.referenced_table_name === "string"
-        ? foreignKey.referenced_table_name
-        : null,
+      typeof foreignKey?.referenced_table_name === 'string' ? foreignKey.referenced_table_name : null
     );
     const planTableNames = new Set(
       context.priorResults
-        .filter((result) => result.type === "CreateTable")
+        .filter((result) => result.type === 'CreateTable')
         .map((result) => result.artifact.content?.table_name)
-        .filter(Boolean),
+        .filter(Boolean)
     );
-    if (
-      referencedNames.every((name) => name !== null && planTableNames.has(name))
-    )
-      return;
+    if (referencedNames.every((name) => name !== null && planTableNames.has(name))) return;
 
-    const existingTables = await this.agentsService.ViewTables(
-      context.organizationId,
-    );
-    const existingTableNames = new Set(
-      existingTables.map((table) => table.tableName),
-    );
+    const existingTables = await this.agentsService.ViewTables(context.organizationId);
+    const existingTableNames = new Set(existingTables.map((table) => table.tableName));
 
     const unknownTables = [
       ...new Set(
-        referencedNames.filter(
-          (name) =>
-            name === null ||
-            (!planTableNames.has(name) && !existingTableNames.has(name)),
-        ),
+        referencedNames.filter((name) => name === null || (!planTableNames.has(name) && !existingTableNames.has(name)))
       ),
     ];
     if (unknownTables.length) {
-      const available = [
-        ...new Set([...planTableNames, ...existingTableNames]),
-      ].sort();
+      const available = [...new Set([...planTableNames, ...existingTableNames])].sort();
       throw new Error(
-        `foreign_keys reference table(s) that do not exist in this app: ${unknownTables.join(", ")}. ` +
-          `Available tables: ${available.length ? available.join(", ") : "(none yet)"}`,
+        `foreign_keys reference table(s) that do not exist in this app: ${unknownTables.join(', ')}. ` +
+          `Available tables: ${available.length ? available.join(', ') : '(none yet)'}`
       );
     }
   }
@@ -2647,53 +1912,45 @@ export class AiService implements IAiService {
   private async awaitExternalTableConfirmation(
     step: Step,
     context: StepExecutionContext,
-    targetDataSource: QueryableDataSource,
+    targetDataSource: QueryableDataSource
   ): Promise<void> {
     const current = await this.stepRepository.findById(step.id);
-    if (current?.status === "skipped") {
+    if (current?.status === 'skipped') {
       throw new Error(
-        "This CreateTable step targeting an external PostgreSQL source was declined — no DDL was issued.",
+        'This CreateTable step targeting an external PostgreSQL source was declined — no DDL was issued.'
       );
     }
-    if (current?.status === "confirmed") return;
+    if (current?.status === 'confirmed') return;
 
-    if (current?.status !== "awaiting_confirmation") {
+    if (current?.status !== 'awaiting_confirmation') {
       await this.stepRepository.updateOne(step.id, {
-        status: "awaiting_confirmation",
+        status: 'awaiting_confirmation',
       });
-      this.aiUtilService.sendSSE(
-        context.response,
-        "step-awaiting-confirmation",
-        {
-          stepId: step.id,
-          tableName: step.plannedTable?.table_name,
-          columns: step.plannedTable?.columns ?? [],
-          targetConnection: {
-            id: targetDataSource.id,
-            name: targetDataSource.name,
-          },
-          seedRowCount: Array.isArray(step.plannedSeedRows)
-            ? step.plannedSeedRows.length
-            : 0,
+      this.aiUtilService.sendSSE(context.response, 'step-awaiting-confirmation', {
+        stepId: step.id,
+        tableName: step.plannedTable?.table_name,
+        columns: step.plannedTable?.columns ?? [],
+        targetConnection: {
+          id: targetDataSource.id,
+          name: targetDataSource.name,
         },
-      );
+        seedRowCount: Array.isArray(step.plannedSeedRows) ? step.plannedSeedRows.length : 0,
+      });
     }
 
     const deadline = Date.now() + this.CONFIRMATION_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, this.CONFIRMATION_POLL_INTERVAL_MS),
-      );
+      await new Promise((resolve) => setTimeout(resolve, this.CONFIRMATION_POLL_INTERVAL_MS));
       const polled = await this.stepRepository.findById(step.id);
-      if (polled?.status === "confirmed") return;
-      if (polled?.status === "skipped") {
+      if (polled?.status === 'confirmed') return;
+      if (polled?.status === 'skipped') {
         throw new Error(
-          "This CreateTable step targeting an external PostgreSQL source was declined — no DDL was issued.",
+          'This CreateTable step targeting an external PostgreSQL source was declined — no DDL was issued.'
         );
       }
     }
     throw new Error(
-      "Timed out waiting for confirmation on a CreateTable step targeting an external PostgreSQL source.",
+      'Timed out waiting for confirmation on a CreateTable step targeting an external PostgreSQL source.'
     );
   }
 
@@ -2707,11 +1964,9 @@ export class AiService implements IAiService {
   private async raiseInterrupt(
     context: StepExecutionContext,
     type: string,
-    payload: Record<string, any>,
+    payload: Record<string, any>
   ): Promise<any> {
-    const conversation = await this.aiConversationRepository.findById(
-      context.conversationId,
-    );
+    const conversation = await this.aiConversationRepository.findById(context.conversationId);
     const existing = conversation?.metadata?.interrupt;
     if (existing?.type === type && existing?.answer !== undefined) {
       const answer = existing.answer;
@@ -2734,7 +1989,7 @@ export class AiService implements IAiService {
           },
         },
       });
-      this.aiUtilService.sendSSE(context.response, "interrupt", {
+      this.aiUtilService.sendSSE(context.response, 'interrupt', {
         interruptId,
         type,
         payload,
@@ -2743,18 +1998,13 @@ export class AiService implements IAiService {
 
     const deadline = Date.now() + this.INTERRUPT_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, this.INTERRUPT_POLL_INTERVAL_MS),
-      );
-      const polled = await this.aiConversationRepository.findById(
-        context.conversationId,
-      );
+      await new Promise((resolve) => setTimeout(resolve, this.INTERRUPT_POLL_INTERVAL_MS));
+      const polled = await this.aiConversationRepository.findById(context.conversationId);
       const interrupt = polled?.metadata?.interrupt;
       if (interrupt?.id === interruptId && interrupt?.answer !== undefined) {
-        await this.aiConversationRepository.updateOne(
-          context.conversationId,
-          { metadata: { ...(polled.metadata || {}), interrupt: undefined } },
-        );
+        await this.aiConversationRepository.updateOne(context.conversationId, {
+          metadata: { ...(polled.metadata || {}), interrupt: undefined },
+        });
         return interrupt.answer;
       }
     }
@@ -2763,9 +2013,7 @@ export class AiService implements IAiService {
     // event (silent hang for a reconnected/late client), and a stale interruptId could
     // still 409-match a genuinely new pause. Re-read rather than reusing the pre-poll
     // `conversation` so an unrelated metadata write during the 30-minute wait isn't clobbered.
-    const latest = await this.aiConversationRepository.findById(
-      context.conversationId,
-    );
+    const latest = await this.aiConversationRepository.findById(context.conversationId);
     await this.aiConversationRepository.updateOne(context.conversationId, {
       metadata: { ...(latest?.metadata || {}), interrupt: undefined },
     });
@@ -2777,25 +2025,15 @@ export class AiService implements IAiService {
    * stale or repeated answer (no live interrupt, or a different one) — the same shape
    * `confirmStep` uses to reject a step that isn't `awaiting_confirmation`.
    */
-  async interruptAnswer(
-    conversationId: string,
-    interruptId: string,
-    answer: any,
-    userId: string,
-  ): Promise<any> {
+  async interruptAnswer(conversationId: string, interruptId: string, answer: any, userId: string): Promise<any> {
     if (!conversationId || !interruptId || answer === undefined) {
-      throw new BadRequestException(
-        "conversationId, interruptId and answer are required",
-      );
+      throw new BadRequestException('conversationId, interruptId and answer are required');
     }
-    await this.loadConversationOfType(conversationId, "generate", userId);
-    const conversation =
-      await this.aiConversationRepository.findById(conversationId);
+    await this.loadConversationOfType(conversationId, 'generate', userId);
+    const conversation = await this.aiConversationRepository.findById(conversationId);
     const interrupt = conversation?.metadata?.interrupt;
     if (!interrupt || interrupt.id !== interruptId) {
-      throw new ConflictException(
-        "This interrupt is no longer awaiting an answer",
-      );
+      throw new ConflictException('This interrupt is no longer awaiting an answer');
     }
     await this.aiConversationRepository.updateOne(conversationId, {
       metadata: {
@@ -2809,7 +2047,7 @@ export class AiService implements IAiService {
   async executeCreateTableStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
     // Ticket #77 / ADR-0042: a plan-time name collision against an external PostgreSQL
     // target is a terminal, retryable-guard-shaped failure decided once in generateStepPlan —
@@ -2832,24 +2070,16 @@ export class AiService implements IAiService {
       // Ticket #77 / ADR-0042: a CreateTable step whose plan-time resolution picked a
       // connected PostgreSQL source over ToolJet DB. Confirmation gate first, DDL only after.
       if (step.targetDataSourceId) {
-        const targetDataSource = context.dataSources.find(
-          (source) => source.id === step.targetDataSourceId,
-        );
+        const targetDataSource = context.dataSources.find((source) => source.id === step.targetDataSourceId);
         if (!targetDataSource) {
-          throw new Error(
-            `This step's target data source (${step.targetDataSourceId}) is no longer connected`,
-          );
+          throw new Error(`This step's target data source (${step.targetDataSourceId}) is no longer connected`);
         }
-        await this.awaitExternalTableConfirmation(
-          step,
-          context,
-          targetDataSource,
-        );
+        await this.awaitExternalTableConfirmation(step, context, targetDataSource);
 
         const created = await this.agentsService.CreateExternalTable(
           context.organizationId,
           targetDataSource.id,
-          tableParams,
+          tableParams
         );
         let seed: SeedTableReport | undefined;
         if (isWellFormedSeedRows(step.plannedSeedRows)) {
@@ -2857,7 +2087,7 @@ export class AiService implements IAiService {
             context.organizationId,
             targetDataSource.id,
             created.table_name,
-            step.plannedSeedRows,
+            step.plannedSeedRows
           );
         }
         return {
@@ -2872,10 +2102,7 @@ export class AiService implements IAiService {
         };
       }
 
-      const created = await this.agentsService.CreateTable(
-        context.organizationId,
-        tableParams,
-      );
+      const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
       // Ticket #48: seed rows the planner proposed (and the preview showed) are inserted
       // here, right after the table exists — same deterministic, no-LLM contract as the
       // table itself. Ticket #62: rows run as individual queries with a per-row report
@@ -2890,7 +2117,7 @@ export class AiService implements IAiService {
           context.organizationId,
           created.id,
           primaryKeyColumns,
-          step.plannedSeedRows,
+          step.plannedSeedRows
         );
       }
       return {
@@ -2910,37 +2137,34 @@ export class AiService implements IAiService {
         system: CREATE_TABLE_SYSTEM_PROMPT,
         messages: [
           {
-            role: "user",
+            role: 'user',
             content: this.buildStepContextLines(step, context, previousError),
           },
         ],
       },
-      "executeTableStep",
+      'executeTableStep'
     );
     const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "approve-prd-create-table",
+      'openai',
+      'approve-prd-create-table',
       {
         ...prompt,
         tools: { createTable: createTableTool },
-        toolChoice: { type: "tool", toolName: "createTable" },
+        toolChoice: { type: 'tool', toolName: 'createTable' },
       },
-      context.organizationId,
+      context.organizationId
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== "createTable") {
-      throw new Error("The assistant did not produce a table definition");
+    if (!call || call.toolName !== 'createTable') {
+      throw new Error('The assistant did not produce a table definition');
     }
 
     const args = call.args as TableDefinition;
     const tableParams = this.buildTableParams(args);
     await this.validateForeignKeys(tableParams, context);
 
-    const created = await this.agentsService.CreateTable(
-      context.organizationId,
-      tableParams,
-    );
+    const created = await this.agentsService.CreateTable(context.organizationId, tableParams);
 
     // `created` only carries { id, table_name } (TooljetDbTableOperationsService's return) —
     // merging in the real columns here is what lets later steps (CreateQuery, and a Form
@@ -2969,7 +2193,7 @@ export class AiService implements IAiService {
   private async executeUpdateTableStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
     let desired: TableDefinition & { renames?: Record<string, string> };
     if (isWellFormedTableDefinition(step.plannedTable)) {
@@ -2982,30 +2206,30 @@ export class AiService implements IAiService {
           system: UPDATE_TABLE_SYSTEM_PROMPT,
           messages: [
             {
-              role: "user",
+              role: 'user',
               content: [
                 this.buildStepContextLines(step, context, previousError),
                 `The table's current columns (JSON):\n${JSON.stringify(current.columns, null, 2)}`,
-              ].join("\n\n"),
+              ].join('\n\n'),
             },
           ],
         },
-        "executeTableStep",
+        'executeTableStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-update-table",
+        'openai',
+        'approve-prd-update-table',
         {
           ...prompt,
           tools: { updateTable: updateTableTool },
-          toolChoice: { type: "tool", toolName: "updateTable" },
+          toolChoice: { type: 'tool', toolName: 'updateTable' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       const call = result?.toolCalls?.[0];
-      if (!call || call.toolName !== "updateTable") {
-        throw new Error("The assistant did not produce a table update");
+      if (!call || call.toolName !== 'updateTable') {
+        throw new Error('The assistant did not produce a table update');
       }
       desired = call.args as TableDefinition & {
         renames?: Record<string, string>;
@@ -3021,34 +2245,28 @@ export class AiService implements IAiService {
           is_not_null: column.is_not_null,
           is_unique: column.is_unique,
         },
-      })),
+      }))
     );
     if (validationProblems.length) {
-      throw new Error(`Invalid table update: ${validationProblems.join("; ")}`);
+      throw new Error(`Invalid table update: ${validationProblems.join('; ')}`);
     }
 
-    const current = await this.fetchCurrentTableSchema(
-      step,
-      context,
-      desired.table_name,
-    );
+    const current = await this.fetchCurrentTableSchema(step, context, desired.table_name);
     // Columns involved in the table's foreign keys (from view_table's own FK listing) —
     // diffTableColumns refuses dropping them (ADR-0041's safety stance).
     const fkColumnNames = new Set<string>(
-      (current.foreign_keys ?? []).flatMap(
-        (foreignKey: any) => foreignKey?.column_names ?? [],
-      ),
+      (current.foreign_keys ?? []).flatMap((foreignKey: any) => foreignKey?.column_names ?? [])
     );
     const diff = diffTableColumns(
       current.columns as CurrentTjdbColumn[],
       this.buildTableParams(desired).columns as DesiredTjdbColumn[],
       desired.renames,
-      { tableName: desired.table_name, fkColumnNames },
+      { tableName: desired.table_name, fkColumnNames }
     );
     if (diff.refusals.length) {
       // Not retryable by re-prompting for the same payload — these are structural
       // refusals (primary key / foreign-key drops). Surfaced as the step error.
-      throw new Error(`update_table refused: ${diff.refusals.join("; ")}`);
+      throw new Error(`update_table refused: ${diff.refusals.join('; ')}`);
     }
     if (diff.noOp) {
       return {
@@ -3083,16 +2301,10 @@ export class AiService implements IAiService {
    * the planned table's name — the planned path needs the schema of the table it is about
    * to replace, the LLM path also shows it to the model before it answers.
    */
-  private async fetchCurrentTableSchema(
-    step: Step,
-    context: StepExecutionContext,
-    tableNameHint?: string,
-  ) {
+  private async fetchCurrentTableSchema(step: Step, context: StepExecutionContext, tableNameHint?: string) {
     const tableName = tableNameHint ?? step.plannedTable?.table_name;
-    if (!tableName || typeof tableName !== "string") {
-      throw new Error(
-        "UpdateTable step does not name an existing table to update",
-      );
+    if (!tableName || typeof tableName !== 'string') {
+      throw new Error('UpdateTable step does not name an existing table to update');
     }
     return this.agentsService.ViewTable(context.organizationId, tableName);
   }
@@ -3100,13 +2312,13 @@ export class AiService implements IAiService {
   private async executeComponentStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
     // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "createComponent", args: generatedArgs };
+      call = { toolName: 'createComponent', args: generatedArgs };
     } else {
       const prompt = await this.budgetPromptForOrg(
         context.organizationId,
@@ -3114,29 +2326,29 @@ export class AiService implements IAiService {
           system: CREATE_COMPONENT_SYSTEM_PROMPT,
           messages: [
             {
-              role: "user",
+              role: 'user',
               content: this.buildStepContextLines(step, context, previousError),
             },
           ],
         },
-        "executeComponentStep",
+        'executeComponentStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-create-component",
+        'openai',
+        'approve-prd-create-component',
         {
           ...prompt,
           tools: { createComponent: createComponentTool },
-          toolChoice: { type: "tool", toolName: "createComponent" },
+          toolChoice: { type: 'tool', toolName: 'createComponent' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "createComponent") {
-      throw new Error("The assistant did not produce a component definition");
+    if (!call || call.toolName !== 'createComponent') {
+      throw new Error('The assistant did not produce a component definition');
     }
 
     const { type, ...props } = call.args as {
@@ -3146,7 +2358,7 @@ export class AiService implements IAiService {
     if (!(SUPPORTED_COMPONENT_TYPES as readonly string[]).includes(type)) {
       // Retryable, unlike an unsupported Step type: the model chooses `type` per attempt.
       throw new Error(
-        `Unsupported component type "${type}" — supported types are: ${SUPPORTED_COMPONENT_TYPES.join(", ")}`,
+        `Unsupported component type "${type}" — supported types are: ${SUPPORTED_COMPONENT_TYPES.join(', ')}`
       );
     }
 
@@ -3160,14 +2372,12 @@ export class AiService implements IAiService {
     if ((PAGE_WIDGET_TYPES as readonly string[]).includes(type)) {
       const pageExists = context.priorResults.some(
         (result) =>
-          result.type === "CreateComponent" &&
+          result.type === 'CreateComponent' &&
           result.artifact.content?.id === props.pageId &&
-          result.artifact.content?.pageId === undefined,
+          result.artifact.content?.pageId === undefined
       );
       if (!pageExists) {
-        throw new Error(
-          `pageId "${props.pageId}" does not match any Page created earlier in this plan`,
-        );
+        throw new Error(`pageId "${props.pageId}" does not match any Page created earlier in this plan`);
       }
     }
 
@@ -3183,96 +2393,78 @@ export class AiService implements IAiService {
       const rawParentId: string = props.parentComponentId;
 
       const widgetsOnPage = context.priorResults.filter(
-        (result) =>
-          result.type === "CreateComponent" &&
-          result.artifact.content?.pageId === props.pageId,
+        (result) => result.type === 'CreateComponent' && result.artifact.content?.pageId === props.pageId
       );
 
-      const bareMatch = widgetsOnPage.find(
-        (result) => result.artifact.content?.id === rawParentId,
-      );
+      const bareMatch = widgetsOnPage.find((result) => result.artifact.content?.id === rawParentId);
       if (bareMatch) {
         const parentType = bareMatch.artifact.content?.type;
-        if (parentType === "Tabs") {
+        if (parentType === 'Tabs') {
           throw new Error(
-            `parentComponentId "${rawParentId}" refers to a Tabs bar directly — target one of its panes instead, e.g. "${rawParentId}-0"`,
+            `parentComponentId "${rawParentId}" refers to a Tabs bar directly — target one of its panes instead, e.g. "${rawParentId}-0"`
           );
         }
         if (
-          parentType !== "Container" &&
-          parentType !== "Form" &&
-          parentType !== "Listview" &&
-          parentType !== "ModalV2"
+          parentType !== 'Container' &&
+          parentType !== 'Form' &&
+          parentType !== 'Listview' &&
+          parentType !== 'ModalV2'
         ) {
           throw new Error(
-            `parentComponentId "${rawParentId}" refers to a ${parentType}, which cannot hold nested children — only Container, Form, Listview, ModalV2 and Tabs (via a pane suffix) can`,
+            `parentComponentId "${rawParentId}" refers to a ${parentType}, which cannot hold nested children — only Container, Form, Listview, ModalV2 and Tabs (via a pane suffix) can`
           );
         }
         // Container/Form/Listview body, or ModalV2's body slot — all valid bare.
       } else {
         const slotParent = widgetsOnPage.find(
           (result) =>
-            typeof result.artifact.content?.id === "string" &&
-            rawParentId.startsWith(`${result.artifact.content.id}-`),
+            typeof result.artifact.content?.id === 'string' && rawParentId.startsWith(`${result.artifact.content.id}-`)
         );
         if (!slotParent) {
           throw new Error(
-            `parentComponentId "${rawParentId}" does not match any Container, Form, Listview, ModalV2 or Tabs created earlier in this plan on the same page`,
+            `parentComponentId "${rawParentId}" does not match any Container, Form, Listview, ModalV2 or Tabs created earlier in this plan on the same page`
           );
         }
         const baseParentId: string = slotParent.artifact.content.id;
         const suffix = rawParentId.slice(baseParentId.length + 1);
         const parentType = slotParent.artifact.content?.type;
-        if (parentType === "ModalV2") {
-          if (suffix !== "header" && suffix !== "footer") {
+        if (parentType === 'ModalV2') {
+          if (suffix !== 'header' && suffix !== 'footer') {
             throw new Error(
-              `parentComponentId "${rawParentId}" refers to a ModalV2 slot suffix "${suffix}", but only "-header" and "-footer" are valid (bare id for the body)`,
+              `parentComponentId "${rawParentId}" refers to a ModalV2 slot suffix "${suffix}", but only "-header" and "-footer" are valid (bare id for the body)`
             );
           }
-        } else if (parentType === "Tabs") {
-          const tabsCount: number =
-            slotParent.artifact.content?.tabsCount ?? 3;
+        } else if (parentType === 'Tabs') {
+          const tabsCount: number = slotParent.artifact.content?.tabsCount ?? 3;
           const tabIndex = Number(suffix);
-          if (
-            !/^\d+$/.test(suffix) ||
-            tabIndex < 0 ||
-            tabIndex >= tabsCount
-          ) {
+          if (!/^\d+$/.test(suffix) || tabIndex < 0 || tabIndex >= tabsCount) {
             throw new Error(
-              `parentComponentId "${rawParentId}" refers to tab index "${suffix}", but this Tabs bar only has tabs 0-${tabsCount - 1}`,
+              `parentComponentId "${rawParentId}" refers to tab index "${suffix}", but this Tabs bar only has tabs 0-${tabsCount - 1}`
             );
           }
         } else {
           throw new Error(
-            `parentComponentId "${rawParentId}" refers to a ${parentType}, which has no addressable slots — only ModalV2 ("-header"/"-footer") and Tabs ("-<tabIndex>") do`,
+            `parentComponentId "${rawParentId}" refers to a ${parentType}, which has no addressable slots — only ModalV2 ("-header"/"-footer") and Tabs ("-<tabIndex>") do`
           );
         }
       }
     }
 
-    if (type === "Table") {
+    if (type === 'Table') {
       const queryExists = context.priorResults.some(
-        (result) =>
-          result.type === "CreateQuery" &&
-          result.artifact.content?.name === props.queryName,
+        (result) => result.type === 'CreateQuery' && result.artifact.content?.name === props.queryName
       );
       if (!queryExists) {
-        throw new Error(
-          `queryName "${props.queryName}" does not match any query created earlier in this plan`,
-        );
+        throw new Error(`queryName "${props.queryName}" does not match any query created earlier in this plan`);
       }
     }
 
-    if (type === "Form") {
+    if (type === 'Form') {
       const tableResult = context.priorResults.find(
-        (result) =>
-          result.type === "CreateTable" &&
-          result.artifact.content?.id === props.tableId,
+        (result) => result.type === 'CreateTable' && result.artifact.content?.id === props.tableId
       );
       if (!tableResult) {
-        throw new Error(
-          `tableId "${props.tableId}" does not match any table created earlier in this plan`,
-        );
+        throw new Error(`tableId "${props.tableId}" does not match any table created earlier in this plan`);
       }
       // AgentsService.createFormComponent needs the table's real columns (to build the
       // form's fields) — only available from the CreateTable step's Artifact content.
@@ -3283,46 +2475,34 @@ export class AiService implements IAiService {
       // bound (via the query it displays) to the same underlying ToolJet DB table this
       // form edits. Both are retryable failures — the model picks the name/id per attempt,
       // and the error names what it was actually offered so the next attempt can correct.
-      if (props.mode === "edit") {
+      if (props.mode === 'edit') {
         if (!props.tableName) {
-          throw new Error(
-            "An edit-mode Form must reference a Table widget (tableName) to bind its selectedRow to",
-          );
+          throw new Error('An edit-mode Form must reference a Table widget (tableName) to bind its selectedRow to');
         }
         const tableWidget = context.priorResults.find(
           (result) =>
-            result.type === "CreateComponent" &&
-            result.artifact.content?.type === "Table" &&
-            result.artifact.content?.name === props.tableName,
+            result.type === 'CreateComponent' &&
+            result.artifact.content?.type === 'Table' &&
+            result.artifact.content?.name === props.tableName
         );
         if (!tableWidget) {
           throw new Error(
-            `tableName "${props.tableName}" does not match any Table widget created earlier in this plan`,
+            `tableName "${props.tableName}" does not match any Table widget created earlier in this plan`
           );
         }
         const boundQuery = context.priorResults.find(
           (result) =>
-            result.type === "CreateQuery" &&
-            result.artifact.content?.name ===
-              tableWidget.artifact.content?.queryName,
+            result.type === 'CreateQuery' && result.artifact.content?.name === tableWidget.artifact.content?.queryName
         );
-        if (
-          !boundQuery ||
-          boundQuery.artifact.content?.options?.table_id !== props.tableId
-        ) {
+        if (!boundQuery || boundQuery.artifact.content?.options?.table_id !== props.tableId) {
           throw new Error(
-            `Table "${props.tableName}" is not bound to the same ToolJet DB table (${props.tableId}) this edit-mode form edits`,
+            `Table "${props.tableName}" is not bound to the same ToolJet DB table (${props.tableId}) this edit-mode form edits`
           );
         }
       }
     }
 
-    const created = await this.agentsService.CreateComponent(
-      context.appVersionId,
-      context.organizationId,
-      type,
-      props,
-    );
+    const created = await this.agentsService.CreateComponent(context.appVersionId, context.organizationId, type, props);
 
     return {
       content: created,
@@ -3340,11 +2520,9 @@ export class AiService implements IAiService {
   async executeUpdateComponentStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const componentIndex = await this.appInventoryService.renderComponentIndex(
-      context.appVersionId,
-    );
+    const componentIndex = await this.appInventoryService.renderComponentIndex(context.appVersionId);
 
     // Plan-time payload (ADR-0048): on the first attempt a well-shaped props.generatedStep
     // is used verbatim as the tool call — guards below still run, so a payload that is
@@ -3352,7 +2530,7 @@ export class AiService implements IAiService {
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "updateComponent", args: generatedArgs };
+      call = { toolName: 'updateComponent', args: generatedArgs };
     } else {
       const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
@@ -3360,26 +2538,26 @@ export class AiService implements IAiService {
         context.organizationId,
         {
           system: UPDATE_COMPONENT_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: stepContext }],
+          messages: [{ role: 'user', content: stepContext }],
         },
-        "executeUpdateComponentStep",
+        'executeUpdateComponentStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-update-component",
+        'openai',
+        'approve-prd-update-component',
         {
           ...prompt,
           tools: { updateComponent: updateComponentTool },
-          toolChoice: { type: "tool", toolName: "updateComponent" },
+          toolChoice: { type: 'tool', toolName: 'updateComponent' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "updateComponent") {
-      throw new Error("The assistant did not produce a component update");
+    if (!call || call.toolName !== 'updateComponent') {
+      throw new Error('The assistant did not produce a component update');
     }
 
     const { componentId, properties, styles } = call.args as {
@@ -3391,16 +2569,14 @@ export class AiService implements IAiService {
     // Retryable: componentId is a free-form string the tool schema can't constrain, so a
     // hallucinated one is fed back for the next attempt exactly like pageId/queryName above.
     if (!componentIndex.includes(`(id: ${componentId},`)) {
-      throw new Error(
-        `componentId "${componentId}" does not match any existing component in this app`,
-      );
+      throw new Error(`componentId "${componentId}" does not match any existing component in this app`);
     }
 
     const updated = await this.agentsService.UpdateComponent(
       context.appVersionId,
       context.organizationId,
       componentId,
-      { properties, styles },
+      { properties, styles }
     );
 
     return {
@@ -3413,17 +2589,15 @@ export class AiService implements IAiService {
   private async executeDeleteComponentStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const componentIndex = await this.appInventoryService.renderComponentIndex(
-      context.appVersionId,
-    );
+    const componentIndex = await this.appInventoryService.renderComponentIndex(context.appVersionId);
 
     // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "deleteComponent", args: generatedArgs };
+      call = { toolName: 'deleteComponent', args: generatedArgs };
     } else {
       const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
@@ -3431,39 +2605,34 @@ export class AiService implements IAiService {
         context.organizationId,
         {
           system: DELETE_COMPONENT_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: stepContext }],
+          messages: [{ role: 'user', content: stepContext }],
         },
-        "executeDeleteComponentStep",
+        'executeDeleteComponentStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-delete-component",
+        'openai',
+        'approve-prd-delete-component',
         {
           ...prompt,
           tools: { deleteComponent: deleteComponentTool },
-          toolChoice: { type: "tool", toolName: "deleteComponent" },
+          toolChoice: { type: 'tool', toolName: 'deleteComponent' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "deleteComponent") {
-      throw new Error("The assistant did not produce a component to delete");
+    if (!call || call.toolName !== 'deleteComponent') {
+      throw new Error('The assistant did not produce a component to delete');
     }
 
     const { componentId } = call.args as { componentId: string };
     if (!componentIndex.includes(`(id: ${componentId},`)) {
-      throw new Error(
-        `componentId "${componentId}" does not match any existing component in this app`,
-      );
+      throw new Error(`componentId "${componentId}" does not match any existing component in this app`);
     }
 
-    const snapshot = await this.agentsService.DeleteComponent(
-      context.appVersionId,
-      componentId,
-    );
+    const snapshot = await this.agentsService.DeleteComponent(context.appVersionId, componentId);
 
     return {
       content: snapshot,
@@ -3479,14 +2648,9 @@ export class AiService implements IAiService {
    * newParentComponentId without a second DB round trip. Returns null for an id the index
    * doesn't contain, same as any other hallucinated/nonexistent target.
    */
-  private resolveComponentTypeFromIndex(
-    componentIndex: string,
-    componentId: string,
-  ): string | null {
-    const escapedId = componentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = new RegExp(`^- (\\S+) ".*" \\(id: ${escapedId},`, "m").exec(
-      componentIndex,
-    );
+  private resolveComponentTypeFromIndex(componentIndex: string, componentId: string): string | null {
+    const escapedId = componentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = new RegExp(`^- (\\S+) ".*" \\(id: ${escapedId},`, 'm').exec(componentIndex);
     return match?.[1] ?? null;
   }
 
@@ -3506,17 +2670,15 @@ export class AiService implements IAiService {
   private async executeMoveComponentStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const componentIndex = await this.appInventoryService.renderComponentIndex(
-      context.appVersionId,
-    );
+    const componentIndex = await this.appInventoryService.renderComponentIndex(context.appVersionId);
 
     // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "moveComponent", args: generatedArgs };
+      call = { toolName: 'moveComponent', args: generatedArgs };
     } else {
       const stepContext = `${this.buildStepContextLines(step, context, previousError)}\n\n${componentIndex}`;
 
@@ -3524,26 +2686,26 @@ export class AiService implements IAiService {
         context.organizationId,
         {
           system: MOVE_COMPONENT_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: stepContext }],
+          messages: [{ role: 'user', content: stepContext }],
         },
-        "executeMoveComponentStep",
+        'executeMoveComponentStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-move-component",
+        'openai',
+        'approve-prd-move-component',
         {
           ...prompt,
           tools: { moveComponent: moveComponentTool },
-          toolChoice: { type: "tool", toolName: "moveComponent" },
+          toolChoice: { type: 'tool', toolName: 'moveComponent' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "moveComponent") {
-      throw new Error("The assistant did not produce a component to move");
+    if (!call || call.toolName !== 'moveComponent') {
+      throw new Error('The assistant did not produce a component to move');
     }
 
     const { componentId, newParentComponentId } = call.args as {
@@ -3551,32 +2713,23 @@ export class AiService implements IAiService {
       newParentComponentId?: string;
     };
     if (!componentIndex.includes(`(id: ${componentId},`)) {
-      throw new Error(
-        `componentId "${componentId}" does not match any existing component in this app`,
-      );
+      throw new Error(`componentId "${componentId}" does not match any existing component in this app`);
     }
     if (newParentComponentId) {
-      const parentType = this.resolveComponentTypeFromIndex(
-        componentIndex,
-        newParentComponentId,
-      );
+      const parentType = this.resolveComponentTypeFromIndex(componentIndex, newParentComponentId);
       if (!parentType) {
         throw new Error(
-          `newParentComponentId "${newParentComponentId}" does not match any existing component in this app`,
+          `newParentComponentId "${newParentComponentId}" does not match any existing component in this app`
         );
       }
-      if (!["Container", "Form", "Listview"].includes(parentType)) {
+      if (!['Container', 'Form', 'Listview'].includes(parentType)) {
         throw new Error(
-          `newParentComponentId "${newParentComponentId}" refers to a ${parentType}, which cannot hold nested children via Move — only Container, Form and Listview can`,
+          `newParentComponentId "${newParentComponentId}" refers to a ${parentType}, which cannot hold nested children via Move — only Container, Form and Listview can`
         );
       }
     }
 
-    const snapshot = await this.agentsService.MoveComponent(
-      context.appVersionId,
-      componentId,
-      newParentComponentId,
-    );
+    const snapshot = await this.agentsService.MoveComponent(context.appVersionId, componentId, newParentComponentId);
 
     return {
       content: snapshot,
@@ -3588,74 +2741,63 @@ export class AiService implements IAiService {
   private async executeDeleteQueryStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const existingQueries = context.priorResults.filter(
-      (result) => result.type === "CreateQuery",
-    );
+    const existingQueries = context.priorResults.filter((result) => result.type === 'CreateQuery');
     if (!existingQueries.length) {
-      throw new Error(
-        "There is no query to delete — a DeleteQuery step needs a CreateQuery step before it",
-      );
+      throw new Error('There is no query to delete — a DeleteQuery step needs a CreateQuery step before it');
     }
 
     // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "deleteQuery", args: generatedArgs };
+      call = { toolName: 'deleteQuery', args: generatedArgs };
     } else {
       const stepContext = [
         this.buildStepContextLines(step, context, previousError),
         `Existing queries (delete exactly one of these, by name):\n${existingQueries
-          .map(
-            (result) =>
-              `- ${result.artifact.content.name} (id ${result.artifact.content.id})`,
-          )
-          .join("\n")}`,
-      ].join("\n\n");
+          .map((result) => `- ${result.artifact.content.name} (id ${result.artifact.content.id})`)
+          .join('\n')}`,
+      ].join('\n\n');
 
       const prompt = await this.budgetPromptForOrg(
         context.organizationId,
         {
           system: DELETE_QUERY_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: stepContext }],
+          messages: [{ role: 'user', content: stepContext }],
         },
-        "executeDeleteQueryStep",
+        'executeDeleteQueryStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-delete-query",
+        'openai',
+        'approve-prd-delete-query',
         {
           ...prompt,
           tools: { deleteQuery: deleteQueryTool },
-          toolChoice: { type: "tool", toolName: "deleteQuery" },
+          toolChoice: { type: 'tool', toolName: 'deleteQuery' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "deleteQuery") {
-      throw new Error("The assistant did not produce a query to delete");
+    if (!call || call.toolName !== 'deleteQuery') {
+      throw new Error('The assistant did not produce a query to delete');
     }
 
     const { queryName } = call.args as { queryName: string };
-    const existing = existingQueries.find(
-      (entry) => entry.artifact.content?.name === queryName,
-    );
+    const existing = existingQueries.find((entry) => entry.artifact.content?.name === queryName);
     if (!existing) {
       throw new Error(
         `queryName "${queryName}" does not match any query created earlier in this plan. Available: ${existingQueries
           .map((entry) => entry.artifact.content?.name)
-          .join(", ")}`,
+          .join(', ')}`
       );
     }
 
-    const snapshot = await this.agentsService.DeleteQuery(
-      existing.artifact.content.id,
-    );
+    const snapshot = await this.agentsService.DeleteQuery(existing.artifact.content.id);
 
     return {
       content: snapshot,
@@ -3667,13 +2809,13 @@ export class AiService implements IAiService {
   private async executeQueryStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
     // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "createQuery", args: generatedArgs };
+      call = { toolName: 'createQuery', args: generatedArgs };
     } else {
       const stepContext = this.buildStepContextLines(step, context, previousError);
 
@@ -3683,29 +2825,29 @@ export class AiService implements IAiService {
           system: CREATE_QUERY_SYSTEM_PROMPT,
           messages: [
             {
-              role: "user",
+              role: 'user',
               content: withConnectedDataSources(stepContext, context.dataSources),
             },
           ],
         },
-        "executeQueryStep",
+        'executeQueryStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-create-query",
+        'openai',
+        'approve-prd-create-query',
         {
           ...prompt,
           tools: { createQuery: createQueryTool },
-          toolChoice: { type: "tool", toolName: "createQuery" },
+          toolChoice: { type: 'tool', toolName: 'createQuery' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "createQuery") {
-      throw new Error("The assistant did not produce a query definition");
+    if (!call || call.toolName !== 'createQuery') {
+      throw new Error('The assistant did not produce a query definition');
     }
 
     const args = call.args as {
@@ -3726,13 +2868,13 @@ export class AiService implements IAiService {
     // without one is a ToolJet DB plan, exactly as it always was.
     let props: any;
     switch (args.source) {
-      case "sql":
+      case 'sql':
         props = await this.buildExternalQueryProps(args, context);
         break;
-      case "restapi":
+      case 'restapi':
         props = await this.buildRestApiQueryProps(args, context);
         break;
-      case "plugin":
+      case 'plugin':
         props = await this.buildPluginQueryProps(args, context);
         break;
       default:
@@ -3740,11 +2882,7 @@ export class AiService implements IAiService {
         break;
     }
 
-    const created = await this.agentsService.CreateQuery(
-      context.appVersionId,
-      context.organizationId,
-      props,
-    );
+    const created = await this.agentsService.CreateQuery(context.appVersionId, context.organizationId, props);
 
     return { content: created, identifier: created.name, props };
   }
@@ -3760,16 +2898,12 @@ export class AiService implements IAiService {
   private async executeEventStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
     const components = context.priorResults.filter(
-      (result) =>
-        result.type === "CreateComponent" &&
-        result.artifact.content?.pageId !== undefined,
+      (result) => result.type === 'CreateComponent' && result.artifact.content?.pageId !== undefined
     );
-    const queries = context.priorResults.filter(
-      (result) => result.type === "CreateQuery",
-    );
+    const queries = context.priorResults.filter((result) => result.type === 'CreateQuery');
 
     const targets = [
       ...components.map((result) => ({
@@ -3785,7 +2919,7 @@ export class AiService implements IAiService {
     ];
     if (!targets.length) {
       throw new Error(
-        "There is no component or query to attach an event to — a GenerateEvent step needs a CreateComponent or CreateQuery step before it",
+        'There is no component or query to attach an event to — a GenerateEvent step needs a CreateComponent or CreateQuery step before it'
       );
     }
 
@@ -3793,42 +2927,42 @@ export class AiService implements IAiService {
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "generateEvent", args: generatedArgs };
+      call = { toolName: 'generateEvent', args: generatedArgs };
     } else {
       const stepContext = [
         this.buildStepContextLines(step, context, previousError),
         `Attachable targets (use the exact name):\n${targets
           .map(
             (target) =>
-              `- ${target.name} (${target.componentType ? `${target.componentType}, id ${target.id}` : `data query, id ${target.id}`})`,
+              `- ${target.name} (${target.componentType ? `${target.componentType}, id ${target.id}` : `data query, id ${target.id}`})`
           )
-          .join("\n")}`,
-      ].join("\n\n");
+          .join('\n')}`,
+      ].join('\n\n');
 
       const prompt = await this.budgetPromptForOrg(
         context.organizationId,
         {
           system: `${GENERATE_EVENT_SYSTEM_PROMPT}\n\n${renderEventCatalogForPrompt()}`,
-          messages: [{ role: "user", content: stepContext }],
+          messages: [{ role: 'user', content: stepContext }],
         },
-        "executeEventStep",
+        'executeEventStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-generate-event",
+        'openai',
+        'approve-prd-generate-event',
         {
           ...prompt,
           tools: { generateEvent: generateEventTool },
-          toolChoice: { type: "tool", toolName: "generateEvent" },
+          toolChoice: { type: 'tool', toolName: 'generateEvent' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "generateEvent") {
-      throw new Error("The assistant did not produce an event definition");
+    if (!call || call.toolName !== 'generateEvent') {
+      throw new Error('The assistant did not produce an event definition');
     }
 
     const args = call.args as {
@@ -3842,10 +2976,10 @@ export class AiService implements IAiService {
       throw new Error(
         `targetName "${args.targetName}" does not match any component or query in this plan. Available: ${targets
           .map((entry) => entry.name)
-          .join(", ")}`,
+          .join(', ')}`
       );
     }
-    const targetType = target.componentType ? "component" : "data_query";
+    const targetType = target.componentType ? 'component' : 'data_query';
 
     const body = validateEventBody(
       {
@@ -3854,22 +2988,14 @@ export class AiService implements IAiService {
         ...(args.params || {}),
       },
       targetType,
-      target.componentType ?? undefined,
+      target.componentType ?? undefined
     );
 
-    const existingEvents = await this.agentsService.FindEventsBySource(
-      target.id,
-    );
-    const sameEvent = existingEvents.find(
-      (event) => event?.event?.eventId === body.eventId,
-    );
+    const existingEvents = await this.agentsService.FindEventsBySource(target.id);
+    const sameEvent = existingEvents.find((event) => event?.event?.eventId === body.eventId);
 
     if (sameEvent) {
-      await this.agentsService.UpdateEventBody(
-        context.appVersionId,
-        sameEvent.id,
-        body,
-      );
+      await this.agentsService.UpdateEventBody(context.appVersionId, sameEvent.id, body);
       return {
         content: {
           updated: [
@@ -3916,83 +3042,72 @@ export class AiService implements IAiService {
   private async executeUpdateQueryStep(
     step: Step,
     context: StepExecutionContext,
-    previousError?: string,
+    previousError?: string
   ): Promise<{ content: any; identifier: string; props: any }> {
-    const existingQueries = context.priorResults.filter(
-      (result) => result.type === "CreateQuery",
-    );
+    const existingQueries = context.priorResults.filter((result) => result.type === 'CreateQuery');
     if (!existingQueries.length) {
-      throw new Error(
-        "There is no query to update — an UpdateQuery step needs a CreateQuery step before it",
-      );
+      throw new Error('There is no query to update — an UpdateQuery step needs a CreateQuery step before it');
     }
 
     // Plan-time payload (ADR-0048): first attempt only — see resolveGeneratedStepArgs.
     const generatedArgs = resolveGeneratedStepArgs(step, previousError);
     let call: { toolName: string; args: any } | undefined;
     if (generatedArgs) {
-      call = { toolName: "updateQuery", args: generatedArgs };
+      call = { toolName: 'updateQuery', args: generatedArgs };
     } else {
       const stepContext = [
         this.buildStepContextLines(step, context, previousError),
         `Existing queries (update exactly one of these, by name):\n${existingQueries
           .map(
             (result) =>
-              `- ${result.artifact.content.name} (id ${result.artifact.content.id}), current options: ${JSON.stringify(result.artifact.content.options)}`,
+              `- ${result.artifact.content.name} (id ${result.artifact.content.id}), current options: ${JSON.stringify(result.artifact.content.options)}`
           )
-          .join("\n")}`,
-      ].join("\n\n");
+          .join('\n')}`,
+      ].join('\n\n');
 
       const prompt = await this.budgetPromptForOrg(
         context.organizationId,
         {
           system: UPDATE_QUERY_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: stepContext }],
+          messages: [{ role: 'user', content: stepContext }],
         },
-        "executeUpdateQueryStep",
+        'executeUpdateQueryStep'
       );
       const result = await this.aiUtilService.AIGatewayGenerate(
-        "openai",
-        "approve-prd-update-query",
+        'openai',
+        'approve-prd-update-query',
         {
           ...prompt,
           tools: { updateQuery: updateQueryTool },
-          toolChoice: { type: "tool", toolName: "updateQuery" },
+          toolChoice: { type: 'tool', toolName: 'updateQuery' },
         },
-        context.organizationId,
+        context.organizationId
       );
 
       call = result?.toolCalls?.[0];
     }
 
-    if (!call || call.toolName !== "updateQuery") {
-      throw new Error("The assistant did not produce a query update");
+    if (!call || call.toolName !== 'updateQuery') {
+      throw new Error('The assistant did not produce a query update');
     }
 
     const args = call.args as {
       queryName: string;
       options: Record<string, any>;
     };
-    const existing = existingQueries.find(
-      (entry) => entry.artifact.content?.name === args.queryName,
-    );
+    const existing = existingQueries.find((entry) => entry.artifact.content?.name === args.queryName);
     if (!existing) {
       throw new Error(
         `queryName "${args.queryName}" does not match any query created earlier in this plan. Available: ${existingQueries
           .map((entry) => entry.artifact.content?.name)
-          .join(", ")}`,
+          .join(', ')}`
       );
     }
 
     const previousOptions = existing.artifact.content.options ?? {};
-    const mergedOptions = validateMergedQueryOptions(
-      mergeQueryUpdate(previousOptions, args.options),
-    );
+    const mergedOptions = validateMergedQueryOptions(mergeQueryUpdate(previousOptions, args.options));
 
-    await this.agentsService.UpdateQuery(
-      existing.artifact.content.id,
-      mergedOptions,
-    );
+    await this.agentsService.UpdateQuery(existing.artifact.content.id, mergedOptions);
 
     return {
       content: {
@@ -4015,7 +3130,7 @@ export class AiService implements IAiService {
     return {
       name: args.name,
       options: {
-        operation: "list_rows",
+        operation: 'list_rows',
         table_id: args.table_id,
         list_rows: { limit: 100 },
       },
@@ -4042,41 +3157,33 @@ export class AiService implements IAiService {
    */
   private async resolveExternalDataSource(
     dataSourceId: string | undefined,
-    context: StepExecutionContext,
+    context: StepExecutionContext
   ): Promise<QueryableDataSource> {
     // ADR-0044: a missing id with more than one connected source is genuine ambiguity, not
     // a model mistake — the prompt's connected-sources block cannot force a correct guess,
     // so this asks the user instead of retrying the model against the same information.
     // An id that IS given but doesn't match stays a retryable model error, unchanged below.
     if (!dataSourceId && context.dataSources.length > 1) {
-      const answer = await this.raiseInterrupt(context, "select_datasource", {
+      const answer = await this.raiseInterrupt(context, 'select_datasource', {
         candidates: context.dataSources.map((candidate) => ({
           id: candidate.id,
           name: candidate.name,
         })),
       });
-      const chosen = context.dataSources.find(
-        (candidate) => candidate.id === answer?.dataSourceId,
-      );
+      const chosen = context.dataSources.find((candidate) => candidate.id === answer?.dataSourceId);
       if (!chosen) {
-        throw new Error(
-          `Interrupt answer "${answer?.dataSourceId}" does not match any connected data source.`,
-        );
+        throw new Error(`Interrupt answer "${answer?.dataSourceId}" does not match any connected data source.`);
       }
       return chosen;
     }
 
-    const dataSource = context.dataSources.find(
-      (candidate) => candidate.id === dataSourceId,
-    );
+    const dataSource = context.dataSources.find((candidate) => candidate.id === dataSourceId);
     if (!dataSource) {
       const available = context.dataSources.length
-        ? context.dataSources
-            .map((candidate) => `${candidate.name} (${candidate.id})`)
-            .join(", ")
-        : "none — this app has no connected data source, so the query must target ToolJet DB";
+        ? context.dataSources.map((candidate) => `${candidate.name} (${candidate.id})`).join(', ')
+        : 'none — this app has no connected data source, so the query must target ToolJet DB';
       throw new Error(
-        `data_source_id "${dataSourceId}" does not match any connected data source. Available: ${available}`,
+        `data_source_id "${dataSourceId}" does not match any connected data source. Available: ${available}`
       );
     }
     return dataSource;
@@ -4084,28 +3191,23 @@ export class AiService implements IAiService {
 
   private async buildExternalQueryProps(
     args: { name: string; data_source_id?: string; sql?: string },
-    context: StepExecutionContext,
+    context: StepExecutionContext
   ) {
     if (!args.sql?.trim()) {
-      throw new Error(
-        "An external data source query needs a SQL statement, but none was given",
-      );
+      throw new Error('An external data source query needs a SQL statement, but none was given');
     }
     if (!isSingleReadOnlyStatement(args.sql)) {
       throw new Error(
-        `The query must be a single read-only SELECT statement against ${"`"}${args.data_source_id}${"`"}, but it was: ${args.sql}`,
+        `The query must be a single read-only SELECT statement against ${'`'}${args.data_source_id}${'`'}, but it was: ${args.sql}`
       );
     }
 
-    const dataSource = await this.resolveExternalDataSource(
-      args.data_source_id,
-      context,
-    );
+    const dataSource = await this.resolveExternalDataSource(args.data_source_id, context);
 
     return {
       name: args.name,
       dataSourceId: dataSource.id,
-      options: { mode: "sql", query: args.sql },
+      options: { mode: 'sql', query: args.sql },
     };
   }
 
@@ -4126,18 +3228,13 @@ export class AiService implements IAiService {
       params?: Array<{ key: string; value: string }>;
       body?: string;
     },
-    context: StepExecutionContext,
+    context: StepExecutionContext
   ) {
     if (!args.url?.trim()) {
-      throw new Error(
-        "A REST API query needs a request path/URL, but none was given",
-      );
+      throw new Error('A REST API query needs a request path/URL, but none was given');
     }
 
-    const dataSource = await this.resolveExternalDataSource(
-      args.data_source_id,
-      context,
-    );
+    const dataSource = await this.resolveExternalDataSource(args.data_source_id, context);
 
     const toPairs = (entries?: Array<{ key: string; value: string }>) =>
       (entries ?? []).map(({ key, value }) => [key, value]);
@@ -4146,7 +3243,7 @@ export class AiService implements IAiService {
       name: args.name,
       dataSourceId: dataSource.id,
       options: {
-        method: args.method ?? "get",
+        method: args.method ?? 'get',
         url: args.url,
         url_params: toPairs(args.params),
         headers: toPairs(args.headers),
@@ -4176,32 +3273,25 @@ export class AiService implements IAiService {
       operation?: string;
       options?: Array<{ key: string; value: string }>;
     },
-    context: StepExecutionContext,
+    context: StepExecutionContext
   ) {
     if (!args.operation?.trim()) {
-      throw new Error(
-        "A plugin query needs an operation, but none was given",
-      );
+      throw new Error('A plugin query needs an operation, but none was given');
     }
 
-    const dataSource = await this.resolveExternalDataSource(
-      args.data_source_id,
-      context,
-    );
+    const dataSource = await this.resolveExternalDataSource(args.data_source_id, context);
 
     const validOperations = dataSource.operations ?? [];
     if (!validOperations.some((op) => op.value === args.operation)) {
       const available = validOperations.length
-        ? validOperations.map((op) => op.value).join(", ")
-        : "none — this source has no usable operations";
+        ? validOperations.map((op) => op.value).join(', ')
+        : 'none — this source has no usable operations';
       throw new Error(
-        `operation "${args.operation}" is not one of ${dataSource.name}'s operations. Available: ${available}`,
+        `operation "${args.operation}" is not one of ${dataSource.name}'s operations. Available: ${available}`
       );
     }
 
-    const fields = Object.fromEntries(
-      (args.options ?? []).map(({ key, value }) => [key, value]),
-    );
+    const fields = Object.fromEntries((args.options ?? []).map(({ key, value }) => [key, value]));
 
     return {
       name: args.name,
@@ -4226,40 +3316,38 @@ export class AiService implements IAiService {
     // count. Ids are advisory context: the model treats them as pointers, and every real
     // execution still re-resolves names/ids against the database.
     const flatten = (value: any, maxLength: number) =>
-      typeof value === "string"
-        ? value.replace(/\s+/g, " ").trim().slice(0, maxLength)
-        : "";
+      typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, maxLength) : '';
     const lines = references
       .slice(0, 20)
       .filter(
         (reference) =>
           reference &&
-          typeof reference === "object" &&
-          ["page", "component", "query"].includes(reference.type) &&
+          typeof reference === 'object' &&
+          ['page', 'component', 'query'].includes(reference.type) &&
           flatten(reference.id, 64) &&
-          flatten(reference.name, 100),
+          flatten(reference.name, 100)
       )
       .map((reference) => {
         const id = flatten(reference.id, 64);
         const name = flatten(reference.name, 100);
         const details: string[] = [];
-        if (reference.type === "component") {
+        if (reference.type === 'component') {
           const widgetType = flatten(reference.widgetType, 60);
           const pageName = flatten(reference.pageName, 100);
           if (widgetType) details.push(`${widgetType} widget`);
           if (pageName) details.push(`on page "${pageName}"`);
-        } else if (reference.type === "query") {
+        } else if (reference.type === 'query') {
           const kind = flatten(reference.kind, 60);
           if (kind) details.push(`kind: ${kind}`);
         }
-        const suffix = details.length ? ` (${details.join(", ")})` : "";
+        const suffix = details.length ? ` (${details.join(', ')})` : '';
         return `- @${name} — ${reference.type}${suffix}, id: ${id}`;
       });
     if (!lines.length) return null;
     return [
-      "The user @-mentioned resources in this message. Each @name below refers to exactly this object:",
+      'The user @-mentioned resources in this message. Each @name below refers to exactly this object:',
       ...lines,
-    ].join("\n");
+    ].join('\n');
   }
 
   /**
@@ -4271,39 +3359,28 @@ export class AiService implements IAiService {
   private buildPrdMessages(
     priorMessages: AiConversationMessage[],
     trailingUserContent?: string,
-    referencesContext?: string | null,
+    referencesContext?: string | null
   ) {
     return [
-      { role: "system", content: PRD_SYSTEM_PROMPT },
-      ...(referencesContext
-        ? [{ role: "system", content: referencesContext }]
-        : []),
+      { role: 'system', content: PRD_SYSTEM_PROMPT },
+      ...(referencesContext ? [{ role: 'system', content: referencesContext }] : []),
       ...priorMessages.map((message) => ({
-        role: message.messageType === "user" ? "user" : "assistant",
+        role: message.messageType === 'user' ? 'user' : 'assistant',
         content: message.content,
       })),
-      ...(trailingUserContent
-        ? [{ role: "user", content: trailingUserContent }]
-        : []),
+      ...(trailingUserContent ? [{ role: 'user', content: trailingUserContent }] : []),
     ];
   }
 
   /**
    * PRD text generation (ticket #91), abstracted behind one async generator so
-   * `sendUserMessage` doesn't care which backend produced the tokens.
+   * `sendUserMessage` doesn't care about the wire format.
    *
-   * When the Generation engine is configured (`GENERATION_ENGINE_URL` set,
-   * ADR-0032), proxies its `POST /generate/prd` SSE stream
-   * (GenerationEngineClient, ADR-0027) — forwarding starts as the engine's
-   * first `chunk` arrives, no buffering (AC#2). An `error` event from the
-   * client (engine unreachable, mid-stream failure, or a stream that ended
-   * with neither `done` nor `error` — AC#3) is thrown so it lands in the same
-   * catch/`sendSSE(..., 'error', ...)` path the in-process call already uses.
-   *
-   * Otherwise falls back to the existing in-process `AIGateway` call — this is
-   * the deliberate flag-guard from ADR-0036: nothing deploys the engine yet
-   * (CONTEXT.md, "not wired into the root build chain"), so a hard switch
-   * would break every PRD generation in dev and prod the moment this merges.
+   * Hard switch (ADR-0052): the Generation engine is now the only path — a
+   * missing `GENERATION_ENGINE_URL` or any engine-path failure (unreachable,
+   * mid-stream error, or a stream that ended with neither `done` nor `error`)
+   * raises `ServiceUnavailableException` rather than silently degrading to the
+   * old in-process `AIGateway` call (ADR-0036/ADR-0048, superseded).
    *
    * `abortSignal` is wired to the browser response's `close` event by the
    * caller so a disconnecting client also aborts the upstream engine request,
@@ -4311,39 +3388,19 @@ export class AiService implements IAiService {
    */
   private async *streamPrdText(
     budgetedMessages: Array<{ role: string; content: string }>,
-    organizationId: string,
-    abortSignal: AbortSignal,
-    usageSink?: { usage?: Promise<any> | any },
+    abortSignal: AbortSignal
   ): AsyncGenerator<string> {
-    if (this.generationEngineClient.isConfigured()) {
-      for await (const event of this.generationEngineClient.streamPrd(
-        budgetedMessages as any,
-        abortSignal,
-      )) {
-        if (event.type === "chunk") {
-          yield event.content;
-        } else if (event.type === "error") {
-          throw new Error(event.message);
-        } else if (event.type === "done") {
-          return;
-        }
+    if (!this.generationEngineClient.isConfigured()) {
+      throw new ServiceUnavailableException('Generation engine is not configured (GENERATION_ENGINE_URL unset)');
+    }
+    for await (const event of this.generationEngineClient.streamPrd(budgetedMessages as any, abortSignal)) {
+      if (event.type === 'chunk') {
+        yield event.content;
+      } else if (event.type === 'error') {
+        throw new ServiceUnavailableException(event.message);
+      } else if (event.type === 'done') {
+        return;
       }
-      return;
-    }
-
-    const result = await this.aiUtilService.AIGateway(
-      "openai",
-      "send-message",
-      { messages: budgetedMessages },
-      organizationId,
-    );
-
-    if (usageSink) {
-      usageSink.usage = result.usage;
-    }
-
-    for await (const chunk of result.textStream) {
-      yield chunk;
     }
   }
 
@@ -4368,33 +3425,26 @@ export class AiService implements IAiService {
     body: { conversationId: string; content: string; references?: any },
     response: Response,
     userId: string,
-    organizationId: string,
+    organizationId: string
   ): Promise<any> {
     const { conversationId, content, references } = body ?? ({} as typeof body);
 
     if (!conversationId || !content) {
-      throw new BadRequestException("conversationId and content are required");
+      throw new BadRequestException('conversationId and content are required');
     }
 
     // Generate-only, the mirror of sendUserDocsMessage being Learn-only: this path answers
     // with a PRD, and a PRD in a Learn conversation could never be approved (approvePrd
     // refuses one), so it would be a proposal with no way to act on it.
-    const conversation = await this.loadConversationOfType(
-      conversationId,
-      "generate",
-      userId,
-    );
+    const conversation = await this.loadConversationOfType(conversationId, 'generate', userId);
 
     // Conversation history precedes the new user message; it's fetched before
     // persisting so the new message isn't accidentally double-counted.
-    const priorMessages =
-      await this.aiConversationMessageRepository.findLatestByConversationId(
-        conversationId,
-      );
+    const priorMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
 
     const userMessage = await this.aiConversationMessageRepository.createOne({
       aiConversationId: conversationId,
-      messageType: "user",
+      messageType: 'user',
       content,
       references: references ?? null,
       isLatest: true,
@@ -4404,100 +3454,77 @@ export class AiService implements IAiService {
     // non-existent entities or is too vague to act on. The verdict is persisted as a normal
     // AI message so the thread continues and the user can clarify.
     const inventory = await this.assembleAppInventory(conversation.appId);
-    const verdict = this.aiFeasibilityService.assess(
-      content,
-      inventory,
-      references,
-    );
-    if (verdict.type !== "feasible") {
+    const verdict = this.aiFeasibilityService.assess(content, inventory, references);
+    if (verdict.type !== 'feasible') {
       this.aiUtilService.initSSE(response);
       this.aiUtilService.startHeartbeat(response);
 
       const aiContent =
-        verdict.type === "infeasible"
+        verdict.type === 'infeasible'
           ? verdict.messageForUser
           : `I don't have enough detail to build that. Here are a few ways to proceed:\n\n${verdict.recommendations
               .map((recommendation) => `- ${recommendation}`)
-              .join("\n")}`;
+              .join('\n')}`;
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
-        messageType: "ai",
+        messageType: 'ai',
         content: aiContent,
         parentId: userMessage.id,
         isLatest: true,
         metadata: { feasibility: verdict },
       });
 
-      this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
+      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
       response.end();
       return;
     }
 
-    const messages = this.buildPrdMessages(
-      priorMessages,
-      content,
-      this.buildMentionedResourcesContext(references),
+    const messages = this.buildPrdMessages(priorMessages, content, this.buildMentionedResourcesContext(references));
+    const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
+      organizationId,
+      messages
     );
-    const { messages: budgetedMessages, truncated } =
-      await this.aiUtilService.fitMessagesToContextWindowForOrg(
-        organizationId,
-        messages,
-      );
     if (truncated.length) {
-      this.logger.warn(
-        `[sendUserMessage] context truncated: ${JSON.stringify(truncated)}`,
-      );
+      this.logger.warn(`[sendUserMessage] context truncated: ${JSON.stringify(truncated)}`);
     }
 
     this.aiUtilService.initSSE(response);
     this.aiUtilService.startHeartbeat(response);
-    const endActiveRun = await this.beginActiveRun(
-      conversation.id,
-      userId,
-      organizationId,
-      response,
-    );
+    const endActiveRun = await this.beginActiveRun(conversation.id, userId, organizationId, response);
 
-    let fullText = "";
+    let fullText = '';
     // Ticket #91: a disconnecting browser also aborts the upstream Generation
     // engine request, rather than leaving it generating with nowhere to send
-    // the result. No-op for the in-process AIGateway fallback.
+    // the result.
     const abortController = new AbortController();
-    response.once("close", () => abortController.abort());
+    response.once('close', () => abortController.abort());
 
     try {
-      const usageSink: { usage?: Promise<any> | any } = {};
-      for await (const chunk of this.streamPrdText(
-        budgetedMessages,
-        organizationId,
-        abortController.signal,
-        usageSink,
-      )) {
+      for await (const chunk of this.streamPrdText(budgetedMessages, abortController.signal)) {
         fullText += chunk;
-        this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
+        this.aiUtilService.sendSSE(response, 'chunk', { content: chunk });
       }
 
-      const metadata = await this.captureUsageMetadata(usageSink);
+      // The Generation engine's streamPrd doesn't surface token usage (ADR-0027) —
+      // no in-process AIGateway fallback remains to fall back on for it (ADR-0052).
+      const metadata = await this.captureUsageMetadata({});
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
-        messageType: "ai",
+        messageType: 'ai',
         content: fullText,
         parentId: userMessage.id,
         isLatest: true,
         metadata,
       });
 
-      this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
+      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
       response.end();
     } catch (error) {
-      this.logger.error(
-        `[sendUserMessage] conversationId=${conversationId} failed: ${error?.message}`,
-        error?.stack,
-      );
-      this.aiUtilService.sendSSE(response, "error", {
-        message: error?.message || "Something went wrong",
+      this.logger.error(`[sendUserMessage] conversationId=${conversationId} failed: ${error?.message}`, error?.stack);
+      this.aiUtilService.sendSSE(response, 'error', {
+        message: error?.message || 'Something went wrong',
       });
       response.end();
     } finally {
@@ -4515,24 +3542,20 @@ export class AiService implements IAiService {
     inventory: string,
     priorMessages: AiConversationMessage[],
     trailingUserContent?: string,
-    referencesContext?: string | null,
+    referencesContext?: string | null
   ) {
     return [
-      { role: "system", content: LEARN_SYSTEM_PROMPT },
+      { role: 'system', content: LEARN_SYSTEM_PROMPT },
       {
-        role: "system",
+        role: 'system',
         content: `App inventory (current, assembled just now):\n\n${inventory}`,
       },
-      ...(referencesContext
-        ? [{ role: "system", content: referencesContext }]
-        : []),
+      ...(referencesContext ? [{ role: 'system', content: referencesContext }] : []),
       ...priorMessages.map((message) => ({
-        role: message.messageType === "user" ? "user" : "assistant",
+        role: message.messageType === 'user' ? 'user' : 'assistant',
         content: message.content,
       })),
-      ...(trailingUserContent
-        ? [{ role: "user", content: trailingUserContent }]
-        : []),
+      ...(trailingUserContent ? [{ role: 'user', content: trailingUserContent }] : []),
     ];
   }
 
@@ -4552,28 +3575,21 @@ export class AiService implements IAiService {
     body: { conversationId: string; content: string; references?: any },
     response: Response,
     userId: string,
-    organizationId: string,
+    organizationId: string
   ): Promise<any> {
     const { conversationId, content, references } = body ?? ({} as typeof body);
 
     if (!conversationId || !content) {
-      throw new BadRequestException("conversationId and content are required");
+      throw new BadRequestException('conversationId and content are required');
     }
 
-    const conversation = await this.loadConversationOfType(
-      conversationId,
-      "learn",
-      userId,
-    );
+    const conversation = await this.loadConversationOfType(conversationId, 'learn', userId);
 
-    const priorMessages =
-      await this.aiConversationMessageRepository.findLatestByConversationId(
-        conversationId,
-      );
+    const priorMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
 
     const userMessage = await this.aiConversationMessageRepository.createOne({
       aiConversationId: conversationId,
-      messageType: "user",
+      messageType: 'user',
       content,
       references: references ?? null,
       isLatest: true,
@@ -4581,14 +3597,9 @@ export class AiService implements IAiService {
 
     this.aiUtilService.initSSE(response);
     this.aiUtilService.startHeartbeat(response);
-    const endActiveRun = await this.beginActiveRun(
-      conversation.id,
-      userId,
-      organizationId,
-      response,
-    );
+    const endActiveRun = await this.beginActiveRun(conversation.id, userId, organizationId, response);
 
-    let fullText = "";
+    let fullText = '';
 
     try {
       const inventory = await this.assembleAppInventory(conversation.appId);
@@ -4596,51 +3607,48 @@ export class AiService implements IAiService {
         inventory,
         priorMessages,
         content,
-        this.buildMentionedResourcesContext(references),
+        this.buildMentionedResourcesContext(references)
       );
-      const { messages: budgetedMessages, truncated } =
-        await this.aiUtilService.fitMessagesToContextWindowForOrg(
-          organizationId,
-          messages,
-        );
+      const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
+        organizationId,
+        messages
+      );
       if (truncated.length) {
-        this.logger.warn(
-          `[sendUserDocsMessage] context truncated: ${JSON.stringify(truncated)}`,
-        );
+        this.logger.warn(`[sendUserDocsMessage] context truncated: ${JSON.stringify(truncated)}`);
       }
 
       const result = await this.aiUtilService.AIGateway(
-        "openai",
-        "send-docs-message",
+        'openai',
+        'send-docs-message',
         { messages: budgetedMessages },
-        organizationId,
+        organizationId
       );
 
       for await (const chunk of result.textStream) {
         fullText += chunk;
-        this.aiUtilService.sendSSE(response, "chunk", { content: chunk });
+        this.aiUtilService.sendSSE(response, 'chunk', { content: chunk });
       }
 
       const metadata = await this.captureUsageMetadata(result);
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
-        messageType: "ai",
+        messageType: 'ai',
         content: fullText,
         parentId: userMessage.id,
         isLatest: true,
         metadata,
       });
 
-      this.aiUtilService.sendSSE(response, "done", { message: aiMessage });
+      this.aiUtilService.sendSSE(response, 'done', { message: aiMessage });
       response.end();
     } catch (error) {
       this.logger.error(
         `[sendUserDocsMessage] conversationId=${conversationId} failed: ${error?.message}`,
-        error?.stack,
+        error?.stack
       );
-      this.aiUtilService.sendSSE(response, "error", {
-        message: error?.message || "Something went wrong",
+      this.aiUtilService.sendSSE(response, 'error', {
+        message: error?.message || 'Something went wrong',
       });
       response.end();
     } finally {
@@ -4667,34 +3675,19 @@ export class AiService implements IAiService {
    * flow reads it as ordinary conversation history: the next message the user sends produces
    * a PRD that already has this context, with no special-casing anywhere in `sendUserMessage`.
    */
-  async promoteConversation(
-    conversationId: string,
-    messageId: string,
-    userId: string,
-  ): Promise<any> {
+  async promoteConversation(conversationId: string, messageId: string, userId: string): Promise<any> {
     if (!conversationId) {
-      throw new BadRequestException("conversationId is required");
+      throw new BadRequestException('conversationId is required');
     }
 
-    const conversation = await this.loadConversationOfType(
-      conversationId,
-      "learn",
-      userId,
-    );
+    const conversation = await this.loadConversationOfType(conversationId, 'learn', userId);
 
-    const messages =
-      await this.aiConversationMessageRepository.findLatestByConversationId(
-        conversationId,
-      );
+    const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
     const answer = messageId
-      ? messages.find(
-          (message) => message.id === messageId && message.messageType === "ai",
-        )
-      : [...messages].reverse().find((message) => message.messageType === "ai");
+      ? messages.find((message) => message.id === messageId && message.messageType === 'ai')
+      : [...messages].reverse().find((message) => message.messageType === 'ai');
     if (!answer) {
-      throw new BadRequestException(
-        "No answer to promote in this conversation",
-      );
+      throw new BadRequestException('No answer to promote in this conversation');
     }
 
     const question = messages.find((message) => message.id === answer.parentId);
@@ -4702,9 +3695,9 @@ export class AiService implements IAiService {
     const generateConversation = await this.aiUtilService.createNewConversation(
       userId,
       conversation.appId,
-      "generate",
+      'generate',
       undefined,
-      true,
+      true
     );
 
     // Recorded alongside `handoff` so the originating thread stays traceable from the new one —
@@ -4720,7 +3713,7 @@ export class AiService implements IAiService {
 
     const seedMessage = await this.aiConversationMessageRepository.createOne({
       aiConversationId: generateConversation.id,
-      messageType: "user",
+      messageType: 'user',
       content: this.buildContextSeed(question?.content, answer.content),
       isLatest: true,
     });
@@ -4733,18 +3726,18 @@ export class AiService implements IAiService {
   private buildContextSeed(question: string, answer: string): string {
     const MAX_SEED_PART_CHARS = 1500;
     const condense = (text: string) =>
-      (text || "").trim().length > MAX_SEED_PART_CHARS
-        ? `${(text || "").trim().slice(0, MAX_SEED_PART_CHARS)}…`
-        : (text || "").trim();
+      (text || '').trim().length > MAX_SEED_PART_CHARS
+        ? `${(text || '').trim().slice(0, MAX_SEED_PART_CHARS)}…`
+        : (text || '').trim();
 
     return [
-      "Context carried over from a Learn conversation about this app:",
-      "",
-      ...(question ? [`Question: ${condense(question)}`, ""] : []),
+      'Context carried over from a Learn conversation about this app:',
+      '',
+      ...(question ? [`Question: ${condense(question)}`, ''] : []),
       `Answer: ${condense(answer)}`,
-      "",
-      "I want to build on this.",
-    ].join("\n");
+      '',
+      'I want to build on this.',
+    ].join('\n');
   }
 
   /**
@@ -4768,51 +3761,36 @@ export class AiService implements IAiService {
     stepId: string,
     userId: string,
     organizationId: string,
-    inclusive = false,
+    inclusive = false
   ): Promise<any> {
     if (!conversationId || !stepId) {
-      throw new BadRequestException("conversationId and stepId are required");
+      throw new BadRequestException('conversationId and stepId are required');
     }
 
-    const conversation = await this.loadConversationOfType(
-      conversationId,
-      "generate",
-      userId,
-    );
+    const conversation = await this.loadConversationOfType(conversationId, 'generate', userId);
 
     const targetStep = await this.stepRepository.findById(stepId);
     if (!targetStep || targetStep.conversationId !== conversationId) {
-      throw new NotFoundException("Step not found in this conversation");
+      throw new NotFoundException('Step not found in this conversation');
     }
-    if (targetStep.status !== "succeeded") {
-      throw new BadRequestException("Can only rewind to a completed step");
+    if (targetStep.status !== 'succeeded') {
+      throw new BadRequestException('Can only rewind to a completed step');
     }
 
     const appVersionId = await this.resolveAppVersionId(conversation.appId);
-    const stepsAfter = await this.stepRepository.findAfterOrder(
-      conversationId,
-      targetStep.messageId,
-      targetStep.order,
-    );
+    const stepsAfter = await this.stepRepository.findAfterOrder(conversationId, targetStep.messageId, targetStep.order);
     const stepsToUndo = inclusive ? [targetStep, ...stepsAfter] : stepsAfter;
 
     for (const step of [...stepsToUndo].reverse()) {
-      if (step.status === "succeeded" && step.artifactId) {
-        const artifact = await this.artifactRepository.findById(
-          step.artifactId,
-        );
+      if (step.status === 'succeeded' && step.artifactId) {
+        const artifact = await this.artifactRepository.findById(step.artifactId);
         if (artifact) {
-          await this.agentsService.undoArtifact(
-            step.type,
-            appVersionId,
-            organizationId,
-            artifact.content,
-          );
+          await this.agentsService.undoArtifact(step.type, appVersionId, organizationId, artifact.content);
           await this.artifactRepository.deleteOne(artifact.id);
         }
       }
       await this.stepRepository.updateOne(step.id, {
-        status: "pending",
+        status: 'pending',
         artifactId: null,
         errorMessage: null,
         attempts: 0,
@@ -4833,36 +3811,26 @@ export class AiService implements IAiService {
    * it already produced undone) by the loop. Failed steps can't be skipped — a failed plan
    * has already stopped, and retrying it is rewind + re-approve, not skip.
    */
-  async skipStep(
-    conversationId: string,
-    stepId: string,
-    userId: string,
-  ): Promise<any> {
+  async skipStep(conversationId: string, stepId: string, userId: string): Promise<any> {
     if (!conversationId || !stepId) {
-      throw new BadRequestException("conversationId and stepId are required");
+      throw new BadRequestException('conversationId and stepId are required');
     }
 
-    await this.loadConversationOfType(conversationId, "generate", userId);
+    await this.loadConversationOfType(conversationId, 'generate', userId);
 
     const step = await this.stepRepository.findById(stepId);
     if (!step || step.conversationId !== conversationId) {
-      throw new NotFoundException("Step not found in this conversation");
+      throw new NotFoundException('Step not found in this conversation');
     }
     // Ticket #77 / ADR-0042: 'awaiting_confirmation' is also skippable — declining an
     // external CreateTable step's confirmation gate is surfaced through this same endpoint
     // (the ADR's "same run-UI channel Skip already uses"), not a parallel decline path.
     // executeCreateTableStep's poll loop is what turns this into "declined, no DDL issued".
-    if (
-      step.status !== "pending" &&
-      step.status !== "running" &&
-      step.status !== "awaiting_confirmation"
-    ) {
-      throw new BadRequestException(
-        "Only a pending, running, or awaiting-confirmation step can be skipped",
-      );
+    if (step.status !== 'pending' && step.status !== 'running' && step.status !== 'awaiting_confirmation') {
+      throw new BadRequestException('Only a pending, running, or awaiting-confirmation step can be skipped');
     }
 
-    await this.stepRepository.updateOne(step.id, { status: "skipped" });
+    await this.stepRepository.updateOne(step.id, { status: 'skipped' });
     return { skipped: step.id };
   }
 
@@ -4872,28 +3840,22 @@ export class AiService implements IAiService {
    * awaitExternalTableConfirmation) picks the new status up on its next check, the same
    * checkpoint shape skipStep already uses for Skip.
    */
-  async confirmStep(
-    conversationId: string,
-    stepId: string,
-    userId: string,
-  ): Promise<any> {
+  async confirmStep(conversationId: string, stepId: string, userId: string): Promise<any> {
     if (!conversationId || !stepId) {
-      throw new BadRequestException("conversationId and stepId are required");
+      throw new BadRequestException('conversationId and stepId are required');
     }
 
-    await this.loadConversationOfType(conversationId, "generate", userId);
+    await this.loadConversationOfType(conversationId, 'generate', userId);
 
     const step = await this.stepRepository.findById(stepId);
     if (!step || step.conversationId !== conversationId) {
-      throw new NotFoundException("Step not found in this conversation");
+      throw new NotFoundException('Step not found in this conversation');
     }
-    if (step.status !== "awaiting_confirmation") {
-      throw new BadRequestException(
-        "Only a step awaiting confirmation can be confirmed",
-      );
+    if (step.status !== 'awaiting_confirmation') {
+      throw new BadRequestException('Only a step awaiting confirmation can be confirmed');
     }
 
-    await this.stepRepository.updateOne(step.id, { status: "confirmed" });
+    await this.stepRepository.updateOne(step.id, { status: 'confirmed' });
     return { confirmed: step.id };
   }
 
@@ -4908,59 +3870,36 @@ export class AiService implements IAiService {
    * regenerated PRD automatically replaces the prior one as the pending-approval PRD —
    * nothing there needs to change for that.
    */
-  async regenerateAiMessage(
-    parentMessageId: string,
-    userId: string,
-    organizationId: string,
-  ): Promise<any> {
+  async regenerateAiMessage(parentMessageId: string, userId: string, organizationId: string): Promise<any> {
     if (!parentMessageId) {
-      throw new BadRequestException("parentMessageId is required");
+      throw new BadRequestException('parentMessageId is required');
     }
 
-    const parentMessage =
-      await this.aiConversationMessageRepository.findMessageById(
-        parentMessageId,
-      );
+    const parentMessage = await this.aiConversationMessageRepository.findMessageById(parentMessageId);
     if (!parentMessage) {
-      throw new NotFoundException("Message not found");
+      throw new NotFoundException('Message not found');
     }
 
     const conversationId = parentMessage.aiConversationId;
     // Regeneration reads the target conversation's history and re-runs an LLM call grounded in
     // it, so ownership is enforced up front — otherwise a known message UUID lets any user
     // consume AI credits and read/mutate a thread that isn't theirs.
-    const conversation =
-      await this.aiConversationRepository.findById(conversationId);
+    const conversation = await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== userId) {
-      throw new NotFoundException("Conversation not found");
+      throw new NotFoundException('Conversation not found');
     }
-    const latestMessages =
-      await this.aiConversationMessageRepository.findLatestByConversationId(
-        conversationId,
-      );
-    const parentIndex = latestMessages.findIndex(
-      (message) => message.id === parentMessageId,
-    );
+    const latestMessages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
+    const parentIndex = latestMessages.findIndex((message) => message.id === parentMessageId);
     if (parentIndex === -1) {
-      throw new BadRequestException(
-        "Message is not part of the active conversation branch",
-      );
+      throw new BadRequestException('Message is not part of the active conversation branch');
     }
 
     const staleReply = latestMessages[parentIndex + 1];
-    if (
-      !staleReply ||
-      staleReply.parentId !== parentMessageId ||
-      staleReply.messageType !== "ai"
-    ) {
-      throw new BadRequestException(
-        "No AI reply to regenerate for this message",
-      );
+    if (!staleReply || staleReply.parentId !== parentMessageId || staleReply.messageType !== 'ai') {
+      throw new BadRequestException('No AI reply to regenerate for this message');
     }
     if (parentIndex + 1 !== latestMessages.length - 1) {
-      throw new BadRequestException(
-        "Only the latest message in the conversation can be regenerated",
-      );
+      throw new BadRequestException('Only the latest message in the conversation can be regenerated');
     }
 
     const priorMessages = latestMessages.slice(0, parentIndex + 1);
@@ -4970,28 +3909,22 @@ export class AiService implements IAiService {
     // would silently turn a Q&A answer into a build proposal. The inventory is re-assembled
     // rather than reused (ADR-0011) — the App may well have changed since the first attempt.
     const messages =
-      conversation?.conversationType === "learn"
-        ? this.buildLearnMessages(
-            await this.assembleAppInventory(conversation.appId),
-            priorMessages,
-          )
+      conversation?.conversationType === 'learn'
+        ? this.buildLearnMessages(await this.assembleAppInventory(conversation.appId), priorMessages)
         : this.buildPrdMessages(priorMessages);
-    const { messages: budgetedMessages, truncated } =
-      await this.aiUtilService.fitMessagesToContextWindowForOrg(
-        organizationId,
-        messages,
-      );
+    const { messages: budgetedMessages, truncated } = await this.aiUtilService.fitMessagesToContextWindowForOrg(
+      organizationId,
+      messages
+    );
     if (truncated.length) {
-      this.logger.warn(
-        `[regenerateAiMessage] context truncated: ${JSON.stringify(truncated)}`,
-      );
+      this.logger.warn(`[regenerateAiMessage] context truncated: ${JSON.stringify(truncated)}`);
     }
 
     const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "regenerate-message",
+      'openai',
+      'regenerate-message',
       { messages: budgetedMessages },
-      organizationId,
+      organizationId
     );
 
     await this.aiConversationMessageRepository.updateOne(staleReply.id, {
@@ -5000,8 +3933,8 @@ export class AiService implements IAiService {
 
     return await this.aiConversationMessageRepository.createOne({
       aiConversationId: conversationId,
-      messageType: "ai",
-      content: result?.text || "",
+      messageType: 'ai',
+      content: result?.text || '',
       parentId: parentMessageId,
       isLatest: true,
     });
@@ -5012,9 +3945,7 @@ export class AiService implements IAiService {
    * enabled (see BASIC_PLAN_TERMS.features.ai) and usage is unlimited, so this
    * never touches organization_ai_credit_history / selfhost_ai_credit_history.
    */
-  async getCreditsBalance(
-    organizationId,
-  ): Promise<{ aiFeaturesEnabled: boolean; error?: string }> {
+  async getCreditsBalance(organizationId): Promise<{ aiFeaturesEnabled: boolean; error?: string }> {
     return {
       aiFeaturesEnabled: true,
     };
@@ -5030,25 +3961,17 @@ export class AiService implements IAiService {
    * to fall back to — failing at the boundary beats persisting a row that no listing can find.
    */
   private resolveConversationType(conversationType: string): ConversationType {
-    if (!conversationType) return "generate";
+    if (!conversationType) return 'generate';
     if (!(CONVERSATION_TYPES as readonly string[]).includes(conversationType)) {
       throw new BadRequestException(
-        `Unsupported conversationType "${conversationType}" — supported types are: ${CONVERSATION_TYPES.join(", ")}`,
+        `Unsupported conversationType "${conversationType}" — supported types are: ${CONVERSATION_TYPES.join(', ')}`
       );
     }
     return conversationType as ConversationType;
   }
 
-  async listConversations(
-    appId: string,
-    userId: string,
-    conversationType: string,
-  ): Promise<any> {
-    return this.aiUtilService.getConversationsList(
-      appId,
-      userId,
-      this.resolveConversationType(conversationType),
-    );
+  async listConversations(appId: string, userId: string, conversationType: string): Promise<any> {
+    return this.aiUtilService.getConversationsList(appId, userId, this.resolveConversationType(conversationType));
   }
 
   /**
@@ -5062,21 +3985,18 @@ export class AiService implements IAiService {
     conversationType: string,
     organizationId: string,
     currentConversationId?: string,
-    handoff?: boolean,
+    handoff?: boolean
   ): Promise<any> {
     return this.aiUtilService.createNewConversation(
       userId,
       appId,
       this.resolveConversationType(conversationType),
       currentConversationId,
-      handoff,
+      handoff
     );
   }
 
-  async getConversationById(
-    conversationId: string,
-    userId: string,
-  ): Promise<any> {
+  async getConversationById(conversationId: string, userId: string): Promise<any> {
     return this.aiUtilService.getConversationById(conversationId, userId);
   }
 
@@ -5091,22 +4011,16 @@ export class AiService implements IAiService {
    * treated as an error, per the ticket's acceptance criteria.
    */
   async getThreadTokenUsage(conversationId: string, user: any): Promise<any> {
-    const conversation =
-      await this.aiConversationRepository.findById(conversationId);
+    const conversation = await this.aiConversationRepository.findById(conversationId);
     if (!conversation || conversation.userId !== user.id) {
-      throw new NotFoundException("Conversation not found");
+      throw new NotFoundException('Conversation not found');
     }
 
-    const messages =
-      await this.aiConversationMessageRepository.findLatestByConversationId(
-        conversationId,
-      );
+    const messages = await this.aiConversationMessageRepository.findLatestByConversationId(conversationId);
     // Only "ai" messages can ever carry usage (it comes from a provider response) — counting
     // user turns here would make aiMessagesWithUsage read as "N messages are missing data"
     // when some of those N are simply the wrong message type to have any.
-    const aiMessages = messages.filter(
-      (message) => message.messageType === "ai",
-    );
+    const aiMessages = messages.filter((message) => message.messageType === 'ai');
 
     let promptTokens = 0;
     let completionTokens = 0;
@@ -5137,9 +4051,7 @@ export class AiService implements IAiService {
    * Never throws: a provider that omits usage (or an SDK version mismatch) should not break
    * message persistence, it should just leave this message out of the aggregation.
    */
-  private async captureUsageMetadata(result: {
-    usage?: Promise<any> | any;
-  }): Promise<Record<string, any> | undefined> {
+  private async captureUsageMetadata(result: { usage?: Promise<any> | any }): Promise<Record<string, any> | undefined> {
     try {
       const usage = await result.usage;
       if (!usage) {
@@ -5147,18 +4059,13 @@ export class AiService implements IAiService {
       }
       const promptTokens = Number(usage.promptTokens);
       const completionTokens = Number(usage.completionTokens);
-      if (
-        !Number.isFinite(promptTokens) &&
-        !Number.isFinite(completionTokens)
-      ) {
+      if (!Number.isFinite(promptTokens) && !Number.isFinite(completionTokens)) {
         return undefined;
       }
       return {
         usage: {
           promptTokens: Number.isFinite(promptTokens) ? promptTokens : 0,
-          completionTokens: Number.isFinite(completionTokens)
-            ? completionTokens
-            : 0,
+          completionTokens: Number.isFinite(completionTokens) ? completionTokens : 0,
         },
       };
     } catch {
@@ -5177,20 +4084,11 @@ export class AiService implements IAiService {
    * the field is supposed to hold, which is exactly the case a truthiness test would drop.
    */
   private buildFixContextLines(context: ErrorContext): string {
-    const {
-      expression,
-      errorMessage,
-      componentName,
-      componentType,
-      propertyName,
-      fallbackValue,
-    } = context;
+    const { expression, errorMessage, componentName, componentType, propertyName, fallbackValue } = context;
     const lines: string[] = [];
 
     if (componentName || componentType) {
-      lines.push(
-        `Component: ${[componentType, componentName].filter(Boolean).join(" ")}`,
-      );
+      lines.push(`Component: ${[componentType, componentName].filter(Boolean).join(' ')}`);
     }
     if (propertyName) {
       lines.push(`Property: ${propertyName}`);
@@ -5200,12 +4098,12 @@ export class AiService implements IAiService {
     if (fallbackValue !== undefined) {
       lines.push(
         `The property fell back to this value, which shows the shape it expects: ${summarizeFallbackValue(
-          fallbackValue,
-        )}`,
+          fallbackValue
+        )}`
       );
     }
 
-    return lines.join("\n");
+    return lines.join('\n');
   }
 
   /**
@@ -5220,10 +4118,7 @@ export class AiService implements IAiService {
    * both, there is nothing to fix and no way to tell what "fixed" would mean, so the model
    * could only invent a replacement for a value the user never complained about.
    */
-  async fixWithAi(
-    body: ErrorContext,
-    organizationId: string,
-  ): Promise<Suggestion> {
+  async fixWithAi(body: ErrorContext, organizationId: string): Promise<Suggestion> {
     const { expression, errorMessage } = body ?? ({} as ErrorContext);
 
     // Type-checked, not just truthiness-checked: this endpoint takes a raw `@Body()`, and the
@@ -5231,38 +4126,34 @@ export class AiService implements IAiService {
     // an array of messages. A bare `.trim()` on one of those throws a TypeError, which would
     // surface to the user as a 500 "Internal server error" for what is really a bad request.
     if (!isNonEmptyString(expression)) {
-      throw new BadRequestException(
-        "expression is required and must be a non-empty string",
-      );
+      throw new BadRequestException('expression is required and must be a non-empty string');
     }
     if (!isNonEmptyString(errorMessage)) {
-      throw new BadRequestException(
-        "errorMessage is required and must be a non-empty string",
-      );
+      throw new BadRequestException('errorMessage is required and must be a non-empty string');
     }
 
     const prompt = await this.budgetPromptForOrg(
       organizationId,
       {
         system: FIX_WITH_AI_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: this.buildFixContextLines(body) }],
+        messages: [{ role: 'user', content: this.buildFixContextLines(body) }],
       },
-      "fixWithAi",
+      'fixWithAi'
     );
     const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "fix-with-ai",
+      'openai',
+      'fix-with-ai',
       {
         ...prompt,
         tools: { proposeFix: proposeFixTool },
-        toolChoice: { type: "tool", toolName: "proposeFix" },
+        toolChoice: { type: 'tool', toolName: 'proposeFix' },
       },
-      organizationId,
+      organizationId
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== "proposeFix") {
-      throw new Error("The assistant did not produce a fix");
+    if (!call || call.toolName !== 'proposeFix') {
+      throw new Error('The assistant did not produce a fix');
     }
 
     const { fixedValue, explanation } = call.args as {
@@ -5282,9 +4173,7 @@ export class AiService implements IAiService {
    * than failing the request (ADR-0016). The failure is logged because a *persistently*
    * ungrounded copilot looks to the user like a model that keeps making names up.
    */
-  private async assembleCopilotInventory(
-    appId?: string,
-  ): Promise<string | null> {
+  private async assembleCopilotInventory(appId?: string): Promise<string | null> {
     if (!appId) return null;
 
     try {
@@ -5292,7 +4181,7 @@ export class AiService implements IAiService {
     } catch (error) {
       this.logger.warn(
         `[copilot] appId=${appId} inventory unavailable, answering ungrounded: ${error?.message}`,
-        error?.stack,
+        error?.stack
       );
       return null;
     }
@@ -5307,43 +4196,34 @@ export class AiService implements IAiService {
    * rendered as empty sections — an "Already in the editor:" heading over nothing invites the
    * model to treat the blank as content and preserve it.
    */
-  private buildCopilotContextLines(
-    context: CopilotContext,
-    inventory: string | null,
-  ): string {
+  private buildCopilotContextLines(context: CopilotContext, inventory: string | null): string {
     const { prompt, currentCode, language, dataSourceKind } = context;
     const sections: string[] = [];
 
     sections.push(`Editor language: ${this.resolveCopilotLanguage(language)}`);
     if (isNonEmptyString(dataSourceKind)) {
-      sections.push(
-        `This query runs against a "${dataSourceKind}" data source.`,
-      );
+      sections.push(`This query runs against a "${dataSourceKind}" data source.`);
     }
     if (inventory) {
       sections.push(`Inventory of the app being edited:\n${inventory}`);
     }
     if (isNonEmptyString(currentCode) && isCodeTooLongToShow(currentCode)) {
       sections.push(
-        "The editor already contains a body too long to include here, so you cannot see it. Write only what was asked, as a self-contained body, and open your explanation by warning that it replaces the existing code rather than extending it.",
+        'The editor already contains a body too long to include here, so you cannot see it. Write only what was asked, as a self-contained body, and open your explanation by warning that it replaces the existing code rather than extending it.'
       );
     } else if (isNonEmptyString(currentCode)) {
-      sections.push(
-        `Already in the editor, which is the user's work in progress:\n${currentCode}`,
-      );
+      sections.push(`Already in the editor, which is the user's work in progress:\n${currentCode}`);
     } else {
-      sections.push("The editor is empty.");
+      sections.push('The editor is empty.');
     }
     sections.push(`What the user asked for:\n${prompt.trim()}`);
 
-    return sections.join("\n\n");
+    return sections.join('\n\n');
   }
 
   private resolveCopilotLanguage(language?: string): string {
-    const normalized = (language || "").trim().toLowerCase();
-    return SUPPORTED_COPILOT_LANGUAGES.includes(normalized)
-      ? normalized
-      : DEFAULT_COPILOT_LANGUAGE;
+    const normalized = (language || '').trim().toLowerCase();
+    return SUPPORTED_COPILOT_LANGUAGES.includes(normalized) ? normalized : DEFAULT_COPILOT_LANGUAGE;
   }
 
   /**
@@ -5358,16 +4238,11 @@ export class AiService implements IAiService {
    * reason `fixWithAi` checks its inputs: this takes a raw `@Body()`, and `.trim()` on a
    * non-string would surface as a 500 for what is a malformed request.
    */
-  async copilot(
-    body: CopilotContext,
-    organizationId: string,
-  ): Promise<Completion> {
+  async copilot(body: CopilotContext, organizationId: string): Promise<Completion> {
     const { prompt } = body ?? ({} as CopilotContext);
 
     if (!isNonEmptyString(prompt)) {
-      throw new BadRequestException(
-        "prompt is required and must be a non-empty string",
-      );
+      throw new BadRequestException('prompt is required and must be a non-empty string');
     }
 
     const inventory = await this.assembleCopilotInventory(body.appId);
@@ -5378,27 +4253,27 @@ export class AiService implements IAiService {
         system: COPILOT_SYSTEM_PROMPT,
         messages: [
           {
-            role: "user",
+            role: 'user',
             content: this.buildCopilotContextLines(body, inventory),
           },
         ],
       },
-      "copilot",
+      'copilot'
     );
     const result = await this.aiUtilService.AIGatewayGenerate(
-      "openai",
-      "copilot",
+      'openai',
+      'copilot',
       {
         ...budgetedPrompt,
         tools: { writeCode: writeCodeTool },
-        toolChoice: { type: "tool", toolName: "writeCode" },
+        toolChoice: { type: 'tool', toolName: 'writeCode' },
       },
-      organizationId,
+      organizationId
     );
 
     const call = result?.toolCalls?.[0];
-    if (!call || call.toolName !== "writeCode") {
-      throw new Error("The assistant did not produce any code");
+    if (!call || call.toolName !== 'writeCode') {
+      throw new Error('The assistant did not produce any code');
     }
 
     const { code, explanation } = call.args as {

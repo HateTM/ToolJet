@@ -5,18 +5,14 @@
 // seam: the createTableTool schema (axis 1) and the executeCreateTableStep mapping
 // (axis 2). The offline harness mocks the AI gateway, AgentsService.CreateTable, and the
 // underlying tooljet-db table-operations service so the specs run without a DB.
-import {
-  AiService,
-  createTableTool,
-  proposeStepPlanTool,
-  CREATE_TABLE_SYSTEM_PROMPT,
-  STEP_PLAN_SYSTEM_PROMPT,
-} from '@modules/ai/service';
+import { AiService, createTableTool, CREATE_TABLE_SYSTEM_PROMPT } from '@modules/ai/service';
 
 const buildMockAiUtilService = () => ({
   AIGatewayGenerate: jest.fn(),
   sendSSE: jest.fn(),
-  fitMessagesToContextWindowForOrg: jest.fn().mockImplementation((orgId: string, msgs: any[]) => ({ messages: msgs, truncated: [] })),
+  fitMessagesToContextWindowForOrg: jest
+    .fn()
+    .mockImplementation((orgId: string, msgs: any[]) => ({ messages: msgs, truncated: [] })),
 });
 
 const buildMockAgentsService = () => ({
@@ -48,6 +44,12 @@ const buildAiService = (overrides: any = {}) => {
   const aiUtilService = overrides.aiUtilService ?? buildMockAiUtilService();
   const agentsService = overrides.agentsService ?? buildMockAgentsService();
   const repositories = overrides.repositories ?? buildMockRepositories();
+  // Hard switch (ADR-0052): configured by default — a test exercising generateStepPlan
+  // sets generateSteps' resolved value; the rest of this file's tests call
+  // executeCreateTableStep/executeUpdateComponentStep directly and never touch it.
+  const generationEnginePipelineClient =
+    overrides.generationEnginePipelineClient ??
+    ({ isConfigured: jest.fn().mockReturnValue(true), generateSteps: jest.fn() } as any);
 
   const service = new AiService(
     aiUtilService,
@@ -60,16 +62,16 @@ const buildAiService = (overrides: any = {}) => {
     repositories.aiResponseVoteRepository,
     repositories.appInventoryService,
     repositories.dataSourceInventoryService,
-    // The deps below are never touched on these tests' code paths, but the pipeline
-    // client IS: generateStepPlan's ADR-0048 branch calls isConfigured() first, so it
-    // must exist and default to "engine not configured" (in-process planner, as before).
+    // Never touched on these tests' code paths (they call
+    // executeCreateTableStep/executeUpdateComponentStep directly, never sendUserMessage)
+    // — `as any` sidesteps GenerationEngineClient's real constructor-injected shape.
     undefined,
     undefined,
     undefined,
-    { isConfigured: jest.fn().mockReturnValue(false), generateSteps: jest.fn() }
+    generationEnginePipelineClient
   );
 
-  return { service, aiUtilService, agentsService, repositories };
+  return { service, aiUtilService, agentsService, repositories, generationEnginePipelineClient };
 };
 
 const makeToolCall = (args: any) => ({
@@ -90,7 +92,15 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
       },
     ];
     aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [makeToolCall({ table_name: 'orders', columns: [{ column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true }], foreign_keys: foreignKeys })],
+      toolCalls: [
+        makeToolCall({
+          table_name: 'orders',
+          columns: [
+            { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
+          ],
+          foreign_keys: foreignKeys,
+        }),
+      ],
     });
 
     const created = { id: 'tjdb-uuid', table_name: 'orders' };
@@ -101,7 +111,7 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
 
     const result = await service.executeCreateTableStep(
       { type: 'CreateTable', description: 'orders' } as any,
-      { prd: 'build an orders table', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any,
+      { prd: 'build an orders table', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any
     );
 
     expect(agentsService.CreateTable).toHaveBeenCalledTimes(1);
@@ -119,16 +129,20 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
   it('omits foreign_keys entirely when the model does not declare any', async () => {
     const { service, aiUtilService, agentsService } = buildAiService();
     aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [makeToolCall({
-        table_name: 'products',
-        columns: [{ column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true }],
-      })],
+      toolCalls: [
+        makeToolCall({
+          table_name: 'products',
+          columns: [
+            { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
+          ],
+        }),
+      ],
     });
     agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'products' });
 
     const result = await service.executeCreateTableStep(
       { type: 'CreateTable', description: 'products' } as any,
-      { prd: 'build a products table', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any,
+      { prd: 'build a products table', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any
     );
 
     const [, tableParams] = agentsService.CreateTable.mock.calls[0];
@@ -146,21 +160,29 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
       },
     ];
     aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [makeToolCall({
-        table_name: 'payments',
-        columns: [
-          { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
-          { column_name: 'customer_id', data_type: 'text', is_primary_key: false, is_not_null: true, is_unique: false },
-        ],
-        foreign_keys: foreignKeys,
-      })],
+      toolCalls: [
+        makeToolCall({
+          table_name: 'payments',
+          columns: [
+            { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
+            {
+              column_name: 'customer_id',
+              data_type: 'text',
+              is_primary_key: false,
+              is_not_null: true,
+              is_unique: false,
+            },
+          ],
+          foreign_keys: foreignKeys,
+        }),
+      ],
     });
     agentsService.CreateTable.mockResolvedValue({ id: 'tjdb-uuid', table_name: 'payments' });
     agentsService.ViewTables.mockResolvedValue([{ id: 'customers-uuid', tableName: 'customers' }]);
 
     await service.executeCreateTableStep(
       { type: 'CreateTable', description: 'payments' } as any,
-      { prd: 'build payments', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any,
+      { prd: 'build payments', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any
     );
 
     const [, tableParams] = agentsService.CreateTable.mock.calls[0];
@@ -170,14 +192,15 @@ describe('AiService.executeCreateTableStep — foreign keys (ticket #23)', () =>
 
 /** @group ai-builder */
 describe('AiService.executeUpdateComponentStep (ticket #66)', () => {
-  const componentIndex =
-    'Existing components already in this app:\n- Text "Welcome" (id: component-1, page: "Home")';
+  const componentIndex = 'Existing components already in this app:\n- Text "Welcome" (id: component-1, page: "Home")';
 
   it("resolves the model's componentId against the real component index and delegates the merge to AgentsService.UpdateComponent", async () => {
     const { service, aiUtilService, agentsService, repositories } = buildAiService();
     repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
     aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [{ toolName: 'updateComponent', args: { componentId: 'component-1', properties: { text: 'New title' } } }],
+      toolCalls: [
+        { toolName: 'updateComponent', args: { componentId: 'component-1', properties: { text: 'New title' } } },
+      ],
     });
     agentsService.UpdateComponent.mockResolvedValue({
       id: 'component-1',
@@ -188,7 +211,12 @@ describe('AiService.executeUpdateComponentStep (ticket #66)', () => {
 
     const result = await service.executeUpdateComponentStep(
       { type: 'UpdateComponent', description: 'change the welcome text' } as any,
-      { prd: 'Change the welcome text to "New title"', organizationId: 'org-1', appVersionId: 'v1', priorResults: [] } as any
+      {
+        prd: 'Change the welcome text to "New title"',
+        organizationId: 'org-1',
+        appVersionId: 'v1',
+        priorResults: [],
+      } as any
     );
 
     expect(agentsService.UpdateComponent).toHaveBeenCalledWith('v1', 'org-1', 'component-1', {
@@ -243,14 +271,6 @@ describe('AiService.executeUpdateComponentStep (ticket #66)', () => {
 });
 
 /** @group ai-builder */
-describe('UpdateComponent step vocabulary (ticket #66)', () => {
-  it('STEP_PLAN_SYSTEM_PROMPT tells the planner about UpdateComponent and the existing-components grounding', () => {
-    expect(STEP_PLAN_SYSTEM_PROMPT).toMatch(/UpdateComponent/);
-    expect(STEP_PLAN_SYSTEM_PROMPT).toMatch(/Existing components already in this app/);
-  });
-});
-
-/** @group ai-builder */
 describe('CreateTable system prompt advertises foreign keys (ticket #23)', () => {
   it('mentions the foreign_keys field and its on_delete/on_update actions', () => {
     expect(CREATE_TABLE_SYSTEM_PROMPT).toMatch(/foreign_keys/i);
@@ -292,7 +312,14 @@ describe('createTableTool schema accepts foreign keys (axis 1)', () => {
       schema.parse({
         table_name: 'orders',
         columns: [{ column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true }],
-        foreign_keys: [{ column_names: ['customer_id'], referenced_table_name: 'customers', referenced_column_names: ['id'], on_delete: 'BOOM' }],
+        foreign_keys: [
+          {
+            column_names: ['customer_id'],
+            referenced_table_name: 'customers',
+            referenced_column_names: ['id'],
+            on_delete: 'BOOM',
+          },
+        ],
       })
     ).toThrow(/invalid/i);
   });
@@ -307,12 +334,21 @@ describe('createTableTool schema accepts indexes (ticket #23)', () => {
       table_name: 'orders',
       columns: [
         { column_name: 'id', data_type: 'serial', is_primary_key: true, is_not_null: true, is_unique: true },
-        { column_name: 'customer_id', data_type: 'integer', is_primary_key: false, is_not_null: true, is_unique: false },
+        {
+          column_name: 'customer_id',
+          data_type: 'integer',
+          is_primary_key: false,
+          is_not_null: true,
+          is_unique: false,
+        },
       ],
       indexes: [{ column_names: ['customer_id'] }, { column_names: ['customer_id', 'created_at'], is_unique: true }],
     });
 
-    expect(parsed.indexes).toEqual([{ column_names: ['customer_id'] }, { column_names: ['customer_id', 'created_at'], is_unique: true }]);
+    expect(parsed.indexes).toEqual([
+      { column_names: ['customer_id'] },
+      { column_names: ['customer_id', 'created_at'], is_unique: true },
+    ]);
   });
 
   it('rejects an index with no columns', () => {
@@ -418,59 +454,19 @@ describe('AiService.executeCreateTableStep — planned seed rows (ticket #48)', 
 });
 
 /** @group ai-builder */
-describe('step planner advertises seed_rows (ticket #48)', () => {
-  it('STEP_PLAN_SYSTEM_PROMPT tells the model when to propose seed_rows', () => {
-    expect(STEP_PLAN_SYSTEM_PROMPT).toMatch(/seed_rows/i);
-    expect(STEP_PLAN_SYSTEM_PROMPT).toMatch(/sample or starting data/i);
-    // And the guardrail: never invent seed data the PRD does not call for.
-    expect(STEP_PLAN_SYSTEM_PROMPT).toMatch(/never invent seed rows/i);
-  });
-
-  it('proposeStepPlanTool accepts a CreateTable step with well-formed seed_rows', () => {
-    const schema = proposeStepPlanTool.inputSchema as any;
-    const parsed = schema.parse({
-      steps: [
-        {
-          type: 'CreateTable',
-          description: 'tasks table with seed data',
-          table: PLANNED_TABLE,
-          seed_rows: SEED_ROWS,
-        },
-      ],
-    });
-    expect(parsed.steps[0].seed_rows).toEqual(SEED_ROWS);
-  });
-
-  it('proposeStepPlanTool still accepts a CreateTable step without seed_rows (optional)', () => {
-    const schema = proposeStepPlanTool.inputSchema as any;
-    const parsed = schema.parse({
-      steps: [{ type: 'CreateTable', description: 'tasks table', table: PLANNED_TABLE }],
-    });
-    expect(parsed.steps[0].seed_rows).toBeUndefined();
-  });
-});
-
-/** @group ai-builder */
 describe('planned seed rows are consistent with the planned schema (ticket #48 spec: "INSERTs consistent with the planned schema")', () => {
   // generateStepPlan's plan-time gate, exercised through its persist behavior via the
   // step repository mock: a row naming a column the table doesn't have must be dropped
   // (no plannedSeedRows persisted), not left to fail at insert time.
   const buildPersistingHarness = () => {
     const built = buildAiService();
-    built.aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [
+    built.generationEnginePipelineClient.generateSteps.mockResolvedValue({
+      steps: [
         {
-          toolName: 'proposeStepPlan',
-          args: {
-            steps: [
-              {
-                type: 'CreateTable',
-                description: 'tasks',
-                table: PLANNED_TABLE,
-                seed_rows: [{ title: 'Buy milk', done: false }],
-              },
-            ],
-          },
+          type: 'CreateTable',
+          description: 'tasks',
+          table: PLANNED_TABLE,
+          seed_rows: [{ title: 'Buy milk', done: false }],
         },
       ],
     });
@@ -488,22 +484,15 @@ describe('planned seed rows are consistent with the planned schema (ticket #48 s
   });
 
   it('drops seed rows that name a column the planned table does not have', async () => {
-    // Overwrite the gateway call with a hallucinated column.
+    // Overwrite the engine's plan with a hallucinated column.
     const withBadColumn = buildAiService();
-    withBadColumn.aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [
+    withBadColumn.generationEnginePipelineClient.generateSteps.mockResolvedValue({
+      steps: [
         {
-          toolName: 'proposeStepPlan',
-          args: {
-            steps: [
-              {
-                type: 'CreateTable',
-                description: 'tasks',
-                table: PLANNED_TABLE,
-                seed_rows: [{ title: 'Buy milk', nonexistent_column: 'x' }],
-              },
-            ],
-          },
+          type: 'CreateTable',
+          description: 'tasks',
+          table: PLANNED_TABLE,
+          seed_rows: [{ title: 'Buy milk', nonexistent_column: 'x' }],
         },
       ],
     });
@@ -647,7 +636,7 @@ describe('AiService.buildPluginQueryProps (ADR-0045)', () => {
     ).rejects.toThrow(/needs an operation/);
   });
 
-  it('rejects an operation not in the resolved source\'s real operations list, naming what was available (retryable)', async () => {
+  it("rejects an operation not in the resolved source's real operations list, naming what was available (retryable)", async () => {
     await expect(
       (service as any).buildPluginQueryProps(
         { name: 'x', data_source_id: 'ds-slack', operation: 'delete_workspace' },
@@ -667,8 +656,7 @@ describe('AiService.buildPluginQueryProps (ADR-0045)', () => {
 });
 
 describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)', () => {
-  const componentIndex =
-    'Existing components already in this app:\n- Text "Welcome" (id: component-1, page: "Home")';
+  const componentIndex = 'Existing components already in this app:\n- Text "Welcome" (id: component-1, page: "Home")';
   const execContext = {
     prd: 'p',
     organizationId: 'org-1',
@@ -687,7 +675,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         description: 'd',
         props: { generatedStep: { componentId: 'component-1', properties: { text: 'New title' } } },
       } as any,
-      execContext,
+      execContext
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -713,8 +701,8 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
           description: 'd',
           props: { generatedStep: { componentId: 'ghost' } },
         } as any,
-        execContext,
-      ),
+        execContext
+      )
     ).rejects.toThrow(/does not match any existing component/);
     expect(agentsService.UpdateComponent).not.toHaveBeenCalled();
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -724,9 +712,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
     const { service, aiUtilService, agentsService, repositories } = buildAiService();
     repositories.appInventoryService.renderComponentIndex.mockResolvedValue(componentIndex);
     aiUtilService.AIGatewayGenerate.mockResolvedValue({
-      toolCalls: [
-        { toolName: 'updateComponent', args: { componentId: 'component-1', properties: { text: 'LLM' } } },
-      ],
+      toolCalls: [{ toolName: 'updateComponent', args: { componentId: 'component-1', properties: { text: 'LLM' } } }],
     });
     agentsService.UpdateComponent.mockResolvedValue({ id: 'component-1' });
 
@@ -737,7 +723,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         props: { generatedStep: { componentId: 'ghost' } },
       } as any,
       execContext,
-      'previous attempt failed',
+      'previous attempt failed'
     );
 
     expect(aiUtilService.AIGatewayGenerate).toHaveBeenCalledTimes(1);
@@ -759,7 +745,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         description: 'd',
         props: { generatedStep: { componentId: 'component-1' } },
       } as any,
-      execContext,
+      execContext
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -779,7 +765,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         description: 'd',
         props: { generatedStep: { componentId: 'component-1' } },
       } as any,
-      execContext,
+      execContext
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -798,9 +784,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
     // earlier step in the same plan, so the payload must carry a valid pageId.
     const pageContext = {
       ...execContext,
-      priorResults: [
-        { type: 'CreateComponent', artifact: { content: { id: 'page-1', type: 'Page' } } },
-      ],
+      priorResults: [{ type: 'CreateComponent', artifact: { content: { id: 'page-1', type: 'Page' } } }],
     } as any;
 
     const result = await service.executeComponentStep(
@@ -809,7 +793,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         description: 'welcome text',
         props: { generatedStep: { type: 'Text', pageId: 'page-1', properties: { text: 'Hello' } } },
       } as any,
-      pageContext,
+      pageContext
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -819,7 +803,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
       'v1',
       'org-1',
       'Text',
-      expect.objectContaining({ properties: { text: 'Hello' } }),
+      expect.objectContaining({ properties: { text: 'Hello' } })
     );
     expect(result.identifier).toBe('new-1');
     expect(result.props.type).toBe('Text');
@@ -840,8 +824,8 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
           description: 'd',
           props: { generatedStep: { type: 'TimeTravelWidget' } },
         } as any,
-        execContext,
-      ),
+        execContext
+      )
     ).rejects.toThrow(/Unsupported component type/);
     expect(agentsService.CreateComponent).not.toHaveBeenCalled();
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -861,14 +845,14 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         description: 'orders list',
         props: { generatedStep: { name: 'fetchOrders' } },
       } as any,
-      execContext,
+      execContext
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
     expect(agentsService.CreateQuery).toHaveBeenCalledWith(
       'v1',
       'org-1',
-      expect.objectContaining({ name: 'fetchOrders' }),
+      expect.objectContaining({ name: 'fetchOrders' })
     );
     expect(result.identifier).toBe('fetchOrders');
   });
@@ -893,7 +877,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         description: 'limit to 50',
         props: { generatedStep: { queryName: 'fetchOrders', options: { list_rows: { limit: 50 } } } },
       } as any,
-      { ...execContext, priorResults: [prior] },
+      { ...execContext, priorResults: [prior] }
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -923,7 +907,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         description: 'd',
         props: { generatedStep: { queryName: 'fetchOrders' } },
       } as any,
-      { ...execContext, priorResults: [prior] },
+      { ...execContext, priorResults: [prior] }
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -958,7 +942,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
           },
         },
       } as any,
-      { ...execContext, priorResults: [prior] },
+      { ...execContext, priorResults: [prior] }
     );
 
     expect(aiUtilService.AIGatewayGenerate).not.toHaveBeenCalled();
@@ -970,7 +954,7 @@ describe('deterministic consumption of props.generatedStep (ADR-0048 follow-up)'
         eventType: 'component',
         attachedTo: 'comp-1',
         index: 0,
-      }),
+      })
     );
     expect(result.props).toEqual({
       targetName: 'SaveButton',

@@ -70,6 +70,9 @@ module.exports = {
     // ported verbatim from jest-ai-unit.config.ts.
     '^isolated-vm$': '<rootDir>/test/__mock__/isolated-vm.ts',
     '^got$': '<rootDir>/test/__mock__/got.ts',
+    // sanitize-html's htmlparser2 dep ships ESM-only under Node 24 (this env's only
+    // available Node — see header comment); mocked offline like isolated-vm/got above.
+    '^sanitize-html$': '<rootDir>/test/__mock__/sanitize-html.ts',
     '^test-helper$': '<rootDir>/test/test.helper.ts',
   },
   testTimeout: 30000,
