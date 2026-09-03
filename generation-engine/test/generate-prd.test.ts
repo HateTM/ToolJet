@@ -83,4 +83,85 @@ describe('POST /generate/prd', () => {
 
     await app.close();
   });
+
+  // --- Task 2a (AI SDK 6): usage in the terminal event, abort propagation, classification ---
+
+  it('includes token usage in engine-done when the generator reports it (additive field)', async () => {
+    const streamPrd: StreamPrdFn = async function* () {
+      yield { type: 'chunk', content: 'Hello' };
+      yield { type: 'usage', usage: { promptTokens: 20, completionTokens: 7, totalTokens: 27 } };
+    };
+
+    const app = buildApp({ streamPrd });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/generate/prd',
+      headers: AUTH,
+      payload: { messages: [{ role: 'user', content: 'build me a CRM' }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe(
+      'event: chunk\ndata: {"content":"Hello"}\n\n' +
+        'event: engine-done\ndata: {"usage":{"promptTokens":20,"completionTokens":7,"totalTokens":27}}\n\n'
+    );
+
+    await app.close();
+  });
+
+  it('passes an abort signal to the generator and reports an abort without a 500', async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const streamPrd: StreamPrdFn = async function* (_messages, options) {
+      receivedSignal = options?.signal;
+      yield { type: 'chunk', content: 'partial' };
+      const abort = new Error('This operation was aborted');
+      abort.name = 'AbortError';
+      throw abort;
+    };
+
+    const app = buildApp({ streamPrd });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/generate/prd',
+      headers: AUTH,
+      payload: { messages: [{ role: 'user', content: 'x' }] },
+    });
+
+    expect(response.statusCode).toBe(200); // SSE already started — no 500 possible
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    expect(response.body).toBe(
+      'event: chunk\ndata: {"content":"partial"}\n\n' +
+        'event: engine-error\ndata: {"message":"Generation aborted: the client disconnected.","aborted":true,"retryable":false}\n\n'
+    );
+
+    await app.close();
+  });
+
+  it('adds retryable classification to engine-error for a retryable provider failure', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { APICallError } = require('ai');
+    const streamPrd: StreamPrdFn = async function* () {
+      throw new APICallError({
+        message: 'overloaded',
+        url: 'https://api.provider.internal/v1/chat?key=sk-secret',
+        requestBodyValues: {},
+        statusCode: 503,
+        isRetryable: true,
+      });
+    };
+
+    const app = buildApp({ streamPrd });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/generate/prd',
+      headers: AUTH,
+      payload: { messages: [{ role: 'user', content: 'x' }] },
+    });
+
+    expect(response.body).toBe(
+      'event: engine-error\ndata: {"message":"LLM provider is temporarily unavailable; retry shortly.","retryable":true}\n\n'
+    );
+
+    await app.close();
+  });
 });

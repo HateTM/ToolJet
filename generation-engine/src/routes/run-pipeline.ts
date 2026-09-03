@@ -2,8 +2,11 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 import { streamText } from 'ai';
 import { buildDefaultPipeline, DefaultPipelineDeps, PipelineArtifacts, PipelineStage, runPipeline } from '../pipeline';
 import { buildRealPipelineDeps } from '../pipeline/llm-deps';
+import { createUsageRecorder, normalizeLlmUsage } from '../pipeline/usage';
 import { PRD_SYSTEM_PROMPT } from '../prompts';
 import { resolveLanguageModel, EffectiveLlmConfig } from '../config/provider';
+import { abortOnClientDisconnect } from './client-disconnect';
+import { classifyLlmError } from '../llm-errors';
 
 /**
  * Request body for POST /generate/run.
@@ -45,6 +48,11 @@ export type PipelineDepsFactory = (emit: EmitFn) => DefaultPipelineDeps;
  * "the PRD artifact streamed token-by-token as produced"; the non-streaming
  * `deps.prd` from llm-deps.ts stays untouched for internal/batch callers
  * (ADR-0028 note, 2026-09-01).
+ *
+ * AI SDK 6 (task 2a): the streaming half honors `ctx.signal` (client
+ * disconnect stops generation) and records the call's token usage into
+ * `ctx.usage` like every other LLM half. `.chat(...)` keeps chat-completions
+ * semantics for self-hosted gateways (see config/provider.ts).
  */
 export function defaultPipelineDepsFactory(emit: EmitFn): DefaultPipelineDeps {
   const deps = buildRealPipelineDeps();
@@ -60,6 +68,7 @@ export function defaultPipelineDepsFactory(emit: EmitFn): DefaultPipelineDeps {
           { role: 'system', content: PRD_SYSTEM_PROMPT },
           { role: 'user', content: input },
         ],
+        abortSignal: ctx.signal,
       });
 
       let full = '';
@@ -67,6 +76,8 @@ export function defaultPipelineDepsFactory(emit: EmitFn): DefaultPipelineDeps {
         full += chunk;
         emit('prd-chunk', { content: chunk });
       }
+
+      ctx.usage?.record(normalizeLlmUsage(await result.usage));
       return full;
     },
   };
@@ -95,14 +106,24 @@ function writeSSE(reply: FastifyReply, type: string, data: unknown) {
  *    stage actually runs; never fired for stages the orchestrator's
  *    unsupported-classification short-circuit skips (#115).
  *  - `prd-chunk`  (repeated): { content: string } — PRD deltas as produced.
- *  - `engine-done` (once, success only): { artifacts: PipelineArtifacts } —
+ *  - `usage`      (repeated, task 2a, additive): { promptTokens,
+ *    completionTokens, totalTokens } — token usage of each LLM call, as it
+ *    completes.
+ *  - `engine-done` (once, success only): { artifacts, usage? } —
  *    the terminal structured payload carrying ALL final artifacts
  *    (classification, prd, lld, featurePlan, entityToolCalls, stepPlan,
  *    evaluation). An `unsupported` classification is a normal outcome here,
  *    not an error: the short-circuited artifacts come back on engine-done
- *    and the caller presents the classification to the user (#115).
- *  - `engine-error` (once, failure only): { message, stage? } — the failing
- *    stage name from PipelineStageError when the failure came from a stage.
+ *    and the caller presents the classification to the user (#115). `usage`
+ *    (task 2a, additive) is the cumulative { promptTokens, completionTokens,
+ *    totalTokens } across all LLM calls of the run; present whenever at
+ *    least one call was recorded.
+ *  - `engine-error` (once, failure only): { message, stage?, kind?, retryable?,
+ *    aborted? } — the failing stage name from PipelineStageError when the
+ *    failure came from a stage. Task 2a additives: `kind` is the provider
+ *    error classification from llm-errors.ts ('provider_unavailable' |
+ *    'invalid_request' | 'invalid_output'), `retryable` mirrors it, and
+ *    `aborted: true` marks a client-disconnect abort.
  *
  * A request missing `prompt` or a usable `llm` config is rejected with a
  * plain 400 BEFORE the SSE headers are written, so the server's error path
@@ -133,10 +154,15 @@ export function registerRunPipelineRoute(app: FastifyInstance, depsFactory: Pipe
     reply.raw.setHeader('Connection', 'keep-alive');
     reply.hijack();
 
+    // Stop generating as soon as the client goes away — no wasted tokens.
+    const controller = new AbortController();
+    abortOnClientDisconnect(reply, controller);
+
     const emit: EmitFn = (event, data) => writeSSE(reply, event, data);
 
     try {
       const deps = depsFactory(emit);
+      const usage = createUsageRecorder((call) => emit('usage', call));
 
       // Wrap each stage to emit a progress event just before it actually
       // runs. Stages skipped by the unsupported-classification short-circuit
@@ -155,19 +181,24 @@ export function registerRunPipelineRoute(app: FastifyInstance, depsFactory: Pipe
         {
           organizationId: organizationId ?? '',
           llm: llm as EffectiveLlmConfig,
+          signal: controller.signal,
+          usage,
         }
       );
 
-      emit('engine-done', { artifacts });
+      emit('engine-done', { artifacts, ...(usage.isEmpty() ? {} : { usage: usage.total() }) });
     } catch (error) {
       app.log.error(error);
       const stageName =
         typeof error === 'object' && error !== null && 'stageName' in error
           ? (error as { stageName?: string }).stageName
           : undefined;
+      const classified = classifyLlmError(error);
       emit('engine-error', {
-        message: error instanceof Error ? error.message : 'Generation failed',
+        message: classified?.message ?? (error instanceof Error ? error.message : 'Generation failed'),
         ...(stageName && { stage: stageName }),
+        ...(classified && { kind: classified.kind, retryable: classified.retryable }),
+        ...(controller.signal.aborted && { aborted: true }),
       });
     } finally {
       reply.raw.end();

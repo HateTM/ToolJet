@@ -1,4 +1,5 @@
-import { generateText } from 'ai';
+import { generateText, Output } from 'ai';
+import type { z } from 'zod';
 import { resolveLanguageModel } from '../config/provider';
 import {
   CLASSIFY_SYSTEM_PROMPT,
@@ -23,6 +24,14 @@ import {
   buildPerEntityStageInput,
   buildStepGenerationStageInput,
 } from './prompt-assembly';
+import {
+  classifyOutputSchema,
+  evaluationOutputSchema,
+  lldOutputSchema,
+  stepPlanOutputSchema,
+  STEP_PAYLOAD_OUTPUT_SCHEMAS,
+} from './schemas';
+import { normalizeLlmUsage } from './usage';
 import type { DefaultPipelineDeps } from './index';
 import { StageContext, StepType } from './types';
 
@@ -33,36 +42,81 @@ import { StageContext, StepType } from './types';
  * `ctx.llm` via `resolveLanguageModel` — no stage reads env vars directly; the caller
  * (the server-side proxy) resolves the org's config before the engine is invoked.
  *
- * All calls are plain non-streaming `generateText` completions: streaming to the browser
- * is the server proxy's concern (ADR-0027), and #91's SSE route stays the streaming PRD
- * path — see the note in ADR-0028.
+ * AI SDK 6 (task 2a) changes to every call:
+ *  - JSON-returning stages use structured outputs (`generateText` + `Output.object`
+ *    with a zod schema from ./schemas.ts) instead of prose-JSON + manual `JSON.parse`.
+ *    `generateObject` itself is deprecated in AI SDK 6 (migration guide 6-0), so the
+ *    `output` setting on `generateText` is the supported spelling of the same thing.
+ *  - `ctx.signal` is passed as `abortSignal` so a client disconnect stops generation.
+ *  - `experimental_telemetry` is enabled as a passthrough: spans go through
+ *    `@opentelemetry/api`'s global tracer, which `ai` already depends on — no OTel SDK
+ *    dependency is added, and without a host-registered TracerProvider it stays a
+ *    no-op. Inputs/outputs are not recorded (prompts may carry user data).
+ *  - per-call token usage is recorded into `ctx.usage` (./usage.ts normalizes the
+ *    SDK's `inputTokens`/`outputTokens` to the wire's `promptTokens`/
+ *    `completionTokens`).
+ *
+ * All calls are plain non-streaming completions: streaming to the browser is the server
+ * proxy's concern (ADR-0027), and #91's SSE route stays the streaming PRD path — see
+ * the note in ADR-0028.
  */
 
-/** One non-streaming LLM completion: system + user message, plain-text response. */
-async function complete(system: string, user: string, ctx: StageContext): Promise<string> {
+/**
+ * Telemetry settings shared by every LLM call (see module doc for why passthrough-only,
+ * and why this is not a hard OTel dependency).
+ */
+const TELEMETRY_SETTINGS = {
+  isEnabled: true,
+  recordInputs: false,
+  recordOutputs: false,
+} as const;
+
+/**
+ * One non-streaming LLM completion: system + user message, plain-text response. When a
+ * `schema` is given the call runs in structured-output mode and `output` carries the
+ * validated object; otherwise only `text` is meaningful.
+ */
+async function callModel(
+  system: string,
+  user: string,
+  ctx: StageContext,
+  schema?: z.ZodType
+): Promise<{ text: string; output?: unknown }> {
   const result = await generateText({
     model: resolveLanguageModel(ctx.llm),
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
+    abortSignal: ctx.signal,
+    experimental_telemetry: TELEMETRY_SETTINGS,
+    ...(schema ? { output: Output.object({ schema }) } : {}),
   });
-  return result.text;
+  ctx.usage?.record(normalizeLlmUsage(result.usage));
+  return { text: result.text, output: schema ? result.output : undefined };
+}
+
+/** Plain-text completion (PRD stage). */
+async function complete(system: string, user: string, ctx: StageContext): Promise<string> {
+  const { text } = await callModel(system, user, ctx);
+  return text;
 }
 
 /**
- * A completion whose output must be a JSON payload (classify/lld/step-plan/evaluate all
- * parse their raw response downstream). A non-JSON response is surfaced as a plain
- * Error so the orchestrator wraps it in a `PipelineStageError` naming the stage, instead
- * of leaking a SyntaxError from deep inside.
+ * A completion whose output must be a JSON payload conforming to `schema`. The SDK
+ * validates against the schema (structured-output mode), so a malformed response
+ * surfaces as a typed `NoObjectGeneratedError` the route layer classifies — it is no
+ * longer possible for a non-JSON payload to slip through as a silently-parsed
+ * contract. Stage-level deterministic validators downstream keep final say on content.
  */
-async function completeJson(system: string, user: string, ctx: StageContext): Promise<unknown> {
-  const text = await complete(system, user, ctx);
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error('LLM returned a non-JSON payload');
-  }
+async function completeObject(
+  system: string,
+  user: string,
+  ctx: StageContext,
+  schema: z.ZodType
+): Promise<unknown> {
+  const { output } = await callModel(system, user, ctx, schema);
+  return output;
 }
 
 /**
@@ -93,7 +147,7 @@ export function buildRealPipelineDeps(): DefaultPipelineDeps {
   return {
     classify: {
       async classify(prompt, ctx) {
-        return completeJson(CLASSIFY_SYSTEM_PROMPT, prompt, ctx);
+        return completeObject(CLASSIFY_SYSTEM_PROMPT, prompt, ctx, classifyOutputSchema);
       },
     },
     prd: {
@@ -106,7 +160,7 @@ export function buildRealPipelineDeps(): DefaultPipelineDeps {
     },
     lld: {
       async generateLld(prd, ctx) {
-        return completeJson(LLD_SYSTEM_PROMPT, buildLldStageInput(prd), ctx);
+        return completeObject(LLD_SYSTEM_PROMPT, buildLldStageInput(prd), ctx, lldOutputSchema);
       },
     },
     perEntity: {
@@ -117,7 +171,7 @@ export function buildRealPipelineDeps(): DefaultPipelineDeps {
     },
     stepPlan: {
       async generateStepPlan(input, ctx) {
-        return completeJson(STEP_PLAN_SYSTEM_PROMPT, input, ctx);
+        return completeObject(STEP_PLAN_SYSTEM_PROMPT, input, ctx, stepPlanOutputSchema);
       },
     },
     stepGeneration: {
@@ -126,12 +180,16 @@ export function buildRealPipelineDeps(): DefaultPipelineDeps {
         if (!system) {
           throw new Error(`step-generation has no system prompt for step type "${step.type}"`);
         }
-        return completeJson(system, buildStepGenerationStageInput(step, index, artifacts), ctx);
+        const schema = STEP_PAYLOAD_OUTPUT_SCHEMAS[step.type as Exclude<StepType, 'CreateTable'>];
+        if (!schema) {
+          throw new Error(`step-generation has no payload schema for step type "${step.type}"`);
+        }
+        return completeObject(system, buildStepGenerationStageInput(step, index, artifacts), ctx, schema);
       },
     },
     evaluate: {
       async judge(artifacts, ctx) {
-        return completeJson(EVALUATE_SYSTEM_PROMPT, buildEvaluateStageInput(artifacts), ctx);
+        return completeObject(EVALUATE_SYSTEM_PROMPT, buildEvaluateStageInput(artifacts), ctx, evaluationOutputSchema);
       },
     },
   };
