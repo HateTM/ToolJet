@@ -4,8 +4,10 @@
 > Task 2 (модернизация стэка: 2a/2b/2c готовы, NestJS 12 отложен по ADR-0050 до снятия
 > сателлитного блокера, 2d готово), Task 3 (ADR-0052 hard switch — решение зафиксировано,
 > само удаление fallback — Часть 2 Task 7), Task 4 (двусторонние sync-гварды fork↔engine,
-> `UpdateTable` закрыт в engine `STEP_TYPES`). Часть 2 (`docs/plans/` — план ещё не создан)
-> берёт на себя каталог движка 11→36, деплой, удаление fallback, фронтенд.
+> `UpdateTable` закрыт в engine `STEP_TYPES`). Часть 2 —
+> `docs/plans/2026-09-03-ai-builder-unification-part-2.md` — берёт на себя каталог движка
+> 11→35 (не 36 — уточнено по факту), деплой TrueNAS, потребление plan-time payload'ов,
+> удаление fallback, гейт для UpdateTable, фронтенд.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -82,5 +84,5 @@
 - [x] Engine `component-catalog.test.ts`: hardcoded `FORK_COMPONENT_SET` → чтение `componentsMeta.json` (ключи) — падает (35 реальных ключей vs 11 в каталоге; план оценивал 36 — реальное число в файле 35), зеленеет в Части 2 (Task 5). Гейт подтверждён: полный `npm test` движка 177/178 (177 зелёных + этот один ожидаемо красный).
 - [x] Commit: `test: bidirectional fork↔engine contract guards; add UpdateTable to engine STEP_TYPES`
 
-## Часть 2 (отдельный план после Части 1)
-Task 5: каталог движка 11→36 (ADR-0026 метод). Task 6: деплой TrueNAS (ADR-0032) + prod-status. Task 7: hard switch — удаление fallback (`generateStepPlan` :2211-2264, `streamPrdText` :4329-4342, `regenerateAiMessage` :4985), fail-fast, удаление `prompt-library/`, `PRD_SYSTEM_PROMPT`/`STEP_PLAN_SYSTEM_PROMPT`/`proposeStepPlanTool`. Task 8: фронтенд — `step-awaiting-confirmation` UI, Cypress E2E AI-потоки, workflows до полной реализации (ADR-0047).
+## Часть 2 — см. `docs/plans/2026-09-03-ai-builder-unification-part-2.md`
+Task 5: каталог движка 11→35 (ADR-0026 метод, число уточнено с 36 до фактических 35). Task 6: деплой TrueNAS (ADR-0032), done = smoke-test проходит. Task 6.5 (новая): потребление `props.generatedStep` executors'ами (hint-with-override). Task 7: hard switch — удаление fallback (`generateStepPlan`, `streamPrdText`, `regenerateAiMessage`), fail-fast, удаление `prompt-library/`, `PRD_SYSTEM_PROMPT`/`STEP_PLAN_SYSTEM_PROMPT`/`proposeStepPlanTool`. Task 8: 8a — backend `awaiting_confirmation` гейт для UpdateTable (найденная дыра), 8b — фронтенд-баннер + Cypress. Workflows (ADR-0047, полная реализация) вынесены в отдельную Часть 3, не в Часть 2.
