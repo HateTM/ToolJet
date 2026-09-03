@@ -1,5 +1,4 @@
-import { Command, CliUx, Flags } from '@oclif/core';
-import * as inquirer from 'inquirer';
+import { Args, Command, Flags, ux } from '@oclif/core';
 const execa = require('execa');
 const path = require('path');
 const fs = require('fs');
@@ -15,9 +14,12 @@ export default class Delete extends Command {
 
   static examples = [`$ tooljet plugin delete <name> [--build]`];
 
-  static args = [{ name: 'plugin_name', description: 'Name of the plugin', required: true }];
+  static args = {
+    plugin_name: Args.string({ description: 'Name of the plugin', required: true }),
+  };
 
   async run(): Promise<void> {
+    const { default: inquirer } = await import('inquirer');
     const { args, flags } = await this.parse(Delete);
 
     if (!flags.marketplace) {
@@ -62,7 +64,7 @@ export default class Delete extends Command {
       })
       .then(async (answers: any) => {
         if (answers.confirm) {
-          CliUx.ux.action.start('deleting plugin');
+          ux.action.start('deleting plugin');
           rimraf.sync(pluginPath);
           if (flags.marketplace) {
             const pluginsJson = JSON.parse(
@@ -76,27 +78,27 @@ export default class Delete extends Command {
               JSON.stringify(pluginsJson, null, 2)
             );
 
-            CliUx.ux.action.stop();
+            ux.action.stop();
 
             if (flags.build) {
               await execa('npm', ['run', 'build', '--workspaces'], { cwd: pluginsPath });
-              CliUx.ux.action.stop();
+              ux.action.stop();
             }
           } else {
             rimraf.sync(pluginDocPath);
             await execa('npx', ['lerna', 'link', 'convert'], { cwd: pluginsPath });
-            CliUx.ux.action.stop();
+            ux.action.stop();
 
             if (flags.build) {
-              CliUx.ux.action.start('building plugins');
+              ux.action.start('building plugins');
               await execa.command('npm run build:plugins', { cwd: process.cwd() });
-              CliUx.ux.action.stop();
+              ux.action.stop();
             }
           }
 
           this.log('\x1b[42m', '\x1b[30m', `Plugin: ${args.plugin_name} deleted successfully`, '\x1b[0m');
         } else {
-          CliUx.ux.action.stop();
+          ux.action.stop();
           this.log(`Aborted by user`);
         }
       });
