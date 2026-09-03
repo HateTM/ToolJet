@@ -57,7 +57,7 @@ const config: Config.InitialOptions = {
   testTimeout: 30000,
   modulePathIgnorePatterns: ['<rootDir>/dist/'],
   transformIgnorePatterns: [
-    'node_modules/(?!(@octokit|before-after-hook|universal-user-agent|is-plain-object)/)',
+    'node_modules/(?!(@octokit|before-after-hook|universal-user-agent|is-plain-object|ai|@ai-sdk|@workflow|@standard-schema)/)',
   ],
 };
 

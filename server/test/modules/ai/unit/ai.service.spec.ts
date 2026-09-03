@@ -265,7 +265,7 @@ describe('CreateTable system prompt advertises foreign keys (ticket #23)', () =>
 describe('createTableTool schema accepts foreign keys (axis 1)', () => {
   // createTableTool is defined in service.ts; importing it here proves the LLM-facing
   // schema advertises foreign_keys so the model can express relationships.
-  const schema = createTableTool.parameters as any;
+  const schema = createTableTool.inputSchema as any;
 
   it('accepts a foreign_keys array with column_names, referenced_table_name, referenced_column_names, on_delete/on_update', () => {
     const parsed = schema.parse({
@@ -300,7 +300,7 @@ describe('createTableTool schema accepts foreign keys (axis 1)', () => {
 
 /** @group ai-builder */
 describe('createTableTool schema accepts indexes (ticket #23)', () => {
-  const schema = createTableTool.parameters as any;
+  const schema = createTableTool.inputSchema as any;
 
   it('accepts an indexes array of column groups with optional uniqueness', () => {
     const parsed = schema.parse({
@@ -427,7 +427,7 @@ describe('step planner advertises seed_rows (ticket #48)', () => {
   });
 
   it('proposeStepPlanTool accepts a CreateTable step with well-formed seed_rows', () => {
-    const schema = proposeStepPlanTool.parameters as any;
+    const schema = proposeStepPlanTool.inputSchema as any;
     const parsed = schema.parse({
       steps: [
         {
@@ -442,7 +442,7 @@ describe('step planner advertises seed_rows (ticket #48)', () => {
   });
 
   it('proposeStepPlanTool still accepts a CreateTable step without seed_rows (optional)', () => {
-    const schema = proposeStepPlanTool.parameters as any;
+    const schema = proposeStepPlanTool.inputSchema as any;
     const parsed = schema.parse({
       steps: [{ type: 'CreateTable', description: 'tasks table', table: PLANNED_TABLE }],
     });
