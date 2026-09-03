@@ -6,7 +6,7 @@
 FROM node:22.15.1-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
@@ -15,7 +15,7 @@ FROM node:22.15.1-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --legacy-peer-deps
 COPY --from=builder /app/dist ./dist
 
 # Internal only — see ADR-0032, no -p publish in the TrueNAS app config.
