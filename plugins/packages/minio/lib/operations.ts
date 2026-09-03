@@ -57,6 +57,7 @@ export async function uploadObject(minioClient: MinioClient, queryOptions: objec
     queryOptions['bucket'],
     queryOptions['objectName'],
     data,
+    undefined,
     queryOptions['contentType'] && { contentType: queryOptions['contentType'] }
   );
 }
