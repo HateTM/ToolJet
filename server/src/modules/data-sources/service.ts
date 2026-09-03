@@ -21,7 +21,6 @@ import { PluginsServiceSelector } from './services/plugin-selector.service';
 import { IDataSourcesService } from './interfaces/IService';
 import { RequestContext } from '@modules/request-context/service';
 import { AUDIT_LOGS_REQUEST_CONTEXT_KEY } from '@modules/app/constants';
-import * as fs from 'fs';
 import { UserPermissions } from '@modules/ability/types';
 import { QueryResult } from '@tooljet/plugins/dist/packages/common/lib';
 import { DataSourceVersion } from '@entities/data_source_version.entity';
@@ -122,14 +121,6 @@ export class DataSourcesService implements IDataSourcesService {
   async create(createDataSourceDto: CreateDataSourceDto, user: User, branchId?: string): Promise<DataSource> {
     const { kind, name, options, plugin_id: pluginId, environment_id } = createDataSourceDto;
 
-    if (kind === 'grpc') {
-      const rootDir = process.cwd().split('/').slice(0, -1).join('/');
-      const protoFilePath = `${rootDir}/protos/service.proto`;
-
-      const filecontent = fs.readFileSync(protoFilePath, 'utf8');
-      const rcps = await this.dataSourcesUtilService.getServiceAndRpcNames(filecontent);
-      options.find((option) => option['key'] === 'protobuf').value = JSON.stringify(rcps, null, 2);
-    }
     const dataSource = await this.dataSourcesUtilService.create(
       {
         name,

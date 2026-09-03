@@ -886,8 +886,6 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
     const isMultiAuthEnabled = dataSource.options['multiple_auth_enabled']?.value;
     if (
       [
-        'googlesheets',
-        'slack',
         'zendesk',
         'salesforce',
         'googlecalendar',
@@ -895,8 +893,6 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
         'microsoft_graph',
         'hubspot',
         'xero',
-        'bigquery',
-        'databricks',
         'asana',
       ].includes(dataSource.kind)
     ) {
