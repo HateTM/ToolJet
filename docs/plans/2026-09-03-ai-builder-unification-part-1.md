@@ -34,13 +34,13 @@
 Актуальные цели: **AI SDK 6.x + zod 4** (движок), **NestJS 12** (ESM-ready, docs.nestjs.com/migration-guide), **TypeORM 1.0** (deprecated API удалены, ECMA 2023), **React 19.2**, свежие Jest/Cypress/TS. Под-шаги — отдельные PR, порядок: движок → server → frontend → tooling.
 
 **2a. Engine: AI SDK 4.3.19 → 6.x** (`generation-engine/package.json`, `src/pipeline/llm-deps.ts`, `step-generation.ts`, `per-entity.ts`, `prd.ts`, `routes/*`, mock-LLM тесты)
-- [ ] context7/`node_modules/ai/docs/` — сверить API (renamed: parameters→inputSchema и др. по references/common-errors.md).
-- [ ] `npm install ai@latest @ai-sdk/{openai,anthropic,google}@latest zod@latest`.
-- [ ] Ручной `JSON.parse` payload'ов → `generateObject` + zod-схема per step type.
-- [ ] `abortSignal` из HTTP-запроса через все LLM-вызовы.
-- [ ] `experimental_telemetry` + OTel: token usage структурированно в ответе.
-- [ ] `APICallError.isRetryable` → 503 vs 400.
-- [ ] Гейт: engine-тесты 152+ зелёные. Commit: `feat(engine): AI SDK 6, structured outputs, abort propagation, telemetry`
+- [x] context7/`node_modules/ai/docs/` — сверить API (renamed: parameters→inputSchema и др. по references/common-errors.md).
+- [x] `npm install ai@latest @ai-sdk/{openai,anthropic,google}@latest zod@latest`.
+- [x] Ручной `JSON.parse` payload'ов → `generateObject` + zod-схема per step type.
+- [x] `abortSignal` из HTTP-запроса через все LLM-вызовы.
+- [x] `experimental_telemetry` + OTel: token usage структурированно в ответе.
+- [x] `APICallError.isRetryable` → 503 vs 400.
+- [x] Гейт: engine-тесты 152+ зелёные (176/176). Commit: `feat(engine): AI SDK 6, structured outputs, abort propagation, telemetry` (PR #133, squash-merged в main).
 
 **2b. Server: NestJS 11→12, TypeORM 0.3→1.0, TS latest**
 - [ ] TS + типы → чистая `nest build`.
