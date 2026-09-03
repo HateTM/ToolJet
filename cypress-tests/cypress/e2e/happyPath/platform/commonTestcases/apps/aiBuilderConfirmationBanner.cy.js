@@ -29,9 +29,13 @@ describe("AI Builder - step list awaiting_confirmation banner", () => {
       `event: plan\ndata: ${JSON.stringify(plan)}\n\n` +
       `event: step-awaiting-confirmation\ndata: ${JSON.stringify(confirmation)}\n\n`
     );
-    // Deliberately no `done` event: the mocked stream stays open, same as the real backend
-    // does while polling for the user's decision (awaitExternalTableConfirmation) — the spec
-    // only needs the banner to render and the two buttons to fire their requests.
+    // Deliberately no `done` event in the body: `cy.intercept(...).reply()` still serves one
+    // complete, already-closed HTTP response (unlike the real backend, which holds the
+    // connection open while polling for the user's decision) — fetchEventSource parses
+    // whatever bytes arrive before the response ends, so the `onmessage` callbacks for
+    // `plan` and `step-awaiting-confirmation` above still fire synchronously as the body is
+    // read. That's all this spec needs: the banner to render and the two buttons to fire
+    // their requests.
   };
 
   const reachApprovePrdButton = (prompt) => {
