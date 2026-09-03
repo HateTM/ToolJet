@@ -191,6 +191,23 @@ export interface PipelineArtifacts {
   evaluation?: EvaluationVerdict;
 }
 
+/**
+ * Wire-facing token usage for one LLM call. Field names follow the engine's SSE/JSON
+ * contract (v4-era names kept deliberately stable on the wire); the AI SDK 6 result
+ * fields `inputTokens`/`outputTokens`/`totalTokens` are normalized into this shape by
+ * `normalizeLlmUsage` (./usage.ts).
+ */
+export interface LlmCallUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/** Sink for per-LLM-call token usage; routes inject one per request and aggregate it. */
+export interface UsageRecorder {
+  record(usage: LlmCallUsage): void;
+}
+
 export interface StageContext {
   organizationId: string;
   /**
@@ -200,6 +217,18 @@ export interface StageContext {
    * env vars directly.
    */
   llm: EffectiveLlmConfig;
+  /**
+   * Aborted when the HTTP client disconnects (routes wire the hijacked response's
+   * `close` event to it). Threaded into every LLM call as the SDK's `abortSignal` so an
+   * aborted run stops generating instead of burning tokens nobody will read.
+   */
+  signal?: AbortSignal;
+  /**
+   * Records per-call token usage (AI SDK 6 task 2a). Optional so stage-level tests can
+   * build a context without one; production routes always inject a recorder and surface
+   * the cumulative total in their response/terminal SSE event.
+   */
+  usage?: UsageRecorder;
 }
 
 export interface PipelineStage {

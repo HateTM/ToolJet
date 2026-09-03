@@ -25,7 +25,11 @@ export interface EffectiveLlmConfig {
  * `server/src/modules/ai/util.service.ts`: OpenAI-compatible providers
  * (openai/grok/openrouter) share `createOpenAI` with a per-provider base
  * URL; `baseURL` is honored for plain `openai` so self-hosted gateways
- * (e.g. LocalAI) keep working.
+ * (e.g. LocalAI) keep working. AI SDK 6 note (task 2a): calling an
+ * `@ai-sdk/openai` provider object directly now selects the Responses API
+ * model, so every OpenAI-compatible case goes through `.chat(...)` explicitly —
+ * chat completions is what these gateways (x.ai, OpenRouter, LocalAI) speak,
+ * and what AI SDK 4 selected by default before the upgrade.
  *
  * `tooljet_managed` is a valid `LlmProvider` value but is never
  * constructible: it is CE's placeholder for an EE-only managed
@@ -41,11 +45,11 @@ export function resolveLanguageModel(config: EffectiveLlmConfig) {
     case 'gemini':
       return createGoogleGenerativeAI({ apiKey: config.apiKey })(config.model);
     case 'grok':
-      return createOpenAI({ baseURL: 'https://api.x.ai/v1', apiKey: config.apiKey })(config.model);
+      return createOpenAI({ baseURL: 'https://api.x.ai/v1', apiKey: config.apiKey }).chat(config.model);
     case 'openrouter':
-      return createOpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: config.apiKey })(config.model);
+      return createOpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: config.apiKey }).chat(config.model);
     case 'openai':
-      return createOpenAI({ baseURL: config.baseURL, apiKey: config.apiKey })(config.model);
+      return createOpenAI({ baseURL: config.baseURL, apiKey: config.apiKey }).chat(config.model);
     default:
       throw new Error(`resolveLanguageModel: unsupported provider "${config.provider}"`);
   }
@@ -63,5 +67,7 @@ export function resolveFromEnv() {
     apiKey: process.env.OPENAI_API_KEY,
   });
 
-  return openaiProvider(process.env.AI_MODEL as string);
+  // .chat: see resolveLanguageModel's AI SDK 6 note — the default callable selects
+  // the Responses API in v6, self-hosted gateways speak chat completions.
+  return openaiProvider.chat(process.env.AI_MODEL as string);
 }

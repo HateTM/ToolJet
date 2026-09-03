@@ -15,6 +15,8 @@ export * from './step-generation';
 export * from './evaluate';
 export * from './prompt-assembly';
 export * from './llm-deps';
+export * from './schemas';
+export * from './usage';
 
 import { PipelineStage } from './types';
 import { buildClassifyStage, ClassifyStageDeps } from './classify';

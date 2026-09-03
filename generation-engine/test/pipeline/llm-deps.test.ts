@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+import { generateText, Output } from 'ai';
 import { buildRealPipelineDeps } from '../../src/pipeline/llm-deps';
 import {
   CLASSIFY_SYSTEM_PROMPT,
@@ -13,9 +13,14 @@ import {
 import { PipelineArtifacts, EntityToolCall } from '../../src/pipeline/types';
 import { TEST_LLM_CONFIG, makeTestCtx } from './ctx';
 
-jest.mock('ai', () => ({
-  generateText: jest.fn(),
-}));
+jest.mock('ai', () => {
+  const actual = jest.requireActual('ai');
+  return {
+    ...actual,
+    // The real Output.object is used; only generateText is faked.
+    generateText: jest.fn(),
+  };
+});
 
 const mockGenerateText = generateText as jest.Mock;
 
@@ -25,18 +30,26 @@ function lastCall() {
     model: args.model,
     system: args.messages[0].content as string,
     user: args.messages[1].content as string,
+    abortSignal: args.abortSignal as AbortSignal | undefined,
+    hasOutput: args.output !== undefined,
   };
+}
+
+/** A v6-shaped generateText result: text, validated output, usage. */
+function result(text: string, output: unknown, usage?: { inputTokens?: number; outputTokens?: number }) {
+  return Promise.resolve({ text, output, usage });
 }
 
 beforeEach(() => {
   mockGenerateText.mockReset();
-  mockGenerateText.mockResolvedValue({ text: '{"intent":"build_app","confidence":0.9}' });
+  mockGenerateText.mockImplementation(() => result('', { intent: 'build_app', confidence: 0.9 }));
 });
 
 describe('buildRealPipelineDeps', () => {
   const ctx = makeTestCtx();
 
   it('classify uses the classify prompt and ctx.llm-resolved model, returning JSON', async () => {
+    mockGenerateText.mockImplementation(() => result('# ignored', { intent: 'build_app', confidence: 0.9 }));
     const raw = await buildRealPipelineDeps().classify.classify('build a CRM', ctx);
     const { system, model } = lastCall();
     expect(system).toBe(CLASSIFY_SYSTEM_PROMPT);
@@ -45,16 +58,17 @@ describe('buildRealPipelineDeps', () => {
   });
 
   it('prd uses the PRD prompt and returns the plain text', async () => {
-    mockGenerateText.mockResolvedValue({ text: '# PRD' });
+    mockGenerateText.mockImplementation(() => Promise.resolve({ text: '# PRD', usage: undefined }));
     const prd = await buildRealPipelineDeps().prd.generatePrd('build a CRM', ctx);
-    const { system, user } = lastCall();
+    const { system, user, hasOutput } = lastCall();
     expect(system).toBe(PRD_SYSTEM_PROMPT);
     expect(user).toBe('build a CRM');
+    expect(hasOutput).toBe(false); // plain text call — no structured output
     expect(prd).toBe('# PRD');
   });
 
   it('lld assembles the catalog context into the prompt and returns parsed JSON', async () => {
-    mockGenerateText.mockResolvedValue({ text: '{"tables":[]}' });
+    mockGenerateText.mockImplementation(() => result('', { tables: [] }));
     const raw = await buildRealPipelineDeps().lld.generateLld('CRM PRD', ctx);
     const { system, user } = lastCall();
     expect(system).toBe(LLD_SYSTEM_PROMPT);
@@ -85,14 +99,14 @@ describe('buildRealPipelineDeps', () => {
   });
 
   it('step-plan uses the step-plan prompt and returns parsed JSON', async () => {
-    mockGenerateText.mockResolvedValue({ text: '{"steps":[{"type":"CreateTable","description":"t"}]}' });
+    mockGenerateText.mockImplementation(() => result('', { steps: [{ type: 'CreateTable', description: 't' }] }));
     const raw = await buildRealPipelineDeps().stepPlan.generateStepPlan('# PRD\n\nx', ctx);
     expect(lastCall().system).toBe(STEP_PLAN_SYSTEM_PROMPT);
     expect(raw).toEqual({ steps: [{ type: 'CreateTable', description: 't' }] });
   });
 
   it('stepGeneration dispatches the step type onto its ported system prompt and parses JSON', async () => {
-    mockGenerateText.mockResolvedValue({ text: '{"componentId":"c-1","properties":{"text":"Hi"}}' });
+    mockGenerateText.mockImplementation(() => result('', { componentId: 'c-1', properties: { text: 'Hi' } }));
     const artifacts = { prompt: '', prd: 'PRD', stepPlan: { steps: [] } } as PipelineArtifacts;
     const payload = await buildRealPipelineDeps().stepGeneration.generateStepPayload(
       { type: 'UpdateComponent', description: 'retitle the heading' },
@@ -107,7 +121,7 @@ describe('buildRealPipelineDeps', () => {
   });
 
   it('evaluate judges a compact artifact summary with the evaluate prompt', async () => {
-    mockGenerateText.mockResolvedValue({ text: '{"pass":true,"reasons":[]}' });
+    mockGenerateText.mockImplementation(() => result('', { pass: true, reasons: [] }));
     const artifacts: PipelineArtifacts = { prompt: 'x', prd: 'the PRD' };
     const raw = await buildRealPipelineDeps().evaluate.judge(artifacts, ctx);
     const { system, user } = lastCall();
@@ -116,13 +130,47 @@ describe('buildRealPipelineDeps', () => {
     expect(raw).toEqual({ pass: true, reasons: [] });
   });
 
-  it('throws a plain error (not a SyntaxError) on non-JSON responses', async () => {
-    mockGenerateText.mockResolvedValue({ text: 'not json at all' });
-    await expect(buildRealPipelineDeps().lld.generateLld('PRD', ctx)).rejects.toThrow('non-JSON payload');
+  it('propagates ctx.signal as abortSignal and records normalized usage per call', async () => {
+    const controller = new AbortController();
+    const calls: unknown[] = [];
+    const ctxWithSignal = {
+      ...ctx,
+      signal: controller.signal,
+      usage: { record: (u: unknown) => calls.push(u) },
+    };
+    mockGenerateText.mockImplementation(() =>
+      Promise.resolve({ text: '', output: { tables: [] }, usage: { inputTokens: 10, outputTokens: 4, totalTokens: 14 } })
+    );
+    await buildRealPipelineDeps().lld.generateLld('PRD', ctxWithSignal);
+    expect(lastCall().abortSignal).toBe(controller.signal);
+    expect(calls).toEqual([{ promptTokens: 10, completionTokens: 4, totalTokens: 14 }]);
+  });
+
+  it('lets the SDK surface a malformed structured response as a typed error (no silent parse)', async () => {
+    const { NoObjectGeneratedError } = jest.requireActual('ai');
+    mockGenerateText.mockImplementation(() =>
+      Promise.reject(new NoObjectGeneratedError({ message: 'No object generated.', response: {}, usage: {}, finishReason: 'stop' }))
+    );
+    await expect(buildRealPipelineDeps().lld.generateLld('PRD', ctx)).rejects.toMatchObject({
+      name: 'AI_NoObjectGeneratedError',
+    });
+  });
+
+  it('enables passthrough telemetry without recording prompt contents', async () => {
+    mockGenerateText.mockImplementation(() => result('', { tables: [] }));
+    await buildRealPipelineDeps().lld.generateLld('PRD', ctx);
+    const telemetry = mockGenerateText.mock.calls[0][0].experimental_telemetry;
+    expect(telemetry.isEnabled).toBe(true);
+    expect(telemetry.recordInputs).toBe(false);
+    expect(telemetry.recordOutputs).toBe(false);
   });
 
   it('builds the model via resolveLanguageModel without reading env vars', () => {
     // ctx carries the full EffectiveLlmConfig (ADR-0038); resolveLanguageModel is pure.
     expect(TEST_LLM_CONFIG.provider).toBe('openai');
+  });
+
+  it('keeps the real Output.object in the mocked module (structured outputs stay wired)', () => {
+    expect(typeof Output.object).toBe('function');
   });
 });
