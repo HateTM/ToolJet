@@ -60,6 +60,17 @@ npm view nestjs-otel@latest peerDependencies
 npm view nest-winston@latest peerDependencies
 ```
 
+## Status check log
+
+- **2026-09-03 (follow-up check)**: re-ran the four `npm view` commands above.
+  `@bull-board/nestjs` now supports `@nestjs/core@^12.0.0` (latest 9.8.0's
+  peer range: `^9.0.0 || ^10.0.0 || ^11.0.0 || ^12.0.0`) — one of four
+  cleared. Still blocking: `@nestjs/throttler` (latest 6.5.0, peer range caps
+  at `^11.0.0`, no `^12` at all), `nestjs-otel` (latest 8.1.0, still the
+  explicit `>= 11 < 12` upper bound), `nest-winston` (latest 1.10.2, peer
+  range caps at `^11.0.0`). Re-entry condition not yet met — 3 of 4 still
+  block.
+
 ## Consequences
 
 - Task 2b closes with TypeORM 1.0 landed and NestJS 12 explicitly deferred,
