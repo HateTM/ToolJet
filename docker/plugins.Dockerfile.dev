@@ -21,7 +21,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # against this image's glibc instead of whatever the host happens to have.
 COPY ./plugins/package.json ./plugins/package-lock.json ./plugins/
 COPY ./plugins/packages/ ./plugins/packages/
-RUN npm --prefix plugins install
+RUN npm --prefix plugins install --legacy-peer-deps
 COPY ./plugins/ ./plugins/
 
 # Kept outside /app/plugins so the ./plugins bind mount cannot shadow it.

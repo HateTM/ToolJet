@@ -174,9 +174,16 @@
 **Files:** step list UI (AiBuilder), `cypress-tests/` (соответствующий config).
 
 > **Status note (2026-09-04):** Cypress spec written (first one covering the AI Builder's
-> run-time step list) but **not executed** — no Docker daemon available in this session.
-> Structurally the mocking approach is sound (intercepts the `fetch` transport
-> `fetchEventSource` uses). Run it against a live stack before fully trusting it:
+> run-time step list) but **still not executed**. Structurally the mocking approach is
+> sound (intercepts the `fetch` transport `fetchEventSource` uses). A later session with
+> Docker available tried to bring up the local dev stack (`docker compose up`) to actually
+> run it, and hit a pre-existing, unrelated blocker: the `server` container crashes on
+> startup with `Cannot find module 'pino-http'` — `nestjs-pino` requires `pino`/`pino-http`
+> as peers but neither is declared in `server/package.json`/`package-lock.json`. Fixing it
+> safely requires a checkout with the full `plugins/packages/` set (a lockfile regen in a
+> partial worktree corrupts the `@tooljet-plugins/*` section) — tracked as
+> [HateTM/ToolJet#166](https://github.com/HateTM/ToolJet/issues/166). Run the spec against
+> a live stack once #166 is resolved, before fully trusting it:
 > `npx cypress run --config-file cypress-appbuilder.config.js --spec cypress/e2e/happyPath/platform/commonTestcases/apps/aiBuilderConfirmationBanner.cy.js`
 
 - [x] Inline-баннер в списке шагов для состояния `awaiting_confirmation` — не блокирующая модалка. Покрывает и `CreateTable`, и (по построению, на случай появления) `UpdateTable`.
