@@ -15,18 +15,21 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.116",
-    "@ai-sdk/google": "^3.0.120",
-    "@ai-sdk/openai": "^3.0.106",
-    "ai": "^6.0.275",
+    "@ai-sdk/anthropic": "^4.0.49",
+    "@ai-sdk/google": "^4.0.63",
+    "@ai-sdk/openai": "^4.0.57",
+    "ai": "^7.0.91",
     "fastify": "^5.12.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.15.0",
     "@typescript-eslint/eslint-plugin": "^8.34.0",
     "@typescript-eslint/parser": "^8.34.0",
+    "babel-jest": "^30.5.1",
     "eslint": "^9.28.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
