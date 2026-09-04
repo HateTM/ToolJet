@@ -23,9 +23,9 @@ echo "Deploying $SHA ($REF)"
 git archive "$SHA" | ssh -i "$KEY" -o BatchMode=yes "$HOST" \
   "sudo rm -rf $SRC_DIR && sudo mkdir -p $SRC_DIR && sudo tar -x -C $SRC_DIR"
 
-# 2. Build image on NAS
+# 2. Build image on NAS (absolute paths: remote cwd is not the context dir)
 ssh -i "$KEY" -o BatchMode=yes "$HOST" \
-  "sudo docker build -f docker/ce-production.Dockerfile -t $IMAGE $SRC_DIR"
+  "sudo docker build -f $SRC_DIR/docker/ce-production.Dockerfile -t $IMAGE $SRC_DIR"
 
 # 3. Redeploy the app (fails with 'app not found' on first deploy — create it via MCP)
 ssh -i "$KEY" -o BatchMode=yes "$HOST" "sudo midclt call app.redeploy tooljet" \
