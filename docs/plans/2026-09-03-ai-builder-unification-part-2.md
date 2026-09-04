@@ -188,27 +188,40 @@
 > (peers dropped by `--legacy-peer-deps`). All four verified fixed — app served real pages,
 > login worked.
 >
-> Running the spec itself surfaced a further, separate problem, **now root-caused**: under
-> `cypress-platform.config.js` (the CI-used config) custom commands like `cy.apiLogin` were
-> undefined at runtime despite `cypress/support/e2e.js` importing them. Root cause: that
-> config's `setupNodeEvents` only registers `readPdf`/`readXlsx` `task` handlers — unlike
-> `cypress-appbuilder.config.js`/`cypress-run.config.js`, it never wires the custom
-> `@cypress/webpack-preprocessor` via `cypress/plugins/index.js`, so it falls back to
-> Cypress's default bundler, which (on this repo/Node version) doesn't process the support
-> bundle correctly. Confirmed by running the same spec under `cypress-appbuilder.config.js`
-> (which does wire the preprocessor): `cy.apiLogin` registered and ran correctly, and the
-> `before each` hook progressed past login into the actual test body — both example
-> assertions then failed on unrelated app-creation/fixture flow, not command registration.
+> Running the spec itself surfaced a further, separate problem. Under
+> `cypress-platform.config.js` (the CI-used config) custom commands like `cy.defaultWorkspaceLogin`
+> and `cy.skipWalkthrough` were undefined at runtime, despite `cypress/support/e2e.js`
+> importing them.
+>
+> **Correction (2026-09-04):** an earlier version of this note attributed this to
+> `cypress-platform.config.js` never wiring the `@cypress/webpack-preprocessor`. That claim was
+> checked directly against the file and is **wrong** — `cypress-platform.config.js`'s
+> `setupNodeEvents` ends with the same `return require("./cypress/plugins/index.js")(on, config);`
+> call as `cypress-appbuilder.config.js`; the preprocessor is wired identically in both. A minimal
+> repro (`expect(typeof cy.appUILogin).to.equal("function")`, run under `cypress-platform.config.js`)
+> shows the real shape of the bug: **all** commands defined in `cypress/commands/commands.js`
+> (`appUILogin`, `defaultWorkspaceLogin`, `skipWalkthrough`, ...) are unregistered under this
+> config, while `cy.apiLogin`, defined in the separately-imported
+> `cypress/commands/platform/platformApiCommands.js`, registers and runs fine. So the failure is
+> specific to `commands.js` failing to load under `cypress-platform.config.js`, not a
+> config-wide missing-preprocessor issue — and the actual browser-side load error was never
+> captured (no compiler/console error surfaced in CLI output; `cypress/support/e2e.js` also
+> suppresses uncaught exceptions globally, which may be hiding it). Confirmed by running the same
+> spec under `cypress-appbuilder.config.js`: `cy.apiLogin`/`cy.defaultWorkspaceLogin` registered
+> and ran correctly there, and the `before each` hook progressed past login into the actual test
+> body — both example assertions then failed on unrelated app-creation/fixture flow, not command
+> registration.
+>
 > Also found and fixed a second, unrelated occurrence of #168 while re-verifying the stack:
 > `docker-compose`'s bind mount shadows the image's `/app/server` with the host's tracked
 > `server/dev-entrypoint.sh`, a stale copy of `docker/dev-entrypoint.sh` predating the #168
 > fix — so the fix never took effect locally. Fixed identically (same commit shape) in
 > PR #167.
 >
-> Fixing `cypress-platform.config.js`'s missing preprocessor wiring (or replacing the
-> banner spec's dependency on custom commands) is outside this plan's scope — flagged as a
+> Root-causing why `commands.js` specifically fails to load under `cypress-platform.config.js`
+> (or replacing the banner spec's dependency on it) is outside this plan's scope — flagged as a
 > follow-up, not blocking Task 8b, which only requires the spec to exist and be honestly
-> documented. Repro, once the preprocessor is wired:
+> documented. Repro:
 > `npx cypress run --config-file cypress-appbuilder.config.js --env server_host=http://localhost:3000 --spec cypress/e2e/happyPath/platform/commonTestcases/apps/aiBuilderConfirmationBanner.cy.js`
 
 - [x] Inline-баннер в списке шагов для состояния `awaiting_confirmation` — не блокирующая модалка. Покрывает и `CreateTable`, и (по построению, на случай появления) `UpdateTable`.
