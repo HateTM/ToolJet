@@ -124,6 +124,7 @@
 >    persists `metadata: undefined`. `getThreadTokenUsage` sums nothing for these going
 >    forward. Follows directly from the engine's contract, not a bug, but a named
 >    behavior change ADR-0052 didn't call out.
+>    - **Fixed (follow-up session):** Engine now does surface usage on `done` events (generation-engine/src/routes/generate-prd.ts); client passes it through (`GenerationEngineClient`); service persists it (`streamPrdText` now captures `event.usage` into `usageSink`, Part 2 follow-up commit `71b8fb0c24`).
 > 2. ADR-0018's planner-prompt guidance ("an external source can never receive a
 >    CreateTable") has no equivalent anymore: `generateStepPlan`'s engine call
 >    (`generateSteps(prd, undefined, componentIndex, organizationId)`) doesn't pass

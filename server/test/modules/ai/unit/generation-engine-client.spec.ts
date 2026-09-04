@@ -44,7 +44,7 @@ describe('GenerationEngineClient', () => {
     expect(client.isConfigured()).toBe(true);
   });
 
-  it('translates chunk + engine-done into chunk events followed by done', async () => {
+  it('translates chunk + engine-done (no usage) into chunk events followed by a bare done', async () => {
     process.env.GENERATION_ENGINE_URL = 'http://generation-engine:3100';
     const { body } = sseBody([
       'event: chunk\ndata: {"content":"Hello"}\n\n',
@@ -62,7 +62,27 @@ describe('GenerationEngineClient', () => {
     expect(events).toEqual([
       { type: 'chunk', content: 'Hello' },
       { type: 'chunk', content: ' world' },
-      { type: 'done' },
+      { type: 'done', usage: undefined },
+    ]);
+  });
+
+  it('translates engine-done usage into the done event (ADR-0052 follow-up)', async () => {
+    process.env.GENERATION_ENGINE_URL = 'http://generation-engine:3100';
+    const { body } = sseBody([
+      'event: chunk\ndata: {"content":"Hi"}\n\n',
+      'event: engine-done\ndata: {"usage":{"promptTokens":12,"completionTokens":8,"totalTokens":20}}\n\n',
+    ]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, body }) as any;
+
+    const client = new GenerationEngineClient();
+    const events = [];
+    for await (const event of client.streamPrd([{ role: 'user', content: 'x' }])) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: 'chunk', content: 'Hi' },
+      { type: 'done', usage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 } },
     ]);
   });
 
@@ -93,7 +113,7 @@ describe('GenerationEngineClient', () => {
     controllerRef!.enqueue(encoder.encode('event: engine-done\ndata: {}\n\n'));
     controllerRef!.close();
     const third = await iterator.next();
-    expect(third.value).toEqual({ type: 'done' });
+    expect(third.value).toEqual({ type: 'done', usage: undefined });
   });
 
   it('translates engine-error into an error event', async () => {

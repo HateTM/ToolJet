@@ -3388,7 +3388,8 @@ export class AiService implements IAiService {
    */
   private async *streamPrdText(
     budgetedMessages: Array<{ role: string; content: string }>,
-    abortSignal: AbortSignal
+    abortSignal: AbortSignal,
+    usageSink?: { usage?: Promise<any> | any }
   ): AsyncGenerator<string> {
     if (!this.generationEngineClient.isConfigured()) {
       throw new ServiceUnavailableException('Generation engine is not configured (GENERATION_ENGINE_URL unset)');
@@ -3399,6 +3400,9 @@ export class AiService implements IAiService {
       } else if (event.type === 'error') {
         throw new ServiceUnavailableException(event.message);
       } else if (event.type === 'done') {
+        if (usageSink) {
+          usageSink.usage = event.usage;
+        }
         return;
       }
     }
@@ -3501,14 +3505,13 @@ export class AiService implements IAiService {
     response.once('close', () => abortController.abort());
 
     try {
-      for await (const chunk of this.streamPrdText(budgetedMessages, abortController.signal)) {
+      const usageSink = {};
+      for await (const chunk of this.streamPrdText(budgetedMessages, abortController.signal, usageSink)) {
         fullText += chunk;
         this.aiUtilService.sendSSE(response, 'chunk', { content: chunk });
       }
 
-      // The Generation engine's streamPrd doesn't surface token usage (ADR-0027) —
-      // no in-process AIGateway fallback remains to fall back on for it (ADR-0052).
-      const metadata = await this.captureUsageMetadata({});
+      const metadata = await this.captureUsageMetadata(usageSink);
 
       const aiMessage = await this.aiConversationMessageRepository.createOne({
         aiConversationId: conversationId,
