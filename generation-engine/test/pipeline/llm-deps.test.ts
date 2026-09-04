@@ -28,8 +28,10 @@ function lastCall() {
   const args = mockGenerateText.mock.calls[mockGenerateText.mock.calls.length - 1][0];
   return {
     model: args.model,
-    system: args.messages[0].content as string,
-    user: args.messages[1].content as string,
+    // AI SDK 6 rejects a system-role entry inside `messages` — callModel sends the
+    // system prompt via `instructions` instead (see llm-deps.ts).
+    system: args.instructions as string,
+    user: args.messages[0].content as string,
     abortSignal: args.abortSignal as AbortSignal | undefined,
     hasOutput: args.output !== undefined,
   };

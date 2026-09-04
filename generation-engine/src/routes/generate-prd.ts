@@ -43,9 +43,17 @@ export async function* defaultStreamPrd(messages: LlmMessage[], options?: Stream
     apiKey: process.env.OPENAI_API_KEY,
   });
 
+  // AI SDK 6 rejects `system`-role entries inside `messages` (AI_InvalidPromptError:
+  // "System messages are not allowed in the prompt or messages fields") — they must go
+  // through the separate `instructions` option instead. The server's buildPrdMessages
+  // always prepends one (PRD_SYSTEM_PROMPT), so every real call hit this until now.
+  const systemMessages = messages.filter((m) => m.role === 'system');
+  const conversationMessages = messages.filter((m) => m.role !== 'system');
+
   const result = streamText({
     model: provider.chat(process.env.AI_MODEL as string),
-    messages,
+    ...(systemMessages.length > 0 && { instructions: systemMessages.map((m) => m.content).join('\n\n') }),
+    messages: conversationMessages,
     abortSignal: options?.signal,
   });
 

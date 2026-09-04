@@ -62,7 +62,12 @@ export class AppsSubscriber implements EntitySubscriberInterface {
     // and picks their single VERSION row even when git is on for the org.
     const isWorkflow = app.type === APP_TYPES.WORKFLOW;
     let isGitEnabled = false;
-    if (!isWorkflow) {
+    // A partial-select load (e.g. VersionRepository.createOne's `select: { id, type }`
+    // parent-type check) never fetches organizationId — querying WorkspaceBranch with it
+    // undefined throws under TypeORM 1.0's stricter where-value validation (regression
+    // surfaced post-#135). Same fallback as the isWorkflow branch: can't determine git
+    // status from this load, so fall through to the non-branch editingVersion lookup below.
+    if (!isWorkflow && app.organizationId) {
       const defaultBranch = await this.datasourceRepository.manager.findOne(WorkspaceBranch, {
         where: { organizationId: app.organizationId, isDefault: true },
         select: {

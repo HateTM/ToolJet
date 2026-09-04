@@ -64,10 +64,10 @@ export function defaultPipelineDepsFactory(emit: EmitFn): DefaultPipelineDeps {
       // message — only the streaming differs.
       const result = streamText({
         model: resolveLanguageModel(ctx.llm),
-        messages: [
-          { role: 'system', content: PRD_SYSTEM_PROMPT },
-          { role: 'user', content: input },
-        ],
+        // AI SDK 6 rejects `system`-role entries inside `messages` — must go through
+        // `instructions` instead (see generate-prd.ts's defaultStreamPrd for the fuller note).
+        instructions: PRD_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: input }],
         abortSignal: ctx.signal,
       });
 
