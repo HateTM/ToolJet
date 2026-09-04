@@ -53,15 +53,12 @@ import DesktopOnlyRoute from '@/Routes/DesktopOnlyRoute';
 
 const GuardedHomePage = withAdminOrBuilderOnly(BlankHomePage);
 
-let __appWrapperMountCount = 0;
+window.__diag = window.__diag || [];
 const AppWrapper = (props) => {
   React.useEffect(() => {
-    __appWrapperMountCount++;
-    // eslint-disable-next-line no-console
-    console.log('[DIAG] AppWrapper MOUNTED', __appWrapperMountCount, new Error().stack);
+    window.__diag.push({ type: 'mount', t: Date.now(), stack: new Error().stack });
     return () => {
-      // eslint-disable-next-line no-console
-      console.log('[DIAG] AppWrapper UNMOUNTING', __appWrapperMountCount);
+      window.__diag.push({ type: 'unmount', t: Date.now() });
     };
   }, []);
   const { isAppDarkMode } = useAppDarkMode();
