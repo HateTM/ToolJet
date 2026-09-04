@@ -33,10 +33,12 @@ export const useSessionManagement = (initialState = defaultState) => {
 
   useEffect(() => {
     /* replacing the state. otherwise the route will keep isSwitchingPage value `true` */
-    navigate(
-      { pathname, search },
-      { replace: true, state: Object.assign({}, state || {}, { isSwitchingPage: false }) }
-    );
+    if (state?.isSwitchingPage) {
+      navigate(
+        { pathname, search },
+        { replace: true, state: Object.assign({}, state || {}, { isSwitchingPage: false }) }
+      );
+    }
     const subject = authenticationService.currentSession.subscribe(
       async (newSession) => await handleNewSession(newSession)
     );
