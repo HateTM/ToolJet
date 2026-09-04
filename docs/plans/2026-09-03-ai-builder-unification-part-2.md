@@ -174,10 +174,42 @@
 **Files:** step list UI (AiBuilder), `cypress-tests/` (соответствующий config).
 
 > **Status note (2026-09-04):** Cypress spec written (first one covering the AI Builder's
-> run-time step list) but **not executed** — no Docker daemon available in this session.
-> Structurally the mocking approach is sound (intercepts the `fetch` transport
-> `fetchEventSource` uses). Run it against a live stack before fully trusting it:
-> `npx cypress run --config-file cypress-appbuilder.config.js --spec cypress/e2e/happyPath/platform/commonTestcases/apps/aiBuilderConfirmationBanner.cy.js`
+> run-time step list) but **still not executed against a live stack**. Structurally the
+> mocking approach is sound (intercepts the `fetch` transport `fetchEventSource` uses). A
+> later session with Docker available got the full local dev stack (`docker compose up`)
+> to actually boot end-to-end for the first time — client, server, migrations, seed user —
+> after fixing four chained, pre-existing, unrelated bugs (all in PR #167):
+> [#166](https://github.com/HateTM/ToolJet/issues/166) (`server` missing explicit
+> `pino`/`pino-http` deps), [#168](https://github.com/HateTM/ToolJet/issues/168)
+> (`dev-entrypoint.sh`'s stale-`dist` detection picked the compiled prod migration path,
+> which can't `import()` TS source), a data migration (`AlterOrganizationIdInAppEnvironments
+> 1677822012965`) using a bare `null` in TypeORM delete criteria instead of `IsNull()`, and
+> the `client` image missing `@mui/material`/`@emotion/*`/`immutable` as explicit deps
+> (peers dropped by `--legacy-peer-deps`). All four verified fixed — app served real pages,
+> login worked.
+>
+> Running the spec itself surfaced a further, separate problem, **now root-caused**: under
+> `cypress-platform.config.js` (the CI-used config) custom commands like `cy.apiLogin` were
+> undefined at runtime despite `cypress/support/e2e.js` importing them. Root cause: that
+> config's `setupNodeEvents` only registers `readPdf`/`readXlsx` `task` handlers — unlike
+> `cypress-appbuilder.config.js`/`cypress-run.config.js`, it never wires the custom
+> `@cypress/webpack-preprocessor` via `cypress/plugins/index.js`, so it falls back to
+> Cypress's default bundler, which (on this repo/Node version) doesn't process the support
+> bundle correctly. Confirmed by running the same spec under `cypress-appbuilder.config.js`
+> (which does wire the preprocessor): `cy.apiLogin` registered and ran correctly, and the
+> `before each` hook progressed past login into the actual test body — both example
+> assertions then failed on unrelated app-creation/fixture flow, not command registration.
+> Also found and fixed a second, unrelated occurrence of #168 while re-verifying the stack:
+> `docker-compose`'s bind mount shadows the image's `/app/server` with the host's tracked
+> `server/dev-entrypoint.sh`, a stale copy of `docker/dev-entrypoint.sh` predating the #168
+> fix — so the fix never took effect locally. Fixed identically (same commit shape) in
+> PR #167.
+>
+> Fixing `cypress-platform.config.js`'s missing preprocessor wiring (or replacing the
+> banner spec's dependency on custom commands) is outside this plan's scope — flagged as a
+> follow-up, not blocking Task 8b, which only requires the spec to exist and be honestly
+> documented. Repro, once the preprocessor is wired:
+> `npx cypress run --config-file cypress-appbuilder.config.js --env server_host=http://localhost:3000 --spec cypress/e2e/happyPath/platform/commonTestcases/apps/aiBuilderConfirmationBanner.cy.js`
 
 - [x] Inline-баннер в списке шагов для состояния `awaiting_confirmation` — не блокирующая модалка. Покрывает и `CreateTable`, и (по построению, на случай появления) `UpdateTable`.
 - [x] Cypress: только сценарий подтверждения (banner → confirm/reject) — написан, не запущен (см. статус выше).

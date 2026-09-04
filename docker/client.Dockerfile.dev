@@ -18,7 +18,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # install app dependencies
 COPY ./frontend/package.json ./frontend/package-lock.json ./frontend/
-RUN npm --prefix frontend install
+RUN npm --prefix frontend install --legacy-peer-deps
 COPY ./frontend/ ./frontend/
 
 # Kept at /app so the ./plugins bind mount cannot shadow it. The webpack build

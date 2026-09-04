@@ -62,14 +62,13 @@ PGRST_HOST=${PGRST_HOST:-postgrest}
 PGRST_PORT=${PGRST_SERVER_PORT:-3000}
 ./server/scripts/wait-for-it.sh ${PGRST_HOST}:${PGRST_PORT} --strict --timeout=300 -- echo "PostgREST is up"
 
-# Run database setup (development mode)
-if [ -d "./server/dist" ]; then
-  echo "Running database setup (production mode)..."
-  npm run db:setup:prod
-else
-  echo "Running database setup (development mode)..."
-  npm run db:setup
-fi
+# This script only backs server.Dockerfile.dev's dev-mode entrypoint, always
+# run against ts-node/src via db:setup. A stale ./server/dist bind-mounted in
+# from a prior host build must not switch this to the compiled-dist prod path
+# (db:setup:prod) — that path assumes src/ is absent, which is never true here,
+# and crashed migrations trying to import() TS source with plain node (#168).
+echo "Running database setup (development mode)..."
+npm run db:setup
 
 # The server requires @tooljet/plugins/dist/server on boot, which the `plugins`
 # container builds into the shared ./plugins bind mount. On a fresh checkout that
