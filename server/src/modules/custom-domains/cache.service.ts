@@ -13,14 +13,24 @@ export class CustomDomainCacheService implements OnModuleInit {
     private readonly redisService: RedisService
   ) {}
 
-  onModuleInit() {
+  /**
+   * Issue #173: previously fire-and-forget (`.catch()` but never awaited),
+   * which let onModuleInit return — and the app context finish "initialized"
+   * — while these Redis calls were still in flight. Short-lived app contexts
+   * (every data migration boots its own via NestFactory.createApplicationContext)
+   * could then close, and RedisService.onModuleDestroy's disconnect would race
+   * an in-flight command, crashing the process. Awaiting here means the module
+   * is only "initialized" once these calls have actually settled — each call
+   * still swallows its own error so a Redis hiccup at boot doesn't fail startup.
+   */
+  async onModuleInit() {
     // Seed the CORS origins set so it's available before the first request
-    this.rebuildOriginsSet().catch((err) => {
+    await this.rebuildOriginsSet().catch((err) => {
       this.logger.error(`Failed to seed CORS origins on startup: ${err.message}`);
     });
 
     // Seed the pending-domains flag so the scheduler knows whether to poll
-    this.seedPendingFlag().catch((err) => {
+    await this.seedPendingFlag().catch((err) => {
       this.logger.error(`Failed to seed pending flag on startup: ${err.message}`);
     });
   }

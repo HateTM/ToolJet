@@ -71,8 +71,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  onModuleDestroy() {
-    this.client?.disconnect();
+  /**
+   * Graceful shutdown (ticket: fixes a crash where `disconnect()` — immediate,
+   * no wait for in-flight commands — raced CustomDomainCacheService's
+   * fire-and-forget onModuleInit Redis calls during short-lived app contexts
+   * like `db:setup`. ioredis's `close` handler threw synchronously mid-command
+   * in that race, crashing the whole process. `quit()` waits for pending
+   * commands before closing; `disconnect()` remains only as a fallback if
+   * `quit()` itself fails (e.g. the connection is already dead).
+   */
+  async onModuleDestroy() {
+    if (!this.client) return;
+    try {
+      await this.client.quit();
+    } catch (err) {
+      this.transactionLogger.error(`[RedisService] Graceful quit failed, forcing disconnect: ${err.message}`, err.stack);
+      this.client.disconnect();
+    }
     this.transactionLogger.log('[RedisService] Redis client disconnected');
   }
 
