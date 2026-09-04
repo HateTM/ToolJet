@@ -5,7 +5,7 @@ export type EngineMessage = { role: string; content: string };
 
 export type GenerationEngineEvent =
   | { type: 'chunk'; content: string }
-  | { type: 'done' }
+  | { type: 'done'; usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }
   | { type: 'error'; message: string };
 
 /**
@@ -101,7 +101,8 @@ export class GenerationEngineClient {
 
         if (event.type === 'engine-done') {
           sawTerminalEvent = true;
-          yield { type: 'done' };
+          const usage = (event.data as { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } })?.usage;
+          yield { type: 'done', usage };
           return;
         }
 
