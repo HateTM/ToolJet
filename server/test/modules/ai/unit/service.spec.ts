@@ -302,11 +302,32 @@ describe('AiService.sendUserMessage', () => {
     expect(aiUtilService.startHeartbeat).toHaveBeenCalledWith(response);
   });
 
-  // Hard switch (ADR-0052): the engine's streamPrd never surfaces token usage (ADR-0027),
-  // and there's no in-process AIGateway fallback left to fall back on for it — every
-  // PRD-conversation message now persists with metadata: undefined. Named consequence,
-  // not silently dropped: getThreadTokenUsage sums nothing for these going forward.
-  it('does not fail message persistence when the engine surfaces no usage (which is now always)', async () => {
+  // ADR-0052 follow-up: the engine does surface usage on its engine-done event
+  // (generation-engine/src/routes/generate-prd.ts), the client now passes it through
+  // (GenerationEngineClient, Task 1) — this asserts the service actually persists it.
+  it('persists engine-reported usage as message metadata', async () => {
+    const { service, conversationRepo, messageRepo, generationEngineClient } = buildService();
+    conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
+    messageRepo.findLatestByConversationId.mockResolvedValue([]);
+    messageRepo.createOne.mockResolvedValueOnce({ id: 'user-msg-1' }).mockResolvedValueOnce({ id: 'ai-msg-1' });
+    async function* events() {
+      yield { type: 'chunk', content: 'Hi' };
+      yield { type: 'done', usage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 } };
+    }
+    generationEngineClient.streamPrd.mockReturnValue(events());
+
+    const response = buildMockResponse();
+
+    await service.sendUserMessage({ conversationId: 'conv-1', content: 'Hi' }, response as any, 'user-1', 'org-1');
+
+    expect(messageRepo.createOne).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ metadata: { usage: { promptTokens: 12, completionTokens: 8 } } })
+    );
+    expect(response.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fail message persistence when the engine reports no usage', async () => {
     const { service, conversationRepo, messageRepo, generationEngineClient } = buildService();
     conversationRepo.findById.mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate' });
     messageRepo.findLatestByConversationId.mockResolvedValue([]);
