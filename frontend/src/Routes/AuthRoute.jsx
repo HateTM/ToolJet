@@ -89,7 +89,7 @@ export const AuthRoute = ({ children }) => {
   const fetchOrganizationDetails = (resolvedSlug) => {
     loginConfigsService.getOrganizationConfigs(resolvedSlug || organizationSlug).then(
       (configs) => {
-        setOrganizationId(configs.id);
+        setOrganizationId(configs?.id);
         setConfigs(configs);
         setGettingConfig(false);
       },

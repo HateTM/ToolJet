@@ -49,6 +49,8 @@ function buildConnectionOptions(data): TypeOrmModuleOptions {
       max: data.NODE_ENV === 'test' ? 10 : 25,
     },
     maxQueryExecutionTime: data.SLOW_QUERY_LOGGING_THRESHOLD || (data.DISABLE_CUSTOM_QUERY_LOGGING === 'true' ? 30 : 1), // Set 1ms to log all queries by default with execution time. Set 30ms in case custom query logging is disabled
+    // organizations/repository.ts getSingleOrganization() relies on `where: { id: undefined }` to fetch any single row
+    invalidWhereValuesBehavior: { undefined: 'ignore' as const },
     ...dbSslConfig(data),
   };
 

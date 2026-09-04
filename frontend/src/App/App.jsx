@@ -76,6 +76,13 @@ const AppWrapper = (props) => {
   );
 };
 
+// AppComponent can be torn down and recreated by an ancestor Suspense boundary
+// reconnecting (e.g. while session state settles) without any real navigation.
+// componentDidMount must still only do its one-time boot work (authorize,
+// fetch metadata, start the hourly refresh interval) once per tab, not once
+// per such remount — otherwise it re-fires on every reconnect indefinitely.
+let __appHasBooted = false;
+
 class AppComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -121,6 +128,10 @@ class AppComponent extends React.Component {
 
   async componentDidMount() {
     setFaviconAndTitle();
+    if (__appHasBooted) {
+      return;
+    }
+    __appHasBooted = true;
     authorizeWorkspace();
     this.fetchMetadata();
     // check if version is cloud or ee

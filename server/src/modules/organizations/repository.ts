@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager, FindManyOptions, FindOptionsSelect, ILike, In, LessThan, Repository } from 'typeorm';
 import { User } from '@entities/user.entity';
 import { Organization } from '@entities/organization.entity';
@@ -27,27 +27,27 @@ export class OrganizationRepository extends Repository<Organization> {
     statusList?: Array<boolean>,
     allowArchivedWorkspace: boolean = false
   ): Promise<Organization> {
-    const conditions: any = {
-      relations: ['ssoConfigs', 'ssoConfigs.oidcGroupSyncs'],
-      where: {
-        ssoConfigs: {
-          enabled: statusList ? In(statusList) : In([true, false]),
-        },
-      },
-    };
-    let organization: Organization;
-    try {
-      organization = await this.manager.findOneOrFail(Organization, {
-        ...conditions,
-        where: { ...conditions.where, slug },
-      });
-    } catch {
-      organization = await this.manager.findOneOrFail(Organization, {
-        ...conditions,
-        where: { ...conditions.where, id: slug },
-      });
+    const enabledValues = statusList ?? [true, false];
+    // LEFT JOIN with the enabled filter in the ON clause (not WHERE) — an organization
+    // with zero sso_configs rows (the default for every freshly created workspace) must
+    // still resolve, just with ssoConfigs: []. Putting the filter in WHERE instead turns
+    // this into an implicit INNER JOIN and silently drops such organizations.
+    const buildQuery = (where: string, params: Record<string, unknown>) =>
+      this.manager
+        .createQueryBuilder(Organization, 'organization')
+        .leftJoinAndSelect('organization.ssoConfigs', 'ssoConfigs', 'ssoConfigs.enabled IN (:...enabledValues)', {
+          enabledValues,
+        })
+        .leftJoinAndSelect('ssoConfigs.oidcGroupSyncs', 'oidcGroupSyncs')
+        .where(where, params)
+        .getOne();
+
+    let organization = await buildQuery('organization.slug = :slug', { slug });
+    if (!organization) {
+      organization = await buildQuery('organization.id = :id', { id: slug });
     }
-    if (organization && organization.status !== WORKSPACE_STATUS.ACTIVE && !allowArchivedWorkspace)
+    if (!organization) throw new NotFoundException();
+    if (organization.status !== WORKSPACE_STATUS.ACTIVE && !allowArchivedWorkspace)
       throw new BadRequestException('Organization is Archived');
     return organization;
   }
