@@ -84,10 +84,10 @@ async function callModel(
 ): Promise<{ text: string; output?: unknown }> {
   const result = await generateText({
     model: resolveLanguageModel(ctx.llm),
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
+    // AI SDK 6 rejects `system`-role entries inside `messages` — must go through
+    // `instructions` instead (see generate-prd.ts's defaultStreamPrd for the fuller note).
+    instructions: system,
+    messages: [{ role: 'user', content: user }],
     abortSignal: ctx.signal,
     experimental_telemetry: TELEMETRY_SETTINGS,
     ...(schema ? { output: Output.object({ schema }) } : {}),
