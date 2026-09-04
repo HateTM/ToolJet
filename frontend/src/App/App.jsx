@@ -53,14 +53,7 @@ import DesktopOnlyRoute from '@/Routes/DesktopOnlyRoute';
 
 const GuardedHomePage = withAdminOrBuilderOnly(BlankHomePage);
 
-window.__diag = window.__diag || [];
 const AppWrapper = (props) => {
-  React.useEffect(() => {
-    window.__diag.push({ type: 'mount', t: Date.now(), stack: new Error().stack });
-    return () => {
-      window.__diag.push({ type: 'unmount', t: Date.now() });
-    };
-  }, []);
   const { isAppDarkMode } = useAppDarkMode();
   const { updateIsTJDarkMode, isTJDarkMode } = useStore(
     (state) => ({

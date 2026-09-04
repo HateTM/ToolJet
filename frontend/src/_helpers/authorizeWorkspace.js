@@ -41,6 +41,15 @@ function setRedirectAttempt() {
 */
 
 export const authorizeWorkspace = async () => {
+  // Guards against re-entering the whole authorize flow if AppComponent remounts
+  // while a previous authorizeWorkspace() call is already in flight or has completed
+  // for this tab — without this, a remount triggered by this function's own session
+  // update (updateCurrentSession / useStore setUser/setOrganization) re-invokes
+  // authorizeWorkspace() from componentDidMount, which updates the session again,
+  // causing an infinite remount+reauthorize loop.
+  if (authenticationService.currentSessionValue?.triggeredOnce) {
+    return;
+  }
   let workspaceIdOrSlug = getWorkspaceIdOrSlugFromURL();
 
   // On a custom domain, resolve which workspace owns it.
