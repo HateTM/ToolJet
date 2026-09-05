@@ -15,14 +15,26 @@ const LoadingFallback = () => (
 );
 
 /**
- * ChunkErrorBoundary — Catches ChunkLoadError from stale webpack chunks after deployments.
+ * ChunkErrorBoundary — Catches ChunkLoadError from stale webpack chunks after deployments,
+ * and any other uncaught render error in the app tree.
  *
  * After a new deployment, old chunk files no longer exist on the
  * server. If the browser still has a cached index.html referencing old filenames, lazy-loaded
  * imports will fail with ChunkLoadError.
  *
+ * It's not just ChunkLoadError, though: a stale cached chunk (or a webpack config that lets a
+ * lazy-loaded chunk bundle its own copy of `react`) can also throw React's minified error #525
+ * ("A React Element from an older version of React was rendered") every time this boundary's
+ * children re-render. Since getDerivedStateFromError previously only recognized ChunkLoadError
+ * by name, any other error left `hasError` unset — React just discarded and re-rendered the
+ * failed subtree from scratch on the next commit, which threw the same error again immediately,
+ * forever (an infinite, silent render-retry loop with no error ever surfacing to the user or to
+ * window.onerror). Treating any caught error the same way (reload once, then show a manual
+ * Refresh button) turns that infinite loop into the same one-shot recovery ChunkLoadError already
+ * gets.
+ *
  * Recovery strategy:
- *  1. On first ChunkLoadError → auto-reload once (picks up new index.html with correct chunk names)
+ *  1. On first error → auto-reload once (picks up new index.html with correct chunk names)
  *  2. If the reload didn't help (flag still set) → show a user-facing error with a manual Refresh button
  *  3. On successful app boot → flags are cleared (in index.jsx) so future deployments can auto-recover
  *
@@ -31,15 +43,13 @@ const LoadingFallback = () => (
 class ChunkErrorBoundary extends Component {
   state = { hasError: false };
 
-  static getDerivedStateFromError(error) {
-    if (error?.name === 'ChunkLoadError') {
-      return { hasError: true };
-    }
-    return null;
+  static getDerivedStateFromError() {
+    return { hasError: true };
   }
 
   componentDidCatch(error) {
-    if (error?.name === 'ChunkLoadError' && !sessionStorage.getItem('chunk_reload')) {
+    console.error('[ChunkErrorBoundary] caught render error:', error);
+    if (!sessionStorage.getItem('chunk_reload')) {
       // First failure — attempt one automatic reload to pick up new chunks
       sessionStorage.setItem('chunk_reload', 'true');
       window.location.reload();
