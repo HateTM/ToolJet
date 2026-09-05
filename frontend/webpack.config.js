@@ -149,14 +149,20 @@ module.exports = {
       // minSize: 50000,         // Increased from 20KB - only split if >50KB
       // maxSize: 1244000,        // Max chunk size ~244KB (helps with parallel downloads)
       cacheGroups: {
-        // CRITICAL: React core - always loaded (enforce: true means always split)
-        // react: {
-        //   test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
-        //   name: 'vendor-react',
-        //   priority: 50,
-        //   reuseExistingChunk: true,
-        //   enforce: true, // Always split React, even if small
-        // },
+        // CRITICAL: React core - always loaded (enforce: true means always split).
+        // Without this, defaultVendors below (chunks: 'initial') doesn't dedupe react
+        // out of async/lazy-loaded chunks, so a chunk reachable only via React.lazy()
+        // can end up bundling its own separate copy of react/react-dom alongside the
+        // one in vendor.js - two live React instances at once, which throws React's
+        // "Multiple copies of the react package is used" error (minified error #525)
+        // every time the affected subtree re-renders.
+        react: {
+          test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
+          name: 'vendor-react',
+          priority: 50,
+          reuseExistingChunk: true,
+          enforce: true, // Always split React, even if small
+        },
 
         // // HEAVY EDITORS GROUP - Split these out as they're HUGE and editor-only
         // // ~2MB+ combined, almost never needed on viewer pages
