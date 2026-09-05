@@ -18,7 +18,7 @@
   "homepage": "https://github.com/tooljet/tooljet#readme",
   "dependencies": {
     "@tooljet-plugins/common": "file:../common",
-    "react": "^18.3.1",
+    "react": "^19.0.0",
     "rimraf": "^3.0.2",
     "typesense": "^1.5.1"
   }
