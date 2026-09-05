@@ -29,6 +29,9 @@ export class FeatureAbilityFactory extends AbilityFactory<FEATURE_KEY, Subjects>
           FEATURE_KEY.APPROVE_PRD,
           FEATURE_KEY.PREVIEW_PLAN,
           FEATURE_KEY.REWIND_STEP,
+          FEATURE_KEY.SKIP_STEP,
+          FEATURE_KEY.CONFIRM_STEP,
+          FEATURE_KEY.INTERRUPT_ANSWER,
           FEATURE_KEY.REGENERATE_MESSAGE,
           FEATURE_KEY.VOTE_MESSAGE,
           FEATURE_KEY.FIX_WITH_AI,
@@ -39,6 +42,7 @@ export class FeatureAbilityFactory extends AbilityFactory<FEATURE_KEY, Subjects>
           FEATURE_KEY.GET_CONVERSATION,
           FEATURE_KEY.AUTO_SORT_QUERIES,
           FEATURE_KEY.GET_THREAD_TOKEN_USAGE,
+          FEATURE_KEY.GET_ACTIVE_RUN,
         ],
         AiConversation
       );
