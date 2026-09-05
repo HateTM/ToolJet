@@ -19,6 +19,6 @@
   "dependencies": {
     "@tooljet-plugins/common": "file:../common",
     "nodemailer": "^9.1.1",
-    "react": "^18.3.1"
+    "react": "^19.0.0"
   }
 }
