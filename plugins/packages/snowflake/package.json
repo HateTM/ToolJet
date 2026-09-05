@@ -19,7 +19,7 @@
   "dependencies": {
     "@tooljet-plugins/common": "file:../common",
     "@types/snowflake-sdk": "^1.6.17",
-    "react": "^17.0.2",
+    "react": "^18.3.1",
     "snowflake-sdk": "^2.4.0"
   }
 }

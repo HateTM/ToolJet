@@ -18,7 +18,7 @@
   "dependencies": {
     "@google-cloud/storage": "^8.0.1",
     "@tooljet-plugins/common": "file:../common",
-    "react": "^17.0.2",
+    "react": "^18.3.1",
     "rimraf": "^3.0.2"
   }
 }
