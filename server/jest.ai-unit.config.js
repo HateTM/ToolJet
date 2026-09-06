@@ -78,6 +78,11 @@ module.exports = {
   testTimeout: 30000,
   modulePathIgnorePatterns: ['<rootDir>/dist/'],
   transformIgnorePatterns: [
-    'node_modules/(?!(@octokit|before-after-hook|universal-user-agent|is-plain-object|ai|@ai-sdk|@workflow|@standard-schema)/)',
+    // ESM-only packages (ai, @ai-sdk, @nestjs >= 12, @workflow) must NOT be
+    // transformed: this config must run with NODE_OPTIONS=--experimental-vm-modules
+    // so jest loads them natively via require(esm). Transforming them to CJS makes
+    // jest evaluate the compiled output as ESM and die with "exports is not defined".
+    // @octokit/* stay transformed (they predate the ESM switch and are fine as CJS).
+    'node_modules/(?!(@octokit|before-after-hook|universal-user-agent|is-plain-object)/)',
   ],
 };

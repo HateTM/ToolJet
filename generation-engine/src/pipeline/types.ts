@@ -150,6 +150,13 @@ export interface ProposedStep {
   seed_rows?: PlannedSeedRow[];
   /** Planner-assigned phase name (ADR-0021); optional, falls back to one unnamed group. */
   phase?: string;
+  /**
+   * Existing component/query id a modify step targets (ADR-0054): set by the planner on
+   * update, delete and move steps when the caller supplied an app inventory, so the
+   * server's executors patch the real entity instead of guessing by name. Absent on
+   * create steps.
+   */
+  targetId?: string;
 }
 
 export interface StepPlan {
@@ -187,6 +194,13 @@ export interface PipelineArtifacts {
    * from the same source the server's planner uses (ADR-0048).
    */
   componentIndex?: string;
+  /**
+   * Caller-supplied app inventory snapshot (ADR-0054): present only for modify_app
+   * requests. Its presence switches the pipeline to modify mode — feature-planner and
+   * per-entity are skipped (nothing new to design tables for unless the PRD adds them)
+   * and the step-plan prompt plans against what already exists.
+   */
+  appInventory?: string;
   /** Payloads for the step plan's non-table steps, produced by the step-generation stage. */
   generatedSteps?: GeneratedStep[];
   evaluation?: EvaluationVerdict;

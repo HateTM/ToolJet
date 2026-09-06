@@ -41,6 +41,18 @@ describe('buildStepPlanStageInput', () => {
     expect(input).not.toContain('LLD schema');
     expect(input).not.toContain('Feature-plan ordering');
   });
+
+  it('appends the modify-mode rules and inventory when an appInventory is present', () => {
+    const input = buildStepPlanStageInput({
+      prompt: 'x',
+      prd: '# PRD text',
+      appInventory: 'App inventory\n- text1 (id: cmp-1)',
+    });
+    expect(input).toContain('# Modifying an existing app');
+    expect(input).toContain('targetId');
+    expect(input).toContain('{ value: ... }');
+    expect(input).toContain('App inventory\n- text1 (id: cmp-1)');
+  });
 });
 
 describe('parseStepPlan', () => {
@@ -96,6 +108,17 @@ describe('parseStepPlan', () => {
   it('drops non-array seed rows but keeps the step', () => {
     const plan = parseStepPlan({ steps: [{ type: 'CreateTable', description: 'x', seed_rows: 'rows' }] });
     expect(plan.steps[0].seed_rows).toBeUndefined();
+  });
+
+  it("keeps a string targetId and drops a non-string one (fork drop-don't-fail policy)", () => {
+    const plan = parseStepPlan({
+      steps: [
+        { type: 'UpdateComponent', description: 'retitle', targetId: 'cmp-1' },
+        { type: 'UpdateComponent', description: 'restyle', targetId: 7 },
+      ],
+    });
+    expect(plan.steps[0].targetId).toBe('cmp-1');
+    expect(plan.steps[1].targetId).toBeUndefined();
   });
 
   it('throws on a non-string phase (client groups by it verbatim)', () => {

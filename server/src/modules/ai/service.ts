@@ -41,10 +41,10 @@ import {
   renderConnectedDataSources,
 } from './services/data-source-inventory.service';
 import { AiActiveRunService } from './services/ai-active-run.service';
-import { generateQuery as generateQueryPrompts } from './prompt-library';
 import { AiFeasibilityService } from './services/ai-feasibility.service';
 import { GenerationEngineClient } from './services/generation-engine-client';
 import { GenerationEnginePipelineClient } from './services/generation-engine-pipeline-client';
+import { TooljetDbTableOperationsService } from '@modules/tooljet-db/services/tooljet-db-table-operations.service';
 import { VersionRepository } from '@modules/versions/repository';
 import { Step, StepType } from '@entities/step.entity';
 import { Artifact } from '@entities/artifact.entity';
@@ -747,17 +747,12 @@ const deleteQueryTool = tool({
   }),
 });
 
-// Opening line sourced from the ported EE prompt library (prompt-library/generateQuery.ts),
-// stripped of its "always return json" framing: the tool contract below is the fork's own
-// (ADR-0006 v1 vocabulary), driven by a forced tool call (createQuery), not free-form JSON
-// output, so that instruction would contradict the actual response format.
 const CREATE_QUERY_SYSTEM_PROMPT = [
-  generateQueryPrompts
-    .systemPrompt()
-    .replace(
-      / Always return json without starting or ending with the word JSON or any other comments\. Do not include any additional text or explanations\.$/,
-      ''
-    ),
+  // Inlined from the ported EE prompt library (was prompt-library/generateQuery.ts, ticket #67),
+  // stripped of its "always return json" framing: the tool contract below is the fork's own
+  // (ADR-0006 v1 vocabulary), driven by a forced tool call (createQuery), not free-form JSON
+  // output, so that instruction would contradict the actual response format.
+  'You are an AI assistant specialized in generating ToolJet queries. Your task is to analyze query design specifications and create properly formatted ToolJet query configurations that handle data operations and component interactions effectively.',
   `You create one data query for this step, based on the PRD, the table(s) already created earlier in this plan, and the connected data sources listed below (if any).
 
 Call createQuery exactly once with a short snake_case query name (components will reference it as {{queries.<name>.data}}) and the query itself:
@@ -1051,7 +1046,8 @@ export class AiService implements IAiService {
     private readonly aiActiveRunService: AiActiveRunService,
     private readonly aiFeasibilityService: AiFeasibilityService,
     private readonly generationEngineClient: GenerationEngineClient,
-    private readonly generationEnginePipelineClient: GenerationEnginePipelineClient
+    private readonly generationEnginePipelineClient: GenerationEnginePipelineClient,
+    private readonly tooljetDbTableOperationsService: TooljetDbTableOperationsService
   ) {}
 
   /**
@@ -1271,7 +1267,8 @@ export class AiService implements IAiService {
         organizationId,
         dataSources,
         appVersionId,
-        prd
+        prd,
+        conversation.appId
       );
       // ADR-0018: when the user explicitly selects an external source, CreateTable steps
       // (which only make sense against ToolJet DB) are stripped from the plan before it is
@@ -1280,8 +1277,18 @@ export class AiService implements IAiService {
       // in edge cases (e.g. when the prompt is long and the constraint is buried).
       const filteredSteps = dataSourceId ? steps.filter((step) => step.type !== 'CreateTable') : steps;
 
+      // ADR-0044 / review_phase_plan: a multi-phase plan pauses here for the user to confirm
+      // or reorder the phases before anything executes — the same approve-pause rationale the
+      // interrupt mechanism was built for (nothing has run yet, so reordering is not a
+      // mid-flight rewrite).
+      const orderedSteps = await this.reviewPhasePlan(filteredSteps, conversationId, prdMessage.id, response);
+      if (!orderedSteps) {
+        // Declined at the phase review — the stream is already ended, nothing to build.
+        return;
+      }
+
       this.aiUtilService.sendSSE(response, 'plan', {
-        steps: this.mapStepsForWire(filteredSteps),
+        steps: this.mapStepsForWire(orderedSteps),
       });
 
       const context: StepExecutionContext = {
@@ -1294,19 +1301,19 @@ export class AiService implements IAiService {
         conversationId,
       };
 
-      for (let index = 0; index < filteredSteps.length; index++) {
-        const step = filteredSteps[index];
+      for (let index = 0; index < orderedSteps.length; index++) {
+        const step = orderedSteps[index];
         // Ticket #21: skip is checkpoint-based — a step the user skipped (while it was
         // pending, e.g. during an earlier step's execution) is detected here and never
         // starts, so no Artifact is made for it.
         if ((await this.stepRepository.findById(step.id))?.status === 'skipped') {
-          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
+          this.sendStepSkippedSSE(response, index, orderedSteps.length, step.description);
           continue;
         }
         await this.stepRepository.updateOne(step.id, { status: 'running' });
         this.aiUtilService.sendSSE(response, 'step-progress', {
           step: index + 1,
-          of: filteredSteps.length,
+          of: orderedSteps.length,
           description: step.description,
         });
 
@@ -1323,7 +1330,7 @@ export class AiService implements IAiService {
           if (outcome.success && outcome.artifact) {
             await this.discardStepArtifact(step, appVersionId, organizationId, outcome.artifact);
           }
-          this.sendStepSkippedSSE(response, index, filteredSteps.length, step.description);
+          this.sendStepSkippedSSE(response, index, orderedSteps.length, step.description);
           continue;
         }
 
@@ -1334,7 +1341,7 @@ export class AiService implements IAiService {
           });
           this.aiUtilService.sendSSE(response, 'step-done', {
             step: index + 1,
-            of: filteredSteps.length,
+            of: orderedSteps.length,
             artifact: outcome.artifact,
           });
           continue;
@@ -1343,19 +1350,19 @@ export class AiService implements IAiService {
         const failureMessage = await this.aiConversationMessageRepository.createOne({
           aiConversationId: conversationId,
           messageType: 'ai',
-          content: `The build stopped at step ${index + 1} of ${filteredSteps.length} ("${step.description}"): ${outcome.errorMessage}`,
+          content: `The build stopped at step ${index + 1} of ${orderedSteps.length} ("${step.description}"): ${outcome.errorMessage}`,
           parentId: prdMessage.id,
           isLatest: true,
         });
         this.aiUtilService.sendSSE(response, 'step-failed', {
           step: index + 1,
-          of: filteredSteps.length,
+          of: orderedSteps.length,
           message: outcome.errorMessage,
         });
         this.aiUtilService.sendSSE(response, 'done', {
           message: failureMessage,
           succeeded: context.priorResults.length,
-          total: filteredSteps.length,
+          total: orderedSteps.length,
         });
         response.end();
         return;
@@ -1363,7 +1370,7 @@ export class AiService implements IAiService {
 
       this.aiUtilService.sendSSE(response, 'done', {
         succeeded: context.priorResults.length,
-        total: filteredSteps.length,
+        total: orderedSteps.length,
       });
       response.end();
     } catch (error) {
@@ -1406,7 +1413,9 @@ export class AiService implements IAiService {
       prdMessage,
       organizationId,
       dataSources,
-      appVersionId
+      appVersionId,
+      undefined,
+      conversation.appId
     );
 
     // Same ADR-0018 safety net as approvePrd: with an external source selected, CreateTable
@@ -1445,7 +1454,8 @@ export class AiService implements IAiService {
     organizationId: string,
     dataSources: QueryableDataSource[],
     appVersionId: string,
-    prd?: string
+    prd?: string,
+    appId?: string
   ): Promise<Step[]> {
     let steps = await this.stepRepository.findPendingForMessage(conversationId, prdMessage.id);
     if (!steps.length) {
@@ -1455,7 +1465,8 @@ export class AiService implements IAiService {
         prdMessage.id,
         organizationId,
         dataSources,
-        appVersionId
+        appVersionId,
+        appId
       );
     }
     return steps;
@@ -1551,7 +1562,8 @@ export class AiService implements IAiService {
     messageId: string,
     organizationId: string,
     dataSources: QueryableDataSource[],
-    appVersionId: string
+    appVersionId: string,
+    appId?: string
   ): Promise<Step[]> {
     // Hard switch (ADR-0052): the engine's POST /generate/steps (its lld ->
     // feature-planner -> per-entity -> step-plan -> step-generation -> evaluate
@@ -1562,9 +1574,31 @@ export class AiService implements IAiService {
       throw new ServiceUnavailableException('Generation engine is not configured (GENERATION_ENGINE_URL unset)');
     }
     const componentIndex = await this.appInventoryService.renderComponentIndex(appVersionId);
+    // ADR-0054 modify routing. The engine's classify() is not available server-side (it is
+    // unimplemented and POST /generate/prd streams tokens without ever classifying), so
+    // modify mode is detected heuristically: a non-empty app (existing components) routes
+    // through the engine's modify pipeline — feature-planner/per-entity are skipped there,
+    // and the plan is grounded in the app inventory plus the current ToolJet DB schema
+    // (lld, required by the engine in modify mode). An app with components but no ToolJet DB
+    // tables stays on the create pipeline: the engine 400s on appInventory without lld, and
+    // the componentIndex alone still grounds creation.
+    let lld: Record<string, unknown> | undefined;
+    let appInventory: string | undefined;
+    if (appId && !componentIndex.startsWith('Existing components already in this app: none yet')) {
+      lld = await this.buildTooljetDbLld(organizationId);
+      if (lld) {
+        appInventory = await this.appInventoryService.assemble(appId, appVersionId);
+      }
+    }
     let result: Awaited<ReturnType<typeof this.generationEnginePipelineClient.generateSteps>>;
     try {
-      result = await this.generationEnginePipelineClient.generateSteps(prd, undefined, componentIndex, organizationId);
+      result = await this.generationEnginePipelineClient.generateSteps(
+        prd,
+        lld,
+        componentIndex,
+        organizationId,
+        appInventory
+      );
     } catch (error: any) {
       throw new ServiceUnavailableException(`Generation engine step planning failed: ${error?.message}`);
     }
@@ -1591,6 +1625,51 @@ export class AiService implements IAiService {
   }
 
   /**
+   * The current ToolJet DB schema as the engine's lld artifact (ADR-0054): table name,
+   * column names/types/constraints and foreign keys, read through the same
+   * TooljetDbTableOperationsService actions the ToolJet DB UI uses. Undefined when the org
+   * has no ToolJet DB tables (or none with columns) — callers treat that as "stay on the
+   * create pipeline" rather than an error.
+   */
+  private async buildTooljetDbLld(organizationId: string): Promise<Record<string, unknown> | undefined> {
+    const tables = (await this.tooljetDbTableOperationsService.perform(organizationId, 'view_tables')) as Array<{
+      id?: string;
+      tableName?: string;
+    }>;
+    if (!Array.isArray(tables) || tables.length === 0) return undefined;
+
+    const lldTables: Array<Record<string, unknown>> = [];
+    for (const table of tables) {
+      if (!table?.tableName) continue;
+      const detail = (await this.tooljetDbTableOperationsService.perform(organizationId, 'view_table', {
+        table_name: table.tableName,
+      })) as {
+        columns?: Array<{ column_name: string; data_type: string; constraints_type?: Record<string, unknown> }>;
+        foreign_keys?: Array<{
+          referenced_table_name: string;
+          column_names: string[];
+          referenced_column_names: string[];
+        }>;
+      };
+      if (!detail?.columns?.length) continue;
+      lldTables.push({
+        table_name: table.tableName,
+        columns: detail.columns.map((column) => ({
+          column_name: column.column_name,
+          data_type: column.data_type,
+          constraints_type: column.constraints_type ?? {},
+        })),
+        foreign_keys: (detail.foreign_keys ?? []).map((foreignKey) => ({
+          references_table: foreignKey.referenced_table_name,
+          column_names: foreignKey.column_names,
+          referenced_column_names: foreignKey.referenced_column_names,
+        })),
+      });
+    }
+    return lldTables.length ? { tables: lldTables } : undefined;
+  }
+
+  /**
    * Persists one Step row per proposed step, in order, all `status: 'pending'` — the
    * single Step-persistence contract shared by the in-process planner and the
    * generation-engine path (ADR-0048): the isWellFormedTableDefinition drop, seed-row
@@ -1609,6 +1688,7 @@ export class AiService implements IAiService {
       data_source_id?: string;
       seed_rows?: any[];
       phase?: string;
+      targetId?: string;
     }>,
     conversationId: string,
     messageId: string,
@@ -1650,7 +1730,13 @@ export class AiService implements IAiService {
       // ADR-0048: the engine's pre-generated payload (if any) rides on props; the
       // collisionError merge keeps ADR-0042's terminal-failure shape intact.
       const generatedPayload = generatedSteps?.find((entry) => entry.index === index)?.payload;
-      let props: any = generatedPayload ? { generatedStep: generatedPayload } : undefined;
+      let props: any = {
+        // ADR-0054: the modify step's target component/query id, advisory — executors
+        // re-ground against the live component index at execution time.
+        ...(proposed.targetId && { targetId: proposed.targetId }),
+        ...(generatedPayload ? { generatedStep: generatedPayload } : {}),
+      };
+      if (!Object.keys(props).length) props = undefined;
       if (targetResolution.kind === 'collision') {
         props = {
           collisionError: targetResolution.message,
@@ -2042,6 +2128,90 @@ export class AiService implements IAiService {
       },
     });
     return { answered: interruptId };
+  }
+
+  /**
+   * ADR-0044 / review_phase_plan: the pause point between "plan is final" and "steps start
+   * executing". A single-phase plan passes straight through (no interrupt — the plan preview
+   * already covered it). For a multi-phase plan, raises the interrupt with the named phases
+   * (in plan order, with step counts) and applies the user's answer to the persisted Steps
+   * before the execution loop: `approved: false` cancels the build (returns null, stream is
+   * ended here), `order` reorders phases (steps keep their within-phase sequence and their
+   * persisted `order` is rewritten to match; phases the answer omits keep running last, in
+   * plan order — reordering is applied, never silent deletion). Anything else (plain confirm,
+   * unexpected shape) proceeds as planned.
+   */
+  private async reviewPhasePlan(
+    steps: Step[],
+    conversationId: string,
+    prdMessageId: string,
+    response: Response
+  ): Promise<Step[] | null> {
+    const phaseNames: string[] = [];
+    for (const step of steps) {
+      const phase = step.phase?.trim();
+      if (phase && phaseNames[phaseNames.length - 1] !== phase && !phaseNames.includes(phase)) {
+        phaseNames.push(phase);
+      }
+    }
+    if (phaseNames.length < 2) return steps;
+
+    const answer = await this.raiseInterrupt(
+      // Only the conversationId and response fields of the context are read here; the rest
+      // of the execution context does not exist yet at this pause point.
+      { conversationId, response } as unknown as StepExecutionContext,
+      'review_phase_plan',
+      {
+        phases: phaseNames.map((name) => ({
+          name,
+          steps: steps.filter((step) => step.phase?.trim() === name).length,
+        })),
+      }
+    );
+
+    if (answer?.approved === false) {
+      const message = await this.aiConversationMessageRepository.createOne({
+        aiConversationId: conversationId,
+        messageType: 'ai',
+        content: 'The build was cancelled at the phase review — no steps were executed.',
+        parentId: prdMessageId,
+        isLatest: true,
+      });
+      this.aiUtilService.sendSSE(response, 'done', {
+        message,
+        succeeded: 0,
+        total: steps.length,
+      });
+      response.end();
+      return null;
+    }
+
+    const order: unknown = answer?.order;
+    if (!Array.isArray(order) || !order.length) return steps;
+
+    const groups = new Map<string, Step[]>();
+    for (const phase of phaseNames) groups.set(phase, []);
+    for (const step of steps) {
+      const phase = step.phase?.trim();
+      if (phase && groups.has(phase)) groups.get(phase).push(step);
+    }
+    const reordered: Step[] = [];
+    for (const name of order) {
+      if (typeof name === 'string' && groups.has(name)) {
+        reordered.push(...groups.get(name));
+        groups.delete(name);
+      }
+    }
+    // Phases the answer omitted run last, in plan order — reorder, never drop.
+    for (const remaining of groups.values()) reordered.push(...remaining);
+
+    for (const [index, step] of reordered.entries()) {
+      if (step.order !== index) {
+        await this.stepRepository.updateOne(step.id, { order: index });
+        step.order = index;
+      }
+    }
+    return reordered;
   }
 
   async executeCreateTableStep(

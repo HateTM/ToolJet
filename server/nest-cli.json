@@ -12,11 +12,6 @@
         "include": "mails/**/*",
         "outDir": "./dist/src/",
         "watchAssets": true
-      },
-      {
-        "include": "modules/ai/prompt-library/assets/**/*",
-        "outDir": "./dist/src",
-        "watchAssets": true
       }
     ],
     "watchAssets": true

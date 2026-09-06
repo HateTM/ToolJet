@@ -54,7 +54,11 @@ export interface IAiService {
     inclusive?: boolean
   ): Promise<any>;
 
-  regenerateAiMessage(parentMessageId: string, userId: string, organizationId: string): Promise<AiConversationMessage | any>;
+  regenerateAiMessage(
+    parentMessageId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<AiConversationMessage | any>;
 
   voteAiMessage(messageId: string, voteType: string, userId: string): Promise<any>;
 

@@ -55,9 +55,11 @@ export interface EngineStepsResult {
 
 /**
  * Bounded worst case for the whole engine pipeline (up to six LLM calls). Beyond this
- * the server falls back in-process rather than hanging approvePrd's SSE channel.
+ * the server fails approvePrd's request rather than hanging its SSE channel. Sized for
+ * a CPU-only Ollama backend (~12 tok/s generation, see NAS sizing): a single stage's
+ * structured output can alone take minutes, so the six-stage budget is 30 minutes.
  */
-const STEPS_TIMEOUT_MS = 300_000;
+const STEPS_TIMEOUT_MS = 1_800_000;
 
 /**
  * Idle-timeout: no event from the engine (not even a chunk) within this window
@@ -113,23 +115,35 @@ export class GenerationEnginePipelineClient {
     prd: string,
     lld: Record<string, unknown> | undefined,
     componentIndex: string | undefined,
-    organizationId: string
+    organizationId: string,
+    // ADR-0054: caller-supplied app inventory snapshot. Present only for modify requests —
+    // its presence on the wire is what switches the engine into modify mode (skips
+    // feature-planner/per-entity, targets existing components/queries).
+    appInventory?: string
   ): Promise<EngineStepsResult> {
     const baseUrl = process.env.GENERATION_ENGINE_URL;
     if (!baseUrl) {
       throw new Error('GenerationEnginePipelineClient: GENERATION_ENGINE_URL is not configured');
     }
     const orgConfig = await this.aiKeySettingsService.getEffectiveOrgConfig(organizationId);
-    if (!orgConfig) {
-      throw new Error('GenerationEnginePipelineClient: no effective org LLM config for step planning');
+    if (!orgConfig && (!process.env.OPENAI_API_KEY || !process.env.AI_MODEL)) {
+      throw new Error('GenerationEnginePipelineClient: no effective org LLM config and no env fallback configured');
     }
-
-    const llm: EngineLlmConfig = {
-      provider: orgConfig.provider,
-      model: orgConfig.model,
-      apiKey: orgConfig.apiKey,
-      ...(orgConfig.baseURL && { baseURL: orgConfig.baseURL }),
-    };
+    // Same resolution policy as AIGateway.resolveModel (ticket #59): org BYOK
+    // when present, else the env-configured OpenAI-compatible gateway.
+    const llm: EngineLlmConfig = orgConfig
+      ? {
+          provider: orgConfig.provider,
+          model: orgConfig.model,
+          apiKey: orgConfig.apiKey,
+          ...(orgConfig.baseURL && { baseURL: orgConfig.baseURL }),
+        }
+      : {
+          provider: 'openai',
+          model: process.env.AI_MODEL,
+          apiKey: process.env.OPENAI_API_KEY,
+          ...(process.env.OPENAI_BASE_URL && { baseURL: process.env.OPENAI_BASE_URL }),
+        };
 
     let response: Response;
     try {
@@ -143,13 +157,17 @@ export class GenerationEnginePipelineClient {
           prd,
           ...(lld && { lld }),
           ...(componentIndex && { componentIndex }),
+          ...(appInventory && { appInventory }),
           organizationId,
           llm,
         }),
         signal: AbortSignal.timeout(STEPS_TIMEOUT_MS),
       });
     } catch (error: any) {
-      throw new Error(`GenerationEnginePipelineClient: engine unreachable (${error?.message || error})`);
+      throw Object.assign(
+        new Error(`GenerationEnginePipelineClient: engine unreachable (${error?.message || error})`),
+        { cause: error }
+      );
     }
 
     if (!response.ok) {
@@ -215,7 +233,10 @@ export class GenerationEnginePipelineClient {
     } catch (error: any) {
       clearTimeout(idleTimer);
       signal?.removeEventListener('abort', onExternalAbort);
-      throw new Error(`GenerationEnginePipelineClient: engine unreachable (${error?.message || error})`);
+      throw Object.assign(
+        new Error(`GenerationEnginePipelineClient: engine unreachable (${error?.message || error})`),
+        { cause: error }
+      );
     }
 
     if (!response.ok || !response.body) {

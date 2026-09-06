@@ -19,9 +19,9 @@ export class AiConversationMessageRepository extends Repository<AiConversationMe
         createdAt: 'ASC',
       },
       relations: {
-                   aiResponseVote: true,
-                   artifacts: true,
-                 },
+        aiResponseVote: true,
+        artifacts: true,
+      },
     });
   }
 
@@ -29,9 +29,9 @@ export class AiConversationMessageRepository extends Repository<AiConversationMe
     return await this.findOne({
       where: { id },
       relations: {
-                   aiResponseVote: true,
-                   aiConversation: true,
-                 },
+        aiResponseVote: true,
+        aiConversation: true,
+      },
     });
   }
 

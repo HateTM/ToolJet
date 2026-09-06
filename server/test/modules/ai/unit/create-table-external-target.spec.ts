@@ -94,7 +94,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
       findActiveRun: jest.fn().mockResolvedValue(null),
       cleanupStaleRuns: jest.fn().mockResolvedValue(0),
     } as any,
-    { assess: jest.fn().mockResolvedValue({ feasible: true }) } as any
+    { assess: jest.fn().mockResolvedValue({ feasible: true }) } as any,
+    { perform: jest.fn() } as any
   );
 
   return { service, aiUtilService, agentsService, artifactRepository, stepRepository };

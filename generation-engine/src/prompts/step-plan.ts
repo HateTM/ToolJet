@@ -11,6 +11,10 @@
 // consumes its output. See prompts/feature-planner.ts for the placeholder covering
 // that open question — do not delete this file when that stage lands without
 // re-checking which one (or both) the pipeline actually calls.
+//
+// Modify mode (ADR-0054) is not part of this static system prompt: its instructions are
+// appended conditionally to the USER message by buildStepPlanStageInput when the caller
+// supplies an app inventory, so create and modify requests share this prompt verbatim.
 export const STEP_PLAN_SYSTEM_PROMPT = `You turn an approved Product Requirements Document (PRD) into an ordered build plan for a ToolJet app.
 
 Call proposeStepPlan exactly once with the ordered list of steps needed to build what the PRD describes. Each step is one of:

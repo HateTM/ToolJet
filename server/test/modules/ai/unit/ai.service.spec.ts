@@ -68,7 +68,8 @@ const buildAiService = (overrides: any = {}) => {
     undefined,
     undefined,
     undefined,
-    generationEnginePipelineClient
+    generationEnginePipelineClient,
+    { perform: jest.fn() } as any
   );
 
   return { service, aiUtilService, agentsService, repositories, generationEnginePipelineClient };

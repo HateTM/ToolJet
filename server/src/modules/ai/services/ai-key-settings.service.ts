@@ -87,7 +87,9 @@ export class AiKeySettingsService implements IAiKeySettingsService {
 
     if (!row) {
       if (!dto.apiKey || !dto.provider) {
-        throw new BadRequestException('provider and apiKey are required when configuring an organization key for the first time');
+        throw new BadRequestException(
+          'provider and apiKey are required when configuring an organization key for the first time'
+        );
       }
     } else if (dto.provider !== row.provider && !dto.apiKey) {
       // The stored key belongs to the previous provider — silently reusing it

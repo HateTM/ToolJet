@@ -1,5 +1,8 @@
 // server/test/modules/ai/unit/data-source-inventory.service.spec.ts
-import { DataSourceInventoryService, renderConnectedDataSources } from '@modules/ai/services/data-source-inventory.service';
+import {
+  DataSourceInventoryService,
+  renderConnectedDataSources,
+} from '@modules/ai/services/data-source-inventory.service';
 
 const USER = { id: 'user-1', organizationId: 'org-1' } as any;
 const PERMISSIONS = { isAdmin: true } as any;

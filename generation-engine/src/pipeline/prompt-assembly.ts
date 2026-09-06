@@ -150,7 +150,18 @@ export function buildStepGenerationStageInput(
     '',
     '# The step to generate',
     '',
-    JSON.stringify({ index, type: step.type, description: step.description }, null, 2),
+    JSON.stringify(
+      {
+        index,
+        type: step.type,
+        description: step.description,
+        // Modify mode (ADR-0054): the existing component/query id this step targets —
+        // the payload must reference it, not a name it would have to guess.
+        ...(step.targetId && { targetId: step.targetId }),
+      },
+      null,
+      2
+    ),
     '',
     '# Earlier steps in this plan (order)',
     '',

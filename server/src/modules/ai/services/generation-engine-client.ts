@@ -101,7 +101,9 @@ export class GenerationEngineClient {
 
         if (event.type === 'engine-done') {
           sawTerminalEvent = true;
-          const usage = (event.data as { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } })?.usage;
+          const usage = (
+            event.data as { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }
+          )?.usage;
           yield { type: 'done', usage };
           return;
         }

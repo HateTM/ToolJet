@@ -172,6 +172,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
   const generationEngineClient = overrides.generationEngineClient ?? buildMockGenerationEngineClient();
   const generationEnginePipelineClient =
     overrides.generationEnginePipelineClient ?? buildMockGenerationEnginePipelineClient();
+  const tooljetDbTableOperationsService = overrides.tooljetDbTableOperationsService ?? { perform: jest.fn() };
 
   const service = new AiService(
     aiUtilService as any,
@@ -187,7 +188,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     aiActiveRunService as any,
     aiFeasibilityService as any,
     generationEngineClient as any,
-    generationEnginePipelineClient as any
+    generationEnginePipelineClient as any,
+    tooljetDbTableOperationsService as any
   );
 
   return {
@@ -201,6 +203,7 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     versionRepository,
     aiResponseVoteRepository,
     appInventoryService,
+    tooljetDbTableOperationsService,
     dataSourceInventoryService,
     aiActiveRunService,
     aiFeasibilityService,
@@ -3234,12 +3237,14 @@ describe('AiService.approvePrd', () => {
       await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, buildMockResponse() as any);
 
       // The approved PRD crosses the wire, with the rendered component index (ticket #66
-      // contract) and no LLD (the engine runs its own lld stage).
+      // contract) and no LLD (the engine runs its own lld stage). The 5th arg is the
+      // ADR-0053 app inventory — undefined here (empty app stays on the create pipeline).
       expect(generationEnginePipelineClient.generateSteps).toHaveBeenCalledWith(
         'PRD text',
         undefined,
         expect.stringContaining('Existing components already in this app'),
-        'org-1'
+        'org-1',
+        undefined
       );
       // The in-process planner never ran — the approve-prd-plan gateway label is absent
       // (later calls, if any, belong to step execution, not planning).
@@ -5345,10 +5350,38 @@ const conversationRepoDefaults = (conversationRepo, messageRepo) => {
 };
 
 describe('AiService.approvePrd - phases (ticket #21)', () => {
+  // A stateful conversation mock: raiseInterrupt's metadata writes land in the same object
+  // its findById polls read, so interruptAnswer (the client's side channel) resumes the run.
+  const makeConversationStateful = (conversationRepo) => {
+    let metadata: any = {};
+    conversationRepo.findById.mockImplementation(async () => ({
+      id: 'conv-1',
+      appId: 'app-1',
+      userId: 'user-1',
+      conversationType: 'generate',
+      metadata,
+    }));
+    conversationRepo.updateOne.mockImplementation(async (_id: any, patch: any) => {
+      metadata = { ...metadata, ...patch.metadata };
+    });
+    return () => metadata;
+  };
+
+  const waitForSSE = async (aiUtilService, event: string) => {
+    for (let i = 0; i < 500; i += 1) {
+      const found = aiUtilService.sendSSE.mock.calls.find(([, name]) => name === event);
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`SSE event "${event}" was never emitted`);
+  };
+
   it("persists the planner's phase label on each Step and carries it on the plan SSE event", async () => {
     const { service, aiUtilService, conversationRepo, messageRepo, stepRepository, generationEnginePipelineClient } =
       buildService();
     conversationRepoDefaults(conversationRepo, messageRepo);
+    (service as any).INTERRUPT_POLL_INTERVAL_MS = 2;
+    makeConversationStateful(conversationRepo);
 
     enginePlan(generationEnginePipelineClient, [
       { type: 'CreateTable', description: 'Create a customers table', phase: 'Create data tables' },
@@ -5366,9 +5399,15 @@ describe('AiService.approvePrd - phases (ticket #21)', () => {
       });
 
     const response = buildMockResponse();
-    // Execution stops at the first step (no per-step handler mocked for CreateComponent's
-    // page creation) — this test only cares about the plan generation and its wire shape.
-    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any).catch(() => {});
+    // A two-phase plan pauses at the ADR-0044 review_phase_plan interrupt before the plan
+    // SSE; the test answers it through the same side channel the client uses. Execution
+    // then stops at the first step (no per-step handler mocked for CreateComponent's page
+    // creation) — this test only cares about the plan generation and its wire shape.
+    const finished = service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any).catch(() => {});
+    const interruptEvent = await waitForSSE(aiUtilService, 'interrupt');
+    expect(interruptEvent[2]).toMatchObject({ type: 'review_phase_plan' });
+    await service.interruptAnswer('conv-1', interruptEvent[2].interruptId, { approved: true }, 'user-1');
+    await finished;
 
     expect(stepRepository.createOne).toHaveBeenCalledTimes(2);
     expect(stepRepository.createOne).toHaveBeenCalledWith(
@@ -5416,6 +5455,111 @@ describe('AiService.approvePrd - phases (ticket #21)', () => {
     type,
     description,
     status: 'pending',
+  });
+
+  it('runs a single-phase plan straight through without a phase-review interrupt', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository, generationEnginePipelineClient } =
+      buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table', phase: 'Create data tables' },
+      { type: 'CreateComponent', description: 'Create a Home page', phase: 'Create data tables' },
+    ]);
+    stepRepository.createOne.mockResolvedValue(pendingStepLike('step-1', 0, 'CreateTable', 'Create a customers table'));
+
+    const response = buildMockResponse();
+    await service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any).catch(() => {});
+
+    expect(aiUtilService.sendSSE).not.toHaveBeenCalledWith(
+      response,
+      'interrupt',
+      expect.objectContaining({ type: 'review_phase_plan' })
+    );
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'plan', expect.anything());
+  });
+
+  it('cancels the build without executing steps when the phase review answers approved:false', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository, generationEnginePipelineClient } =
+      buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+    (service as any).INTERRUPT_POLL_INTERVAL_MS = 2;
+    makeConversationStateful(conversationRepo);
+
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table', phase: 'Create data tables' },
+      { type: 'CreateComponent', description: 'Create a Home page', phase: 'Build the interface' },
+    ]);
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        ...pendingStepLike('step-1', 0, 'CreateTable', 'Create a customers table'),
+        phase: 'Create data tables',
+      })
+      .mockResolvedValueOnce({
+        ...pendingStepLike('step-2', 1, 'CreateComponent', 'Create a Home page'),
+        phase: 'Build the interface',
+      });
+
+    const response = buildMockResponse();
+    const finished = service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any).catch(() => {});
+    const interruptEvent = await waitForSSE(aiUtilService, 'interrupt');
+    await service.interruptAnswer('conv-1', interruptEvent[2].interruptId, { approved: false }, 'user-1');
+    await finished;
+
+    expect(messageRepo.createOne).toHaveBeenCalledWith(
+      expect.objectContaining({ messageType: 'ai', content: expect.stringContaining('cancelled at the phase review') })
+    );
+    const doneEvent = aiUtilService.sendSSE.mock.calls.find(([, event]) => event === 'done');
+    expect(doneEvent?.[2]).toMatchObject({ succeeded: 0, total: 2 });
+    // No plan event, nothing executed.
+    expect(aiUtilService.sendSSE).not.toHaveBeenCalledWith(response, 'plan', expect.anything());
+    expect(aiUtilService.sendSSE).not.toHaveBeenCalledWith(response, 'step-progress', expect.anything());
+  });
+
+  it('reorders phases per the review answer and rewrites the persisted step order', async () => {
+    const { service, aiUtilService, conversationRepo, messageRepo, stepRepository, generationEnginePipelineClient } =
+      buildService();
+    conversationRepoDefaults(conversationRepo, messageRepo);
+    (service as any).INTERRUPT_POLL_INTERVAL_MS = 2;
+    makeConversationStateful(conversationRepo);
+
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'CreateTable', description: 'Create a customers table', phase: 'Create data tables' },
+      { type: 'CreateComponent', description: 'Create a Home page', phase: 'Build the interface' },
+    ]);
+    stepRepository.createOne
+      .mockResolvedValueOnce({
+        ...pendingStepLike('step-1', 0, 'CreateTable', 'Create a customers table'),
+        phase: 'Create data tables',
+      })
+      .mockResolvedValueOnce({
+        ...pendingStepLike('step-2', 1, 'CreateComponent', 'Create a Home page'),
+        phase: 'Build the interface',
+      });
+
+    const response = buildMockResponse();
+    const finished = service.approvePrd('conv-1', 'PRD text', USER, PERMISSIONS, response as any).catch(() => {});
+    const interruptEvent = await waitForSSE(aiUtilService, 'interrupt');
+    await service.interruptAnswer(
+      'conv-1',
+      interruptEvent[2].interruptId,
+      { order: ['Build the interface', 'Create data tables'] },
+      'user-1'
+    );
+    await finished;
+
+    // The plan SSE carries the reordered steps, and the persisted order follows suit.
+    expect(aiUtilService.sendSSE).toHaveBeenCalledWith(response, 'plan', {
+      steps: [
+        expect.objectContaining({ id: 'step-2', phase: 'Build the interface' }),
+        expect.objectContaining({ id: 'step-1', phase: 'Create data tables' }),
+      ],
+    });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-2', { order: 0 });
+    expect(stepRepository.updateOne).toHaveBeenCalledWith('step-1', { order: 1 });
+    // Execution follows the reordered plan: the interface step starts first.
+    const progressCalls = aiUtilService.sendSSE.mock.calls.filter(([, event]) => event === 'step-progress');
+    expect(progressCalls[0]?.[2]).toMatchObject({ step: 1, of: 2, description: 'Create a Home page' });
   });
 });
 
@@ -5878,4 +6022,139 @@ describe('AiService.generate-path prompt budget (ticket #58)', () => {
   // fitting step, so there is nothing left here to assert on (see
   // 'AiService.generateStepPlan via the generation engine (ADR-0048)' for engine-path
   // coverage).
+});
+
+// ADR-0053 modify routing: a non-empty app (existing components in the component index)
+// plans through the engine's modify pipeline — the app inventory snapshot plus the current
+// ToolJet DB schema (lld) ride on the generateSteps call, and the engine skips its
+// feature-planner/per-entity stages. Detection is heuristic: classify() is unavailable
+// server-side (unimplemented) and POST /generate/prd streams tokens without classifying.
+describe('AiService.previewPlan - modify routing (ADR-0053)', () => {
+  const EMPTY_INDEX = 'Existing components already in this app: none yet.';
+  const POPULATED_INDEX =
+    'Existing components already in this app:\n- Text "customers_title" (id: comp-1, page: "Page 1")';
+
+  const mockConversation = (conversationRepo: any, messageRepo: any) => {
+    conversationRepo.findById.mockResolvedValue({
+      id: 'conv-1',
+      appId: 'app-1',
+      userId: 'user-1',
+      conversationType: 'generate',
+    });
+    messageRepo.findLatestByConversationId.mockResolvedValue([{ id: 'ai-msg-1', messageType: 'ai', content: 'PRD' }]);
+  };
+
+  const plannedStep = {
+    id: 'step-1',
+    conversationId: 'conv-1',
+    messageId: 'ai-msg-1',
+    order: 0,
+    type: 'UpdateComponent',
+    description: 'Update the title',
+    status: 'pending',
+  };
+
+  it('passes the app inventory and the current ToolJet DB schema (lld) for a non-empty app', async () => {
+    const tooljetDbTableOperationsService = {
+      perform: jest
+        .fn()
+        // first call: 'view_tables'
+        .mockResolvedValueOnce([{ id: 'table-1', tableName: 'customers' }])
+        // second call: 'view_table'
+        .mockResolvedValueOnce({
+          columns: [{ column_name: 'id', data_type: 'serial', constraints_type: { is_primary_key: true } }],
+          foreign_keys: [],
+        }),
+    };
+    const {
+      service,
+      generationEnginePipelineClient,
+      conversationRepo,
+      messageRepo,
+      stepRepository,
+      appInventoryService,
+    } = buildService({
+      tooljetDbTableOperationsService,
+      appInventoryService: {
+        ...buildMockAppInventoryService(),
+        renderComponentIndex: jest.fn().mockResolvedValue(POPULATED_INDEX),
+        assemble: jest.fn().mockResolvedValue('App: Test app'),
+      },
+    });
+
+    mockConversation(conversationRepo, messageRepo);
+    enginePlan(generationEnginePipelineClient, [
+      { type: 'UpdateComponent', description: 'Update the title', targetId: 'comp-1' },
+    ]);
+    stepRepository.createOne.mockResolvedValue(plannedStep);
+
+    await service.previewPlan('conv-1', USER, PERMISSIONS);
+
+    expect(generationEnginePipelineClient.generateSteps).toHaveBeenCalledWith(
+      'PRD',
+      {
+        tables: [
+          {
+            table_name: 'customers',
+            columns: [{ column_name: 'id', data_type: 'serial', constraints_type: { is_primary_key: true } }],
+            foreign_keys: [],
+          },
+        ],
+      },
+      POPULATED_INDEX,
+      'org-1',
+      'App: Test app'
+    );
+    // The modify step's targetId persists onto props for the executors (advisory).
+    expect(stepRepository.createOne).toHaveBeenCalledWith(expect.objectContaining({ props: { targetId: 'comp-1' } }));
+    expect(appInventoryService.assemble).toHaveBeenCalledWith('app-1', 'version-1');
+  });
+
+  it('stays on the create pipeline for an empty app (no inventory, no lld)', async () => {
+    const tooljetDbTableOperationsService = { perform: jest.fn() };
+    const { service, generationEnginePipelineClient, conversationRepo, messageRepo, stepRepository } = buildService({
+      tooljetDbTableOperationsService,
+    });
+
+    mockConversation(conversationRepo, messageRepo);
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateComponent', description: 'Create a page' }]);
+    stepRepository.createOne.mockResolvedValue({ ...plannedStep, type: 'CreateComponent' });
+
+    await service.previewPlan('conv-1', USER, PERMISSIONS);
+
+    expect(generationEnginePipelineClient.generateSteps).toHaveBeenCalledWith(
+      'PRD',
+      undefined,
+      EMPTY_INDEX,
+      'org-1',
+      undefined
+    );
+  });
+
+  it('stays on the create pipeline when the app has components but no ToolJet DB tables', async () => {
+    const tooljetDbTableOperationsService = {
+      perform: jest.fn().mockResolvedValue([]),
+    };
+    const { service, generationEnginePipelineClient, conversationRepo, messageRepo, stepRepository } = buildService({
+      tooljetDbTableOperationsService,
+      appInventoryService: {
+        ...buildMockAppInventoryService(),
+        renderComponentIndex: jest.fn().mockResolvedValue(POPULATED_INDEX),
+      },
+    });
+
+    mockConversation(conversationRepo, messageRepo);
+    enginePlan(generationEnginePipelineClient, [{ type: 'CreateComponent', description: 'Create a page' }]);
+    stepRepository.createOne.mockResolvedValue({ ...plannedStep, type: 'CreateComponent' });
+
+    await service.previewPlan('conv-1', USER, PERMISSIONS);
+
+    expect(generationEnginePipelineClient.generateSteps).toHaveBeenCalledWith(
+      'PRD',
+      undefined,
+      POPULATED_INDEX,
+      'org-1',
+      undefined
+    );
+  });
 });

@@ -1,9 +1,25 @@
-// Placeholder — ticket #93 (docs/adr/0030). Issue #82's feature-planner stage sits after
-// LLD in the pipeline (classification -> PRD -> LLD -> feature-planner -> per-entity
-// generation -> evaluate). It is not yet settled whether this stage subsumes the fork's
-// existing PRD -> Step-list planner (ported as prompts/step-plan.ts) or is a distinct
-// stage that consumes LLD's output and step-plan's role narrows/disappears. Left as an
-// open question for the ticket that implements LLD + feature-planner together.
-// TODO (#82): replace with the real feature-planner system prompt, and resolve its
-// relationship to step-plan.ts.
-export const FEATURE_PLANNER_SYSTEM_PROMPT = `TODO (#82): feature-planner stage system prompt — not yet implemented.`;
+// Feature-planner stage system prompt — ticket #82. The stage's deterministic half
+// (buildFeaturePlanFromLld in pipeline/feature-planner.ts) already derives one plan item
+// per LLD table in foreign-key topological order; ADR-0040 keeps that 1:1 mapping as the
+// production default and treats LLM refinement as optional (deps.planFeatures is not
+// wired in llm-deps.ts's production deps today). This prompt ports the EE prompt
+// library's featurePlanner.js systemPrompt (ee-ai-extract/server/ee-ai/assets/prompt-
+// library/) — the EE implementation-analysis agent — narrowed to that refinement job:
+// EE's knowledge-graph component-level LLD has no engine equivalent, so only its
+// feature-grouping discipline carries over. Output must satisfy the FeaturePlan contract
+// ({ items: [{ entityName, dependsOn }] }) the stage validates.
+export const FEATURE_PLANNER_SYSTEM_PROMPT = `You are a planning agent for a low-code platform. You receive a proposed build plan: one entity (a database table) per feature, with each entity's dependencies on previously built entities. Your task is to refine the grouping: merge related entities into a single user-facing feature when they form one coherent unit (e.g. "orders" and "order_items" belong together), keeping the result as a flat, executable sequence.
+
+Respond with JSON only, no explanations, no markdown code blocks, exactly this shape:
+
+{
+  "items": [
+    { "entityName": "snake_case_table_name", "dependsOn": ["other_table_name"] }
+  ]
+}
+
+Rules:
+- Every input entity name MUST appear exactly once in your items — do not invent, rename, drop or split entities.
+- Merging means giving related entities the SAME position in the sequence: list each as its own item, adjacent, each depending on whatever must already exist.
+- "dependsOn" may only name entities that appear earlier in the items list — keep it a valid topological order.
+- When in doubt, keep the input order unchanged.`;

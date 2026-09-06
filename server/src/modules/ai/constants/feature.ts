@@ -74,5 +74,8 @@ export const FEATURES: FeaturesConfig = {
     [FEATURE_KEY.GET_ACTIVE_RUN]: {
       license: LICENSE_FIELD.AI_FEATURE,
     },
+    [FEATURE_KEY.PREVIEW_PLAN]: {
+      license: LICENSE_FIELD.AI_FEATURE,
+    },
   },
 };

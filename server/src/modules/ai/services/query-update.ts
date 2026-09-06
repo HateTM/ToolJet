@@ -1,17 +1,20 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { isSingleReadOnlyStatement } from './query-security';
-import { updateQuery as updateQueryPrompts } from '../prompt-library';
 
-/**
- * Ticket #67, prompt sourced from the ported EE library (prompt-library/updateQuery.ts):
- * the model returns ONLY the option paths that changed, and the merge below applies them
- * onto the existing options without touching anything else. Unlike EE, the query's name
- * and data source can never change — those are the read-only parts of the contract here,
- * so the tool schema doesn't even accept them.
- */
+// Inlined from the ported EE prompt library (was prompt-library/updateQuery.ts, ticket #67):
+// the model returns ONLY the option paths that changed, and the merge below applies them
+// onto the existing options without touching anything else. Unlike EE, the query's name and
+// data source can never change — those are the read-only parts of the contract here, so the
+// tool schema doesn't even accept them.
+const UPDATE_QUERY_BASE_PROMPT =
+  'You are an AI assistant specialized in updating ToolJet queries. Your task is to analyze existing query ' +
+  'configurations and update specifications, then return ONLY the paths that were modified with their new values. ' +
+  'Maintain the exact nesting structure as in the original query. Always return JSON without any additional text ' +
+  'or comments.';
+
 export const UPDATE_QUERY_SYSTEM_PROMPT = [
-  updateQueryPrompts.systemPrompt(),
+  UPDATE_QUERY_BASE_PROMPT,
   `Call updateQuery exactly once. You are shown the query's current options and the list of other queries in the app; pick the target by its exact name.
 
 Rules:

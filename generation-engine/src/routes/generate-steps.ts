@@ -32,6 +32,8 @@ export type GenerateStepsBody = {
   prd?: string;
   lld?: PipelineArtifacts['lld'];
   componentIndex?: string;
+  /** App inventory snapshot for modify_app requests (ADR-0054); presence switches to modify mode. */
+  appInventory?: string;
   organizationId?: string;
   llm?: EffectiveLlmConfig;
 };
@@ -66,7 +68,7 @@ export function defaultGenerateStepsDepsFactory(): DefaultPipelineDeps {
 export function registerGenerateStepsRoute(app: FastifyInstance, depsFactory: GenerateStepsDepsFactory) {
   app.post('/generate/steps', async (request, reply) => {
     const body = request.body as GenerateStepsBody | undefined;
-    const { prd, lld, componentIndex, organizationId, llm } = body ?? {};
+    const { prd, lld, componentIndex, appInventory, organizationId, llm } = body ?? {};
 
     const llmConfigValid =
       typeof llm === 'object' &&
@@ -80,18 +82,25 @@ export function registerGenerateStepsRoute(app: FastifyInstance, depsFactory: Ge
       lld === undefined ||
       (typeof lld === 'object' && lld !== null && Array.isArray((lld as { tables?: unknown }).tables));
 
+    // Modify mode (ADR-0054) needs the current tables as the lld: the step-plan stage
+    // still requires lld, and in modify mode the caller passes the app's existing tables.
+    const appInventoryValid = appInventory === undefined || typeof appInventory === 'string';
+    const modifyModeNeedsLld = appInventory !== undefined && lld === undefined;
+
     if (
       typeof prd !== 'string' ||
       prd.length === 0 ||
       !llmConfigValid ||
       !lldValid ||
+      !appInventoryValid ||
+      modifyModeNeedsLld ||
       (componentIndex !== undefined && typeof componentIndex !== 'string') ||
       (organizationId !== undefined && typeof organizationId !== 'string')
     ) {
       reply.code(400);
       return {
         error:
-          'prd (non-empty string), llm { provider, model, apiKey }, an optional lld { tables: [...] } and string componentIndex/organizationId are required',
+          'prd (non-empty string), llm { provider, model, apiKey }, an optional lld { tables: [...] }, an optional string appInventory (requires lld) and string componentIndex/organizationId are required',
       };
     }
 
@@ -103,10 +112,14 @@ export function registerGenerateStepsRoute(app: FastifyInstance, depsFactory: Ge
 
     const deps = depsFactory();
     const usage = createUsageRecorder();
+    // Modify mode (ADR-0054): with an app inventory there is no table design work to do,
+    // so feature-planner and per-entity are skipped and planning goes straight to the
+    // step-plan stage grounded on the caller-supplied lld + inventory.
     const stages: PipelineStage[] = [
       ...(lld ? [] : [buildLldStage(deps.lld)]),
-      buildFeaturePlannerStage(deps.featurePlanner),
-      buildPerEntityStage(deps.perEntity),
+      ...(appInventory
+        ? []
+        : [buildFeaturePlannerStage(deps.featurePlanner), buildPerEntityStage(deps.perEntity)]),
       buildStepPlanStage(deps.stepPlan),
       buildStepGenerationStage(deps.stepGeneration),
       buildEvaluateStage(deps.evaluate),
@@ -116,6 +129,7 @@ export function registerGenerateStepsRoute(app: FastifyInstance, depsFactory: Ge
       prompt: '',
       prd,
       ...(componentIndex && { componentIndex }),
+      ...(appInventory && { appInventory }),
       ...(lld && { lld }),
     };
 

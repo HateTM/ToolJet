@@ -16,6 +16,8 @@ import {
   Hammer,
   SkipForward,
   PauseCircle,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Spinner from '@/_ui/Spinner';
@@ -404,6 +406,88 @@ const groupStepsByPhase = (steps) => {
 // (the user decided their outcome), only pending/running/failed ones don't.
 const countResolvedSteps = (steps) =>
   steps.filter((step) => step.status === 'succeeded' || step.status === 'skipped').length;
+
+// ADR-0044 / review_phase_plan: a multi-phase plan pauses before any step runs, asking the
+// user to confirm or reorder the phases. Phases are reordered locally (nothing else may
+// change); approving sends `{ order }` when the user moved something, plain `{ approved }`
+// otherwise — both shapes the backend contract accepts.
+const PhasePlanReviewCard = ({ payload, onAnswer, answering }) => {
+  const { t } = useTranslation();
+  const plannedPhases = (payload?.phases || []).map((phase) => phase.name);
+  const [order, setOrder] = useState(plannedPhases);
+  const reordered = plannedPhases.some((name, index) => order[index] !== name);
+  const move = (index, delta) => {
+    setOrder((current) => {
+      const next = [...current];
+      const target = index + delta;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+  const stepCount = (name) => payload?.phases?.find((phase) => phase.name === name)?.steps ?? 0;
+
+  return (
+    <div
+      data-cy="ai-builder-interrupt-review-phase-plan"
+      className="tw-flex tw-flex-col tw-gap-2 tw-border tw-border-border-weak tw-bg-background-surface-layer02 tw-px-3 tw-py-2 tw-text-xs"
+    >
+      <span className="tw-text-text-secondary">
+        {tAiBuilder(t, 'interruptReviewPhases', 'Review the build order of the phases before anything runs.')}
+      </span>
+      <div className="tw-flex tw-flex-col tw-gap-1">
+        {order.map((name, index) => (
+          <div key={name} className="tw-flex tw-items-center tw-justify-between tw-gap-2">
+            <span className="tw-min-w-0 tw-truncate">
+              {name}
+              <span className="tw-text-text-placeholder"> · {stepCount(name)}</span>
+            </span>
+            <span className="tw-flex tw-gap-1">
+              <button
+                type="button"
+                className="tw-border-none tw-bg-transparent tw-p-0 tw-text-text-secondary disabled:tw-opacity-40"
+                disabled={index === 0 || answering}
+                onClick={() => move(index, -1)}
+                data-cy={`ai-builder-phase-move-up-${index}`}
+              >
+                <ChevronUp width="14" height="14" />
+              </button>
+              <button
+                type="button"
+                className="tw-border-none tw-bg-transparent tw-p-0 tw-text-text-secondary disabled:tw-opacity-40"
+                disabled={index === order.length - 1 || answering}
+                onClick={() => move(index, 1)}
+                data-cy={`ai-builder-phase-move-down-${index}`}
+              >
+                <ChevronDown width="14" height="14" />
+              </button>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="tw-flex tw-gap-2">
+        <Button
+          size="small"
+          variant="primary"
+          disabled={answering}
+          onClick={() => onAnswer(reordered ? { order } : { approved: true })}
+          data-cy="ai-builder-phase-review-approve"
+        >
+          {tAiBuilder(t, 'interruptPhasesApprove', 'Looks good, run it')}
+        </Button>
+        <Button
+          size="small"
+          variant="secondary"
+          disabled={answering}
+          onClick={() => onAnswer({ approved: false })}
+          data-cy="ai-builder-phase-review-cancel"
+        >
+          {tAiBuilder(t, 'interruptPhasesCancel', 'Cancel the build')}
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 // Ticket #15: when a plan has stopped on a failure, an explicit "Undo this build" action
 // rests at the bottom of the strip — it reuses rewind's discard via the store's undoBuild
@@ -934,6 +1018,10 @@ export const AiBuilderChatPanel = ({ darkMode, onClose, appId }) => {
             ))}
           </div>
         </div>
+      )}
+
+      {!isLearnMode && interrupt?.type === 'review_phase_plan' && (
+        <PhasePlanReviewCard payload={interrupt.payload} onAnswer={answerInterrupt} answering={isAnsweringInterrupt} />
       )}
 
       {!isLearnMode && steps.length > 0 && (

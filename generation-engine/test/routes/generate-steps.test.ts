@@ -104,6 +104,49 @@ describe('POST /generate/steps', () => {
     app.close();
   });
 
+  it('runs modify mode when an appInventory is supplied: skips feature-planner/per-entity, requires lld', async () => {
+    const log: string[] = [];
+    const app = buildApp({ generateStepsDepsFactory: fakeDepsFactory(log) });
+    const lld = {
+      tables: [
+        { table_name: 'customers', columns: [{ column_name: 'id', data_type: 'serial', constraints_type: { is_primary_key: true } }] },
+      ],
+    };
+
+    const modify = await app.inject({
+      method: 'POST',
+      url: '/generate/steps',
+      headers: { authorization: 'Bearer test-key' },
+      payload: { ...VALID_BODY, lld, appInventory: 'App inventory\n- text1 (id: cmp-1)' },
+    });
+
+    expect(modify.statusCode).toBe(200);
+    const { artifacts } = JSON.parse(modify.payload);
+    expect(artifacts.appInventory).toContain('cmp-1');
+    expect(artifacts.featurePlan).toBeUndefined();
+    expect(artifacts.entityToolCalls).toBeUndefined();
+
+    // appInventory without lld is a 400: step-plan requires the current tables in modify mode.
+    const noLld = await app.inject({
+      method: 'POST',
+      url: '/generate/steps',
+      headers: { authorization: 'Bearer test-key' },
+      payload: { ...VALID_BODY, appInventory: 'App inventory' },
+    });
+    expect(noLld.statusCode).toBe(400);
+    expect(JSON.parse(noLld.payload).error).toContain('appInventory');
+
+    // A non-string appInventory is rejected too.
+    const badType = await app.inject({
+      method: 'POST',
+      url: '/generate/steps',
+      headers: { authorization: 'Bearer test-key' },
+      payload: { ...VALID_BODY, lld, appInventory: 42 },
+    });
+    expect(badType.statusCode).toBe(400);
+    app.close();
+  });
+
   it('rejects a request without a prd or a usable llm config with a plain 400', async () => {
     const app = buildApp({ generateStepsDepsFactory: fakeDepsFactory([]) });
 

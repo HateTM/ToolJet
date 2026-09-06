@@ -1211,7 +1211,7 @@ describe('AgentsService.MoveComponent', () => {
     );
   });
 
-  it('is a no-op (no DB write) when the target parent is already the component\'s current parent', async () => {
+  it("is a no-op (no DB write) when the target parent is already the component's current parent", async () => {
     const { service, componentsService } = buildAgentsService();
     componentsService.findOneWithLayouts.mockImplementation((id: string) => {
       if (id === 'component-1') return Promise.resolve(movingComponent);

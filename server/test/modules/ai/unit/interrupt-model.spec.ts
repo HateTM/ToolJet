@@ -49,7 +49,9 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
     ...overrides.aiUtilService,
   };
   const conversationRepo = overrides.conversationRepo ?? {
-    findById: jest.fn().mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate', metadata: {} }),
+    findById: jest
+      .fn()
+      .mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate', metadata: {} }),
     updateOne: jest.fn(),
   };
   const messageRepo = {
@@ -102,7 +104,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
       findActiveRun: jest.fn().mockResolvedValue(null),
       cleanupStaleRuns: jest.fn().mockResolvedValue(0),
     } as any,
-    { assess: jest.fn().mockResolvedValue({ feasible: true }) } as any
+    { assess: jest.fn().mockResolvedValue({ feasible: true }) } as any,
+    { perform: jest.fn() } as any
   );
 
   return { service, aiUtilService, agentsService, artifactRepository, stepRepository, conversationRepo };
@@ -130,7 +133,12 @@ describe('AiService — select_datasource interrupt (ADR-0044)', () => {
     expect(interruptEvent).toBeDefined();
     expect(interruptEvent?.[2]).toMatchObject({
       type: 'select_datasource',
-      payload: { candidates: [{ id: 'ds-a', name: 'Primary' }, { id: 'ds-b', name: 'Secondary' }] },
+      payload: {
+        candidates: [
+          { id: 'ds-a', name: 'Primary' },
+          { id: 'ds-b', name: 'Secondary' },
+        ],
+      },
     });
     // Written to conversation.metadata, not a Step column (ADR-0044's storage rationale).
     const writeCall = conversationRepo.updateOne.mock.calls.find(
@@ -150,9 +158,11 @@ describe('AiService — select_datasource interrupt (ADR-0044)', () => {
   it('resumes the paused step once interruptAnswer writes the chosen data source', async () => {
     let metadata: any = {};
     const conversationRepo = {
-      findById: jest.fn().mockImplementation(() =>
-        Promise.resolve({ id: 'conv-1', userId: 'user-1', conversationType: 'generate', metadata })
-      ),
+      findById: jest
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve({ id: 'conv-1', userId: 'user-1', conversationType: 'generate', metadata })
+        ),
       updateOne: jest.fn().mockImplementation((_id: string, patch: any) => {
         metadata = patch.metadata;
         return Promise.resolve();
@@ -200,7 +210,9 @@ describe('AiService — select_datasource interrupt (ADR-0044)', () => {
 
   it('interruptAnswer rejects when no interrupt is currently live', async () => {
     const conversationRepo = {
-      findById: jest.fn().mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate', metadata: {} }),
+      findById: jest
+        .fn()
+        .mockResolvedValue({ id: 'conv-1', userId: 'user-1', conversationType: 'generate', metadata: {} }),
       updateOne: jest.fn(),
     };
     const { service } = buildService({ conversationRepo });

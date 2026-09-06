@@ -628,7 +628,12 @@ export class AgentsService implements IAgentsService {
       pageId: moving.pageId,
       previousParent,
       previousLayout: previousLayout
-        ? { top: previousLayout.top, left: previousLayout.left, width: previousLayout.width, height: previousLayout.height }
+        ? {
+            top: previousLayout.top,
+            left: previousLayout.left,
+            width: previousLayout.width,
+            height: previousLayout.height,
+          }
         : undefined,
       newParent: targetParentId,
     };
@@ -834,8 +839,7 @@ export class AgentsService implements IAgentsService {
         borderRadius: { value: '6' },
         tableType: { value: 'table-classic' },
       },
-      { width: 25, height: 460 }
-    ,
+      { width: 25, height: 460 },
       parentComponentId
     );
     // `name` is the widget's component name (== its title) — surfaced here so the plan
@@ -859,8 +863,7 @@ export class AgentsService implements IAgentsService {
         loadingState: { value: '{{false}}' },
       },
       {},
-      { width: 4, height: 40 }
-    ,
+      { width: 4, height: 40 },
       parentComponentId
     );
   }
@@ -879,8 +882,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 6, height: 40 }
-    ,
+      { width: 6, height: 40 },
       parentComponentId
     );
   }
@@ -900,8 +902,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -920,8 +921,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 15, height: 450 }
-    ,
+      { width: 15, height: 450 },
       parentComponentId
     );
   }
@@ -945,8 +945,7 @@ export class AgentsService implements IAgentsService {
         loadingState: { value: '{{false}}' },
       },
       {},
-      { width: 20, height: 400 }
-    ,
+      { width: 20, height: 400 },
       parentComponentId
     );
     // Same surface as the Table builder: the plan context shows the query name, so a later
@@ -969,8 +968,7 @@ export class AgentsService implements IAgentsService {
         loadingState: { value: '{{false}}' },
       },
       {},
-      { width: 10, height: 240 }
-    ,
+      { width: 10, height: 240 },
       parentComponentId
     );
   }
@@ -990,8 +988,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 6, height: 30 }
-    ,
+      { width: 6, height: 30 },
       parentComponentId
     );
   }
@@ -1022,8 +1019,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1048,8 +1044,7 @@ export class AgentsService implements IAgentsService {
         loadingState: { value: '{{false}}' },
       },
       {},
-      { width: 10, height: 34 }
-    ,
+      { width: 10, height: 34 },
       parentComponentId
     );
   }
@@ -1069,8 +1064,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 100 }
-    ,
+      { width: 10, height: 100 },
       parentComponentId
     );
   }
@@ -1090,8 +1084,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1111,8 +1104,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1132,8 +1124,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1153,8 +1144,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 6, height: 30 }
-    ,
+      { width: 6, height: 30 },
       parentComponentId
     );
   }
@@ -1172,8 +1162,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 10 }
-    ,
+      { width: 10, height: 10 },
       parentComponentId
     );
   }
@@ -1192,8 +1181,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 5, height: 48 }
-    ,
+      { width: 5, height: 48 },
       parentComponentId
     );
   }
@@ -1214,8 +1202,7 @@ export class AgentsService implements IAgentsService {
         visible: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 30 }
-    ,
+      { width: 10, height: 30 },
       parentComponentId
     );
   }
@@ -1236,8 +1223,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 152 }
-    ,
+      { width: 10, height: 152 },
       parentComponentId
     );
   }
@@ -1261,7 +1247,10 @@ export class AgentsService implements IAgentsService {
       })
     );
     const dataLiteral = list
-      .map((tag: any) => `{ title: '${String(tag.title).replace(/'/g, "\\'")}', color: '${tag.color}', textColor: '${tag.textColor}' }`)
+      .map(
+        (tag: any) =>
+          `{ title: '${String(tag.title).replace(/'/g, "\\'")}', color: '${tag.color}', textColor: '${tag.textColor}' }`
+      )
       .join(', \n\t\t');
     return this.createWidgetComponent(
       appVersionId,
@@ -1272,8 +1261,7 @@ export class AgentsService implements IAgentsService {
         data: { value: `{{ [ \n\t\t${dataLiteral} ] }}` },
       },
       {},
-      { width: 9, height: 30 }
-    ,
+      { width: 9, height: 30 },
       parentComponentId
     );
   }
@@ -1293,8 +1281,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1314,8 +1301,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1338,8 +1324,7 @@ export class AgentsService implements IAgentsService {
       {
         visibility: { value: '{{true}}' },
       },
-      { width: 5, height: 40 }
-    ,
+      { width: 5, height: 40 },
       parentComponentId
     );
   }
@@ -1369,8 +1354,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 15, height: 450 }
-    ,
+      { width: 15, height: 450 },
       parentComponentId
     );
     // Tab pane ids are always the array index as a string ('0', '1', ...) — see
@@ -1396,8 +1380,7 @@ export class AgentsService implements IAgentsService {
         visible: { value: '{{true}}' },
       },
       {},
-      { width: 15, height: 450 }
-    ,
+      { width: 15, height: 450 },
       parentComponentId
     );
     return { ...created, queryName };
@@ -1416,8 +1399,7 @@ export class AgentsService implements IAgentsService {
         visible: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 310 }
-    ,
+      { width: 10, height: 310 },
       parentComponentId
     );
   }
@@ -1435,8 +1417,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 15, height: 140 }
-    ,
+      { width: 15, height: 140 },
       parentComponentId
     );
   }
@@ -1460,8 +1441,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1479,8 +1459,7 @@ export class AgentsService implements IAgentsService {
         label: { value: label || 'Options' },
       },
       {},
-      { width: 12, height: 200 }
-    ,
+      { width: 12, height: 200 },
       parentComponentId
     );
   }
@@ -1497,8 +1476,7 @@ export class AgentsService implements IAgentsService {
         rawHtml: { value: html || '<div>Hello world</div>' },
       },
       {},
-      { width: 10, height: 310 }
-    ,
+      { width: 10, height: 310 },
       parentComponentId
     );
   }
@@ -1531,8 +1509,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 6, height: 40 }
-    ,
+      { width: 6, height: 40 },
       parentComponentId
     );
   }
@@ -1561,8 +1538,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 12, height: 80 }
-    ,
+      { width: 12, height: 80 },
       parentComponentId
     );
   }
@@ -1584,8 +1560,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 10, height: 40 }
-    ,
+      { width: 10, height: 40 },
       parentComponentId
     );
   }
@@ -1605,8 +1580,7 @@ export class AgentsService implements IAgentsService {
         visibility: { value: '{{true}}' },
       },
       {},
-      { width: 15, height: 400 }
-    ,
+      { width: 15, height: 400 },
       parentComponentId
     );
   }

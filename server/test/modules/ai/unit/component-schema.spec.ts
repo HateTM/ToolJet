@@ -235,10 +235,30 @@ describe('component schema validation (ticket #60)', () => {
     // per-property types, not a placeholder string, so a type mismatch (e.g. StarRating's
     // maxRating expecting a number) is caught here rather than only at runtime.
     const wave1PropertyInputs: Record<string, Record<string, any>> = {
-      TextArea: { label: { value: 'Label' }, placeholder: { value: '' }, value: { value: '' }, visibility: { value: '{{true}}' } },
-      PasswordInput: { label: { value: 'Label' }, placeholder: { value: 'Password' }, value: { value: '' }, visibility: { value: '{{true}}' } },
-      NumberInput: { label: { value: 'Label' }, placeholder: { value: '' }, value: { value: 0 }, visibility: { value: '{{true}}' } },
-      EmailInput: { label: { value: 'Label' }, placeholder: { value: 'Enter email' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      TextArea: {
+        label: { value: 'Label' },
+        placeholder: { value: '' },
+        value: { value: '' },
+        visibility: { value: '{{true}}' },
+      },
+      PasswordInput: {
+        label: { value: 'Label' },
+        placeholder: { value: 'Password' },
+        value: { value: '' },
+        visibility: { value: '{{true}}' },
+      },
+      NumberInput: {
+        label: { value: 'Label' },
+        placeholder: { value: '' },
+        value: { value: 0 },
+        visibility: { value: '{{true}}' },
+      },
+      EmailInput: {
+        label: { value: 'Label' },
+        placeholder: { value: 'Enter email' },
+        value: { value: '' },
+        visibility: { value: '{{true}}' },
+      },
       Link: {
         linkText: { value: 'Click here' },
         linkTarget: { value: 'https://dev.to/' },
@@ -259,8 +279,18 @@ describe('component schema validation (ticket #60)', () => {
         visibility: { value: '{{true}}' },
       },
       Tags: { data: { value: "{{ [ { title: 'success', color: '#34A94733', textColor: '#34A947' } ] }}" } },
-      CurrencyInput: { label: { value: 'Label' }, placeholder: { value: 'Enter your number' }, value: { value: 0 }, visibility: { value: '{{true}}' } },
-      PhoneInput: { label: { value: 'Label' }, placeholder: { value: 'Enter your input' }, value: { value: '' }, visibility: { value: '{{true}}' } },
+      CurrencyInput: {
+        label: { value: 'Label' },
+        placeholder: { value: 'Enter your number' },
+        value: { value: 0 },
+        visibility: { value: '{{true}}' },
+      },
+      PhoneInput: {
+        label: { value: 'Label' },
+        placeholder: { value: 'Enter your input' },
+        value: { value: '' },
+        visibility: { value: '{{true}}' },
+      },
     };
 
     it.each(Object.entries(wave1PropertyInputs))('%s: builder properties all pass sanitization', (type, input) => {
@@ -335,7 +365,14 @@ describe('component schema validation (ticket #60)', () => {
         label: { value: 'Label' },
         options: {
           value: [
-            { label: 'Button1', value: '1', icon: { value: 'IconBolt' }, iconVisibility: false, disable: { value: false }, default: { value: true } },
+            {
+              label: 'Button1',
+              value: '1',
+              icon: { value: 'IconBolt' },
+              iconVisibility: false,
+              disable: { value: false },
+              default: { value: true },
+            },
           ],
         },
         visibility: { value: '{{true}}' },

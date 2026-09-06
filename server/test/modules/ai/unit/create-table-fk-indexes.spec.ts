@@ -81,7 +81,8 @@ const buildService = (overrides: Partial<Record<string, any>> = {}) => {
       endRun: jest.fn().mockResolvedValue(undefined),
       findActiveRun: jest.fn().mockResolvedValue(null),
       cleanupStaleRuns: jest.fn().mockResolvedValue(0),
-    } as any
+    } as any,
+    { perform: jest.fn() } as any
     // Note: pre-existing gap in this fixture — aiFeasibilityService (12th ctor param) was
     // already omitted before ticket #91; not touched here since this spec never exercises
     // sendUserMessage (the only caller of aiFeasibilityService/generationEngineClient).

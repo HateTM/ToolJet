@@ -94,7 +94,8 @@ const buildService = (conversationType: 'generate' | 'learn') => {
     } as any,
     { assess: jest.fn().mockReturnValue({ type: 'feasible' }) } as any,
     generationEngineClient as any,
-    { isConfigured: jest.fn().mockReturnValue(true), generateSteps: jest.fn() } as any
+    { isConfigured: jest.fn().mockReturnValue(true), generateSteps: jest.fn() } as any,
+    { perform: jest.fn() } as any
   );
 
   return { service, aiUtilService, conversationRepo, messageRepo, response, generationEngineClient };

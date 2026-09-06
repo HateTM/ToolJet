@@ -47,6 +47,23 @@ export function buildStepPlanStageInput(artifacts: PipelineArtifacts): string {
     sections.push(`# Feature-plan ordering — build tables in this dependency order\n\n${order}`);
   }
 
+  // Modify mode (ADR-0054): the caller supplied an app inventory snapshot, so the plan
+  // must amend the existing app rather than rebuild it. The sparse-patch contract for
+  // component/query updates mirrors what the server's executors validate
+  // (sanitizeComponentSection / UpdateQuery's changed-keys-only shape).
+  if (artifacts.appInventory) {
+    sections.push(
+      `# Modifying an existing app\n\n` +
+        `This request modifies an app that already exists. The current app inventory follows this instruction, and the component index describes the existing UI. Plan amendments, not a rebuild:\n\n` +
+        `- Target existing components and queries by their exact id from the inventory: set the step's targetId to that id and use UpdateComponent, UpdateQuery, DeleteComponent, DeleteQuery or MoveComponent.\n` +
+        `- For UpdateComponent, the generated payload must contain ONLY the changed keys (properties/styles entries), with each changed value wrapped as { value: ... }. Never repeat unchanged properties.\n` +
+        `- For UpdateQuery, return only the option keys that change; nothing else on the query is touched.\n` +
+        `- Use Delete*/MoveComponent steps only for what the PRD explicitly asks to remove or reposition.\n` +
+        `- Use CreateTable, CreateQuery or CreateComponent ONLY for things that do not exist yet, and never recreate something the inventory already has.\n\n` +
+        `# App inventory (current state of the app)\n\n${artifacts.appInventory}`
+    );
+  }
+
   return sections.join('\n\n');
 }
 
@@ -113,6 +130,7 @@ export function parseStepPlan(raw: unknown): StepPlan {
       table?: unknown;
       seed_rows?: unknown;
       phase?: unknown;
+      targetId?: unknown;
     };
 
     if (!STEP_TYPES.includes(candidate.type as StepType)) {
@@ -132,6 +150,9 @@ export function parseStepPlan(raw: unknown): StepPlan {
       table: isWellFormedPlannedTable(candidate.table) ? candidate.table : undefined,
       seed_rows: Array.isArray(candidate.seed_rows) ? (candidate.seed_rows as ProposedStep['seed_rows']) : undefined,
       phase: typeof candidate.phase === 'string' ? candidate.phase : undefined,
+      // Same drop-don't-fail policy as table/seed_rows: a non-string targetId on an
+      // otherwise valid step is discarded (the step just loses its explicit target).
+      targetId: typeof candidate.targetId === 'string' && candidate.targetId.trim().length > 0 ? candidate.targetId : undefined,
     });
   });
 

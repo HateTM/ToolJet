@@ -26,6 +26,7 @@ interface Features {
   [FEATURE_KEY.AUTO_SORT_QUERIES]: FeatureConfig;
   [FEATURE_KEY.GET_THREAD_TOKEN_USAGE]: FeatureConfig;
   [FEATURE_KEY.GET_ACTIVE_RUN]: FeatureConfig;
+  [FEATURE_KEY.PREVIEW_PLAN]: FeatureConfig;
 }
 
 export interface FeaturesConfig {
