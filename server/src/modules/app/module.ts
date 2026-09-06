@@ -10,6 +10,7 @@ import { LicenseModule } from '@modules/licensing/module';
 import { AppConfigModule } from '@modules/configs/module';
 import { OrganizationsModule } from '@modules/organizations/module';
 import { MetaModule } from '@modules/meta/module';
+import { PassportOptionsModule } from '@modules/session/passport-options.module';
 import { SessionModule } from '@modules/session/module';
 import { EncryptionModule } from '@modules/encryption/module';
 import { AppController } from './controller';
@@ -105,6 +106,7 @@ export class AppModule implements OnModuleInit, NestModule {
      * ████████████████████████████████████████████████████████████████████
      */
     const baseImports = [
+      PassportOptionsModule,
       await AbilityModule.forRoot(configs),
       await LicenseModule.forRoot(configs),
       await FilesModule.register(configs, true),
