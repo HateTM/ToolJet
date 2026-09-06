@@ -52,7 +52,7 @@ RUN npm --prefix frontend run build --production
 ENV NODE_ENV=production
 ENV TOOLJET_EDITION=ee
 COPY ./server/package.json ./server/package-lock.json ./server/
-RUN npm --prefix server ci 
+RUN npm --prefix server ci --legacy-peer-deps --include=dev
 COPY ./server/ ./server/
 RUN npm install -g @nestjs/cli copyfiles
 RUN npm --prefix server run build
@@ -103,7 +103,7 @@ COPY --from=builder /opt/python-runtime /opt/python-runtime
 
 # nsjail config
 RUN mkdir -p /etc/nsjail
-COPY --from=builder /app/server/ee/workflows/nsjail/python-execution.cfg /etc/nsjail/python-execution.cfg
+COPY docker/nsjail/python-execution.cfg /etc/nsjail/python-execution.cfg
 
 # Python execution dirs
 RUN mkdir -p /tmp/python-execution /tmp/python-bundles && \
@@ -126,12 +126,10 @@ COPY --from=builder --chown=appuser:0 /app/plugins/package.json ./app/plugins/pa
 COPY --from=builder --chown=appuser:0 /app/frontend/build ./app/frontend/build
 COPY --from=builder --chown=appuser:0 /app/server/package.json ./app/server/package.json
 COPY --from=builder --chown=appuser:0 /app/server/.version ./app/server/.version
-COPY --from=builder --chown=appuser:0 /app/server/ee/keys ./app/server/ee/keys
 COPY --from=builder --chown=appuser:0 /app/server/node_modules ./app/server/node_modules
 COPY --from=builder --chown=appuser:0 /app/server/templates ./app/server/templates
 COPY --from=builder --chown=appuser:0 /app/server/scripts ./app/server/scripts
 COPY --from=builder --chown=appuser:0 /app/server/dist ./app/server/dist
-COPY --from=builder --chown=appuser:0 /app/server/ee/ai/assets ./app/server/ee/ai/assets
 COPY --chown=appuser:0 ./docker/LTS/ee/ee-entrypoint.sh ./app/server/ee-entrypoint.sh
 
 # Frontend group write (OpenShift arbitrary UID)
@@ -153,7 +151,7 @@ RUN mkdir -p /tmp/.npm/npm-cache/ /tmp/.npm/npm-cache/_logs && \
     chown -R appuser:0 /tmp/.npm/npm-cache/ /tmp/.npm/npm-cache/_logs && \
     chmod g+s /tmp/.npm/npm-cache/ /tmp/.npm/npm-cache/_logs && \
     chmod -R g=u /tmp/.npm/npm-cache/ /tmp/.npm/npm-cache/_logs
-ENV npm_config_cache /tmp/.npm/npm-cache/
+ENV npm_config_cache=/tmp/.npm/npm-cache/
 
 # Redis
 RUN mkdir -p /var/lib/redis /var/log/redis /etc/redis && \
@@ -162,11 +160,11 @@ RUN mkdir -p /var/lib/redis /var/log/redis /etc/redis && \
     chmod -R g=u /var/lib/redis /var/log/redis /etc/redis
 RUN printf 'bind 127.0.0.1\nport 6379\nprotected-mode yes\ndaemonize yes\nlogfile /var/log/redis/redis.log\ndir /var/lib/redis\n' \
     > /app/redis.conf
-ENV npm_config_cache /home/appuser/.npm
+ENV npm_config_cache=/home/appuser/.npm
 ENV HOME=/home/appuser
 USER appuser
 WORKDIR /app
 
-RUN npm install --prefix server --no-save dotenv@10.0.0 joi@17.4.1 
+RUN npm install --prefix server --no-save --legacy-peer-deps dotenv@10.0.0 joi@17.4.1 
 ENTRYPOINT ["./server/ee-entrypoint.sh"]
 CMD ["npm", "run", "start:prod"]
