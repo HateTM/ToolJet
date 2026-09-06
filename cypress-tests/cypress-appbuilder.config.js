@@ -5,7 +5,7 @@ const XLSX = require("node-xlsx");
 
 const pg = require("pg");
 const path = require("path");
-const pdf = require("pdf-parse");
+const { PDFParse } = require("pdf-parse");
 
 module.exports = defineConfig({
   execTimeout: 1800000,
@@ -25,7 +25,8 @@ module.exports = defineConfig({
           return new Promise((resolve) => {
             const pdfPath = path.resolve(pathToPdf);
             let dataBuffer = fs.readFileSync(pdfPath);
-            pdf(dataBuffer).then(function ({ text }) {
+            new PDFParse({ data: dataBuffer }).getText().then(function (r) {
+            const text = r.text;
               resolve(text);
             });
           });

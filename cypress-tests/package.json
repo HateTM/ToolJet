@@ -7,19 +7,19 @@
     "cy:open": "cypress open --browser=chrome 103, --e2e"
   },
   "devDependencies": {
-    "@cypress/code-coverage": "^3.12.12",
-    "@cypress/webpack-preprocessor": "^5.12.0",
-    "@faker-js/faker": "^7.3.0",
+    "@cypress/code-coverage": "^4.0.3",
+    "@cypress/webpack-preprocessor": "^8.0.0",
+    "@faker-js/faker": "^10.6.0",
     "chrome-remote-interface": "^0.34.0",
-    "cypress": "^15.18.0",
+    "cypress": "^16.0.0",
     "cypress-mailhog": "^2.5.0",
-    "cypress-real-dnd": "^0.1.2"
+    "cypress-real-dnd": "^0.1.2",
+    "node-xlsx": "^0.24.0",
+    "pdf-parse": "^2.4.5"
   },
   "dependencies": {
     "cypress-real-events": "^1.15.0",
     "moment": "^2.30.1",
-    "node-xlsx": "^0.4.0",
-    "pdf-parse": "^1.1.1",
     "pg": "^8.23.0"
   }
 }

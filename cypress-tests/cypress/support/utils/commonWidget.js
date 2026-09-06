@@ -454,7 +454,7 @@ export const verifyWidgetText = (widgetName, text) => {
 };
 
 export const randomNumber = (x, y) => {
-  return faker.datatype.number({ min: x, max: y });
+  return faker.number.int({ min: x, max: y });
 };
 
 export const pushIntoArrayOfObject = (arrayOne, arrayTwo) => {

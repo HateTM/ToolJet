@@ -42,19 +42,19 @@ function randomRgb() {
 
 function boxShadowParam() {
   const paramArray = [
-    faker.datatype.number({
+    faker.number.int({
       min: -20,
       max: 20,
     }),
-    faker.datatype.number({
+    faker.number.int({
       min: -20,
       max: 20,
     }),
-    faker.datatype.number({
+    faker.number.int({
       min: 0,
       max: 20,
     }),
-    faker.datatype.number({
+    faker.number.int({
       min: 0,
       max: 20,
     }),
