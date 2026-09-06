@@ -284,7 +284,7 @@ export function Steps({ componentMeta, darkMode, ...restProps }) {
                           >
                             <div key={item.name + item.id}>
                               <ListGroup.Item
-                                style={{ marginBottom: '8px', backgroundColor: 'var(--slate3)' }}
+                                style={{ marginBottom: '8px', backgroundColor: 'var(--slate-3)' }}
                                 onMouseEnter={() => setHoveredOptionIndex(index)}
                                 onMouseLeave={() => setHoveredOptionIndex(null)}
                                 {...restProps}
@@ -308,7 +308,7 @@ export function Steps({ componentMeta, darkMode, ...restProps }) {
                                         }}
                                       >
                                         <span className="d-flex">
-                                          <Trash fill={'var(--tomato9)'} width={12} />
+                                          <Trash fill={'var(--tomato-9)'} width={12} />
                                         </span>
                                       </ButtonSolid>
                                     )}

@@ -2,7 +2,7 @@
   font-size: 12px;
   line-height: 20px;
   padding: 6px 8px !important;
-  color: var(--slate12) !important;
+  color: var(--slate-12) !important;
   border: unset !important;
   border-radius: 6px !important;
 
@@ -12,16 +12,16 @@
 
   .list-item-secondary-text {
     margin-left: 8px;
-    color: var(--slate9)
+    color: var(--slate-9)
   }
 }
 
 .list-group-item:hover {
-  background-color: var(--slate4) !important;
+  background-color: var(--slate-4) !important;
 }
 
 .list-group-item:disabled {
-  color: var(--slate9) !important;
+  color: var(--slate-9) !important;
 }
 
 .list-group-item:focus {
@@ -48,14 +48,14 @@ button:focus:not(:focus-visible) {
 }
 
 .list-group-item.active {
-  background-color: var(--slate5) !important;
-  color: var(--slate12) !important
+  background-color: var(--slate-5) !important;
+  color: var(--slate-12) !important
 }
 
 .list-item-popover-body {
   padding: 4px;
   min-width: 10.625rem; // 170px
-  color: var(--slate12);
+  color: var(--slate-12);
   border-radius: 6px;
   background-color: var(--base);
 
@@ -67,7 +67,7 @@ button:focus:not(:focus-visible) {
     align-items: center;
 
     &:hover {
-      background-color: var(--slate3);
+      background-color: var(--slate-3);
       border-radius: 6px;
     }
 
@@ -77,7 +77,7 @@ button:focus:not(:focus-visible) {
     }
 
     .color-tomato9 {
-      color: var(--tomato9)
+      color: var(--tomato-9)
     }
 
     .color-disabled {
@@ -94,7 +94,7 @@ button:focus:not(:focus-visible) {
 .delete-icon-btn{
   padding: 2px !important;
   display: flex;
-  border: 1px solid var(--tomato7);
+  border: 1px solid var(--tomato-7);
   background-color: var(--base);
 }
 .copy-column-icon{

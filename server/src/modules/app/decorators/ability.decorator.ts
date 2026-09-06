@@ -9,5 +9,6 @@ export const AbilityDecorator = createParamDecorator(
   }
 );
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface AppAbility extends Ability<[any, any], MongoQuery> {}
+// casl v7: Ability uses unique-symbol keyed internals and cannot be
+// extended by an interface, so this is a type alias now.
+export type AppAbility = Ability<[any, any], MongoQuery>;

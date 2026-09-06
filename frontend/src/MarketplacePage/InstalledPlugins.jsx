@@ -218,7 +218,7 @@ const InstalledPluginCard = ({ plugin, marketplacePlugin, fetchPlugins, isDevMod
         onCancel={cancelDeletePlugin}
         darkMode={darkMode}
         footerStyle={{
-          borderTop: '1px solid var(--slate5)',
+          borderTop: '1px solid var(--slate-5)',
           padding: '0.875rem 1.5rem',
         }}
       />

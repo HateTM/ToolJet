@@ -299,19 +299,19 @@
 
         .react-select__dropdown-indicator {
           svg {
-            background-color: var(--slate7) !important;
+            background-color: var(--slate-7) !important;
             padding: 2px !important;
             border-radius: 4px !important;
 
             path {
-              fill: var(--slate11) !important
+              fill: var(--slate-11) !important
             }
           }
         }
       }
 
       // &:focus-within {
-      //   border: 1px solid var(--indigo9) !important;
+      //   border: 1px solid var(--indigo-9) !important;
       //   background-color: var(--cc-surface1-surface) !important;
 
       // }

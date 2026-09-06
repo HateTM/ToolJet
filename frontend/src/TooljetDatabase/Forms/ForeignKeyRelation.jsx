@@ -209,7 +209,7 @@ function ForeignKeyRelation({
 
   const isEdit = isEditMode && !createForeignKeyInEdit ? true : isEditMode && createForeignKeyInEdit ? false : false;
   const footerStyle = {
-    borderTop: '1px solid var(--slate5)',
+    borderTop: '1px solid var(--slate-5)',
     paddingTop: '12px',
     marginTop: '0px',
   };
@@ -418,8 +418,8 @@ function ForeignKeyRelation({
                 ? setOnChangeInForeignKey(true)
                 : handleEditForeignKeyInCreate()
               : newChangesInForeignKey?.length > 0
-              ? setOnChangeInForeignKey(true)
-              : handleEditForeignKey()
+                ? setOnChangeInForeignKey(true)
+                : handleEditForeignKey()
           }
           createForeignKeyInEdit={createForeignKeyInEdit}
           selectedTable={selectedTable}

@@ -90,7 +90,7 @@ export function DeletePageConfirmationModal({ darkMode }) {
       <Modal.Header>
         <Modal.Title>{'Delete Page'}</Modal.Title>
         <span onClick={handleClose}>
-          <SolidIcon width="16" fill={'var(--slate12)'} name="remove" className="cursor-pointer" />
+          <SolidIcon width="16" fill={'var(--slate-12)'} name="remove" className="cursor-pointer" />
         </span>
       </Modal.Header>
 

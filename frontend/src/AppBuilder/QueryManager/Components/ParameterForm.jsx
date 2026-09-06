@@ -96,7 +96,7 @@ const ParameterForm = ({
                   }
                 >
                   <span>
-                    <Information width="15" fill="var(--indigo9)" />
+                    <Information width="15" fill="var(--indigo-9)" />
                   </span>
                 </OverlayTrigger>
               </span>

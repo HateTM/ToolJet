@@ -55,7 +55,7 @@ export default ({ options, addNewKeyValuePair, removeKeyValuePair, keyValuePairV
                 removeKeyValuePair(index);
               }}
             >
-              <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+              <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
             </button>
           </div>
         );

@@ -89,7 +89,7 @@ const BaseOrganizationList = ({ workspacesLimit = null, LicenseBadge = () => nul
               className={`org-name ${showLicenseInfoToolTip ? 'license-info-tooltip' : ''}`}
               data-cy={`${String(org.name).toLowerCase().replace(/\s+/g, '-')}-name-selector`}
             >
-              <span style={{ color: org.id === current_organization_id ? '#3E63DD' : 'var(--slate12)' }}>
+              <span style={{ color: org.id === current_organization_id ? '#3E63DD' : 'var(--slate-12)' }}>
                 {decodeEntities(org.name)}
               </span>
             </div>

@@ -350,7 +350,7 @@ export function WorkspaceGitSyncModal({ isOnDefaultBranch, initialTab = 'push', 
           <div className="import-in-row">
             <span className="tj-text-xsm font-weight-500 tj-text">Pull into</span>
             <span className="branch-name-badge">
-              <SolidIcon name="gitbranch" width="14" fill="var(--indigo9)" />
+              <SolidIcon name="gitbranch" width="14" fill="var(--indigo-9)" />
               {currentBranchName}
             </span>
           </div>
@@ -359,7 +359,7 @@ export function WorkspaceGitSyncModal({ isOnDefaultBranch, initialTab = 'push', 
           <div className="form-group mb-0">
             <label
               className="mb-1 tj-text-xsm font-weight-500"
-              style={{ color: 'var(--slate8)' }}
+              style={{ color: 'var(--slate-8)' }}
               data-cy="pull-from-label"
             >
               Pull from
@@ -431,7 +431,7 @@ export function WorkspaceGitSyncModal({ isOnDefaultBranch, initialTab = 'push', 
 
           {/* INFO ALERT */}
           <div className="import-dependent-info-alert">
-            <SolidIcon name="warning" width="16" fill="var(--indigo9)" />
+            <SolidIcon name="warning" width="16" fill="var(--indigo-9)" />
             <span>
               The latest commit across <strong>all resources</strong> in this branch will be pulled
             </span>
@@ -638,7 +638,7 @@ export function WorkspaceGitSyncModal({ isOnDefaultBranch, initialTab = 'push', 
           isLoading={isPushing}
           data-cy="commit-button"
           // leftIcon="commit"
-          // fill="var(--indigo1)"
+          // fill="var(--indigo-1)"
           // iconWidth="20"
         >
           Commit changes

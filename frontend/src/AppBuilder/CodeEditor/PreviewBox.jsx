@@ -226,12 +226,12 @@ export const PreviewBox = ({
       const jsErrorType = isSecretError
         ? 'Error'
         : _error?.includes('ReferenceError')
-        ? 'ReferenceError'
-        : _error?.includes('TypeError')
-        ? 'TypeError'
-        : _error?.includes('SyntaxError')
-        ? 'SyntaxError'
-        : 'Invalid';
+          ? 'ReferenceError'
+          : _error?.includes('TypeError')
+            ? 'TypeError'
+            : _error?.includes('SyntaxError')
+              ? 'SyntaxError'
+              : 'Invalid';
 
       const errValue = ifCoersionErrorHasCircularDependency(_resolveValue);
 
@@ -239,13 +239,13 @@ export const PreviewBox = ({
         message: isServerConstant
           ? 'Server variables cannot be used in apps'
           : isSecretError
-          ? 'secrets cannot be used in apps'
-          : _error,
+            ? 'secrets cannot be used in apps'
+            : _error,
         value: isSecretError
           ? 'Undefined'
           : jsErrorType === 'Invalid'
-          ? JSON.stringify(errValue, reservedKeywordReplacer)
-          : resolvedValue,
+            ? JSON.stringify(errValue, reservedKeywordReplacer)
+            : resolvedValue,
         type: isSecretError ? 'Error' : jsErrorType,
         completeErrorMessage: completeErrMessage,
       });
@@ -310,20 +310,20 @@ const RenderResolvedValue = ({
   const previewValueType = isWorkspaceVariable
     ? previewType
     : withValidation || (coersionData && coersionData?.typeBeforeCoercion)
-    ? `${coersionData?.typeBeforeCoercion} ${
-        coersionData?.coercionPreview ? ` → ${coersionData?.typeAfterCoercion}` : ''
-      }`
-    : previewType;
+      ? `${coersionData?.typeBeforeCoercion} ${
+          coersionData?.coercionPreview ? ` → ${coersionData?.typeAfterCoercion}` : ''
+        }`
+      : previewType;
 
   const previewContent = isServerConstant
     ? isServerSideGlobalResolveEnabled
       ? 'Server variables would be resolved at runtime'
       : 'Server variables are only available in paid plans'
     : isSecretConstant
-    ? 'Values of secret constants are hidden'
-    : !withValidation
-    ? resolvedValue
-    : computeCoersionPreview(resolvedValue, coersionData);
+      ? 'Values of secret constants are hidden'
+      : !withValidation
+        ? resolvedValue
+        : computeCoersionPreview(resolvedValue, coersionData);
 
   const cls = error ? 'codehinter-error-banner' : 'codehinter-success-banner';
 
@@ -414,8 +414,8 @@ const PreviewContainer = ({
     const defaultValue = validationSchema?.defaultValue
       ? validationSchema?.defaultValue
       : validationSchema
-      ? findDefault(validationSchema?.schema ?? {}, errorMessage?.value)
-      : undefined;
+        ? findDefault(validationSchema?.schema ?? {}, errorMessage?.value)
+        : undefined;
 
     const errorData = {
       key: componentKey,
@@ -461,7 +461,7 @@ const PreviewContainer = ({
     >
       <Popover.Body
         style={{
-          border: '1px solid var(--slate6)',
+          border: '1px solid var(--slate-6)',
           padding: 0,
           boxShadow: ' 0px 4px 8px 0px #3032331A, 0px 0px 1px 0px #3032330D',
         }}
@@ -490,7 +490,7 @@ const PreviewContainer = ({
     >
       <Popover.Body
         style={{
-          border: !isEmpty(validationSchema) && '1px solid var(--slate6)',
+          border: !isEmpty(validationSchema) && '1px solid var(--slate-6)',
           padding: isEmpty(validationSchema) && !validationFn && '0px',
           boxShadow: ' 0px 4px 8px 0px #3032331A, 0px 0px 1px 0px #3032330D',
           ...(wrapperWidth
@@ -603,7 +603,7 @@ const PreviewContainer = ({
               'query-manager-input-preview-popover-card': isInsideQueryManager,
             })}
             style={{
-              borderColor: errorStateActive ? 'var(--tomato8)' : 'var(--slate6)',
+              borderColor: errorStateActive ? 'var(--tomato-8)' : 'var(--slate-6)',
             }}
           >
             <Card.Body

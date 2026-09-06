@@ -260,7 +260,7 @@ class Restapi extends React.Component {
         borderRadius: '6px',
         height: 32,
         minHeight: 32,
-        borderColor: 'var(--slate7)',
+        borderColor: 'var(--slate-7)',
         borderWidth: '1px',
         '&:hover': {
           backgroundColor: darkMode ? '' : '#F8F9FA',

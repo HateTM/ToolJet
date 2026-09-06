@@ -57,7 +57,7 @@
     user-select: none;
 
     &:hover:not(.selected):not(:disabled) {
-      background-color: var(--slate3);
+      background-color: var(--slate-3);
     }
 
     &:active:not(:disabled) {
@@ -84,7 +84,7 @@
 
     &:focus {
       outline: none;
-      box-shadow: 0 0 0 2px var(--indigo3);
+      box-shadow: 0 0 0 2px var(--indigo-3);
     }
 
     &::placeholder {
@@ -188,7 +188,7 @@
     transition: opacity 0.15s ease;
 
     &:hover {
-      background-color: var(--slate3);
+      background-color: var(--slate-3);
     }
   }
 
@@ -216,7 +216,7 @@
     box-shadow: none;
 
     &:hover:not(:disabled) {
-      background-color: var(--slate3) !important;
+      background-color: var(--slate-3) !important;
     }
 
     &:active:not(:disabled) {
@@ -270,8 +270,8 @@
 
     &:focus {
       outline: none;
-      border-color: var(--indigo6);
-      box-shadow: 0 0 0 2px var(--indigo3);
+      border-color: var(--indigo-6);
+      box-shadow: 0 0 0 2px var(--indigo-3);
     }
   }
 
@@ -287,13 +287,13 @@
   }
 
   .btn-primary {
-    background-color: var(--indigo6);
-    border-color: var(--indigo6);
+    background-color: var(--indigo-6);
+    border-color: var(--indigo-6);
     font-weight: 500;
 
     &:hover {
-      background-color: var(--indigo7);
-      border-color: var(--indigo7);
+      background-color: var(--indigo-7);
+      border-color: var(--indigo-7);
     }
 
     &:disabled {
@@ -309,7 +309,7 @@
     font-weight: 500;
 
     &:hover {
-      background-color: var(--slate3);
+      background-color: var(--slate-3);
     }
   }
 }

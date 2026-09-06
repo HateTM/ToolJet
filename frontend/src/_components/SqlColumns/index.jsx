@@ -88,7 +88,7 @@ const SqlColumnRow = React.memo(function SqlColumnRow({
           className="px-1 rounded-0 border rounded-end sql-column-delete-button"
           onClick={handleRemove}
         >
-          <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+          <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
         </ButtonSolid>
       </div>
     </div>

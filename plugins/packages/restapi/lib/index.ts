@@ -198,7 +198,7 @@ export default class RestapiQueryService implements QueryService {
     }
 
     // Sanitize and append search parameters
-    // eslint-disable-next-line prefer-const
+
     for (let [key, value] of sanitizeSearchParams(sourceOptions, queryOptions, hasDataSource)) {
       if (Array.isArray(value) || Object.prototype.toString.call(value) === '[object Object]') {
         // If the value is an array or object, stringify it

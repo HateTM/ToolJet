@@ -408,14 +408,14 @@ const JoinOn = ({
   const rightFieldTableDetails = (rightFieldTable && findTableDetails(rightFieldTable)) || {};
 
   const leftFieldOptions = leftFieldTableDetails?.table_name
-    ? tableInfo[leftFieldTableDetails.table_name]?.map((col) => ({
+    ? (tableInfo[leftFieldTableDetails.table_name]?.map((col) => ({
         label: col.Header,
         value: col.Header,
         icon: col.dataType,
-      })) ?? []
+      })) ?? [])
     : [];
   const selectedLeftField = leftFieldTableDetails?.table_name
-    ? tableInfo[leftFieldTableDetails.table_name]?.find((col) => col.Header === leftFieldColumn) ?? []
+    ? (tableInfo[leftFieldTableDetails.table_name]?.find((col) => col.Header === leftFieldColumn) ?? [])
     : {};
 
   const rightFieldOptions = rightFieldTableDetails?.table_name
@@ -434,7 +434,7 @@ const JoinOn = ({
     : [];
 
   const selectedRightField = rightFieldTableDetails?.table_name
-    ? tableInfo[rightFieldTableDetails.table_name]?.find((col) => col.Header === rightFieldColumn) ?? []
+    ? (tableInfo[rightFieldTableDetails.table_name]?.find((col) => col.Header === rightFieldColumn) ?? [])
     : {};
 
   const _operators = [{ label: '=', value: '=' }];
@@ -484,7 +484,7 @@ const JoinOn = ({
             style={{
               height: '30px',
               borderRadius: 0,
-              color: 'var(--slate9)',
+              color: 'var(--slate-9)',
             }}
             className="tj-small-btn px-2 border border-end-0 rounded-start"
           >
@@ -650,7 +650,7 @@ const JoinOn = ({
             className="px-1 rounded-0 border border-start-0 rounded-en qm-delete-btn"
             onClick={onRemove}
           >
-            <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+            <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
           </ButtonSolid>
         )}
       </Col>

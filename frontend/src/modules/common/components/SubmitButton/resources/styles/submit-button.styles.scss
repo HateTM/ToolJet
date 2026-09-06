@@ -32,8 +32,8 @@
 .dark-theme {
     .submit-button {
         &:disabled {
-            background: var(--slate6) !important;
-            color: var(--slate9) !important;
+            background: var(--slate-6) !important;
+            color: var(--slate-9) !important;
             cursor: auto !important;
         }
     }

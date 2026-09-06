@@ -495,7 +495,7 @@ export function TabsLayout({ componentMeta, darkMode, ...restProps }) {
                                         }}
                                       >
                                         <span className="d-flex">
-                                          <Trash fill={'var(--tomato9)'} width={12} />
+                                          <Trash fill={'var(--tomato-9)'} width={12} />
                                         </span>
                                       </ButtonSolid>
                                     )}

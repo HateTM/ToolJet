@@ -1,6 +1,6 @@
 import React from 'react';
 
-const Code = ({ fill = 'var(--purple11)', width = '25', className = '', viewBox = '0 0 25 25' }) => (
+const Code = ({ fill = 'var(--purple-11)', width = '25', className = '', viewBox = '0 0 25 25' }) => (
   <svg
     width={width}
     height={width}

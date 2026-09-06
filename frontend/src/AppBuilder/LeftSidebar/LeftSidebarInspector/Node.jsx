@@ -103,7 +103,7 @@ export const Node = (props) => {
         fontWeight: level === 1 ? 500 : 400,
         marginTop: level === 1 ? 4 : 0,
         marginBottom: level === 1 ? 4 : 0,
-        // borderLeft: level > 1 ? '1px solid var(--slate6, #D7DBDF)' : 'none',
+        // borderLeft: level > 1 ? '1px solid var(--slate-6, #D7DBDF)' : 'none',
         cursor: level === 1 ? 'pointer' : 'default',
       }}
       {...(level === 1 && { onClick: () => onExpand(props) })}

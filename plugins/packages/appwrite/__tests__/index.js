@@ -3,5 +3,5 @@
 const appwrite = require('../lib');
 
 describe('appwrite', () => {
-    it.todo('needs tests');
+  it.todo('needs tests');
 });

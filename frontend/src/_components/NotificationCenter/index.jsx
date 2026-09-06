@@ -144,7 +144,7 @@ export const NotificationCenter = ({ darkMode }) => {
         <div>
           <ToolTip message="Notifications" placement="right">
             <div className="notification-center-nav-item cursor-pointer tj-leftsidebar-icon-items">
-              <SolidIcon data-cy="notifications-icon" name="notification" fill="var(--slate8)" />
+              <SolidIcon data-cy="notifications-icon" name="notification" fill="var(--slate-8)" />
               {unreadCount > 0 && (
                 <span className="notification-center-badge badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
               )}

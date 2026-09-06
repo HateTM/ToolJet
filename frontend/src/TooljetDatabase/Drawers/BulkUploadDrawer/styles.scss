@@ -1,7 +1,7 @@
 .bulkUpload-file {
 
   .fileName {
-    background: var(--slate3) !important;
+    background: var(--slate-3) !important;
     border-radius: 25px !important;
     padding: 8px 16px !important;
     width: fit-content !important;
@@ -16,11 +16,11 @@
   }
 
   progress::-webkit-progress-value {
-    background-color: var(--slate9) !important;
+    background-color: var(--slate-9) !important;
   }
 
   ::-webkit-progress-bar {
-    background-color: var(--slate6);
+    background-color: var(--slate-6);
   }
 
   .readyForUpload-container {
@@ -29,7 +29,7 @@
     width: 140px;
 
     .readyForUpload {
-      color: var(--indigo9);
+      color: var(--indigo-9);
     }
   }
 
@@ -39,14 +39,14 @@
     gap: 5px;
     align-items: center;
     .file-upload-error {
-      color: var(--tomato10) !important;
+      color: var(--tomato-10) !important;
     }
   }
 
   .error-2 {
     margin: 12px 0px !important;
     .file-upload-error {
-      color: var(--tomato10) !important;
+      color: var(--tomato-10) !important;
       overflow-wrap: break-word;
     }
   }

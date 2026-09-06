@@ -3,8 +3,8 @@
 .googlesheetsv2-save-btn {
   &:disabled,
   &:disabled:hover {
-    background: var(--slate3) !important;
-    color: var(--slate8) !important;
+    background: var(--slate-3) !important;
+    color: var(--slate-8) !important;
     border: none !important;
   }
 }

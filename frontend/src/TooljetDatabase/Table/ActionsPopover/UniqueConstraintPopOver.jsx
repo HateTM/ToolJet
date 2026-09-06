@@ -60,7 +60,7 @@ export const UniqueConstraintPopOver = ({
         <div className="unique-constraint-parent">
           {showUniqueConstraintInfo() && (
             <div className="unique-constraint-info">
-              <Information width={16} viewBox="0 0 24 24" fill="var(--indigo9)" />
+              <Information width={16} viewBox="0 0 24 24" fill="var(--indigo-9)" />
               <span className="tj-text-xxsm">
                 Unique constraint will be added to combinations of values of a composite primary key
               </span>
@@ -123,12 +123,12 @@ export const UniqueConstraintPopOver = ({
                 columns[index]?.constraints_type?.is_primary_key === true
                   ? 'Primary key values must be unique'
                   : columns[index]?.data_type === 'boolean'
-                  ? 'Boolean data type cannot be unique'
-                  : columns[index]?.data_type === 'timestamp with time zone'
-                  ? 'Unique constraint cannot be added to this column type'
-                  : columns[index]?.data_type === 'jsonb'
-                  ? 'JSON cannot cannot have unique constraint'
-                  : null
+                    ? 'Boolean data type cannot be unique'
+                    : columns[index]?.data_type === 'timestamp with time zone'
+                      ? 'Unique constraint cannot be added to this column type'
+                      : columns[index]?.data_type === 'jsonb'
+                        ? 'JSON cannot cannot have unique constraint'
+                        : null
               }
               placement="top"
               tooltipClassName="tootip-table"
@@ -149,12 +149,12 @@ export const UniqueConstraintPopOver = ({
                       columns[index]?.constraints_type?.is_primary_key
                         ? true
                         : columns[index]?.data_type === 'boolean'
-                        ? false
-                        : columns[index]?.data_type === 'serial'
-                        ? true
-                        : columns[index]?.constraints_type?.is_unique
-                        ? true
-                        : false
+                          ? false
+                          : columns[index]?.data_type === 'serial'
+                            ? true
+                            : columns[index]?.constraints_type?.is_unique
+                              ? true
+                              : false
                     }
                     onChange={(e) => {
                       const prevColumns = { ...columns };

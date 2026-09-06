@@ -117,7 +117,7 @@ function FolderList({
               <div ref={target}>
                 <ButtonSolid
                   className="groups-list-option-button"
-                  fill={`var(--slate12)`}
+                  fill={`var(--slate-12)`}
                   leftIcon="options"
                   iconWidth="14"
                   variant="tertiary"

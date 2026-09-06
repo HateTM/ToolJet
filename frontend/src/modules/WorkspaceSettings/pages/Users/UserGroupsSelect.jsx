@@ -19,7 +19,7 @@ export function UserGroupsSelect(props) {
             onClick={() => window.open(urlJoin(getHostURL(), `/${workspaceId}/workspace-settings/groups`))}
             iconCustomClass="rectangle-add-icon"
             className="create-group"
-            fill="var(--indigo9)"
+            fill="var(--indigo-9)"
             variant="secondary"
             leftIcon="addrectangle"
             data-cy="create-new-group-button"
@@ -124,11 +124,11 @@ export function UserGroupsSelect(props) {
     multiValue: (base) => ({
       ...base,
       borderRadius: '6px',
-      backgroundColor: 'var(--slate3)',
-      color: 'var(--slate11)',
+      backgroundColor: 'var(--slate-3)',
+      color: 'var(--slate-11)',
       '.selected-value': {
         padding: '0px 6px 1px 3px',
-        color: 'var(--slate11)',
+        color: 'var(--slate-11)',
       },
     }),
     valueContainer: (base) => ({
@@ -140,8 +140,8 @@ export function UserGroupsSelect(props) {
     multiValueRemove: (base, state) => ({
       ...base,
       '&:hover': {
-        backgroundColor: 'var(--tomato3)',
-        color: 'var(--tomato9)',
+        backgroundColor: 'var(--tomato-3)',
+        color: 'var(--tomato-9)',
       },
       paddingLeft: '0px',
       ...(state.data.isFixed && { display: 'none' }),
@@ -150,19 +150,19 @@ export function UserGroupsSelect(props) {
       ...base,
       input: {
         height: '25px !important',
-        color: 'var(--slate11) !important',
+        color: 'var(--slate-11) !important',
       },
     }),
     control: (base) => ({
       ...base,
       outline: 'none',
-      border: '1px solid var(--slate7)',
+      border: '1px solid var(--slate-7)',
       boxShadow: 'none',
       borderRadius: '6px',
 
       background: 'unset',
       '&:hover': {
-        border: '1px solid var(--slate8)',
+        border: '1px solid var(--slate-8)',
       },
     }),
     menu: (base) => ({
@@ -172,7 +172,7 @@ export function UserGroupsSelect(props) {
         display: 'flex',
         justifyContent: 'flex-end',
         padding: '8px',
-        borderTop: '1px solid var(--slate5)',
+        borderTop: '1px solid var(--slate-5)',
         '.create-group': {
           background: 'none !important',
           '.rectangle-add-icon': {

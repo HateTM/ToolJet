@@ -12,7 +12,7 @@
 
     .add-datasource-btn {
         height: 40px;
-        background: var(--indigo9);
+        background: var(--indigo-9);
         width: 248px !important;
         display: flex;
         margin: 0 auto;
@@ -37,7 +37,7 @@
         }
 
         &:hover {
-            background: var(--slate4);
+            background: var(--slate-4);
             border-radius: 6px;
 
             .ds-delete-btn {
@@ -53,7 +53,7 @@
         }
 
         &:active {
-            background: var(--indigo4);
+            background: var(--indigo-4);
             box-shadow: none;
         }
 
@@ -89,13 +89,13 @@
     height: 100%;
 
     .icon-container {
-        background-color: var(--indigo3);
+        background-color: var(--indigo-3);
         border-radius: 15px;
         padding: 12px;
     }
 
     .heading {
-        color: var(--slate12);
+        color: var(--slate-12);
         font-weight: 600;
     }
 
@@ -104,8 +104,8 @@
     }
 
     .add-datasource-btn {
-        background-color: var(--indigo3);
-        color: var(--indigo9);
+        background-color: var(--indigo-3);
+        color: var(--indigo-9);
     }
 }
 
@@ -114,7 +114,7 @@
     background: var(--page-weak);
 
     .modal-header {
-        background-color: var(--slate3) !important;
+        background-color: var(--slate-3) !important;
     }
 
     .modal {
@@ -171,7 +171,7 @@
             height: 28px;
             background: var(--base);
             border: 1px solid;
-            border-color: var(--slate7);
+            border-color: var(--slate-7);
             cursor: pointer;
             border-radius: 6px;
             display: flex;
@@ -196,7 +196,7 @@
 .datasource-selection-confirm-backdrop {
     z-index: 1060;
     opacity: 0.4 !important;
-    border-left: 1px solid var(--slate5);
+    border-left: 1px solid var(--slate-5);
 }
 
 .datasource-list-container {
@@ -247,7 +247,7 @@
     align-items: center;
     letter-spacing: -0.02em;
     text-transform: uppercase;
-    color: var(--slate9);
+    color: var(--slate-9);
 }
 
 .datasource-list-header {
@@ -307,8 +307,8 @@
             }
 
             &:disabled {
-                background: var(--slate6) !important;
-                color: var(--slate9) !important;
+                background: var(--slate-6) !important;
+                color: var(--slate-9) !important;
             }
         }
     }
@@ -324,7 +324,7 @@
 
     .react-loading-skeleton {
         border-radius: 6px;
-        // background-color: var(--slate3);
+        // background-color: var(--slate-3);
     }
 
     .label-loader {
@@ -348,7 +348,7 @@
 
     .warning-container {
         padding: 5px;
-        background-color: var(--slate3);
+        background-color: var(--slate-3);
         width: 50px;
         height: 50px;
         align-items: center;

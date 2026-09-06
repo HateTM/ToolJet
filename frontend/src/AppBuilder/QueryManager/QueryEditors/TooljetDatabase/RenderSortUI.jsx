@@ -89,7 +89,7 @@ const RenderSortUI = ({
               className="px-1 rounded-0 border rounded-end qm-delete-btn"
               onClick={() => removeSortConditionPair(id)}
             >
-              <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+              <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
             </ButtonSolid>
           </Col>
         </Row>

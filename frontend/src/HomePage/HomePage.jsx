@@ -2014,8 +2014,8 @@ class HomePageComponent extends React.Component {
                   this.props.appType === 'workflow'
                     ? 'homePage.deleteWorkflowAndData'
                     : this.props.appType === 'front-end'
-                    ? 'homePage.deleteAppAndData'
-                    : deleteModuleText,
+                      ? 'homePage.deleteAppAndData'
+                      : deleteModuleText,
                   { appName: appToBeDeleted?.name }
                 )
               )
@@ -2098,7 +2098,7 @@ class HomePageComponent extends React.Component {
               <div className="import-in-row">
                 <span className="tj-text-xsm font-weight-500 tj-text">Import in </span>
                 <span className="branch-name-badge">
-                  <SolidIcon name="gitbranch" width="14" fill="var(--indigo9)" />
+                  <SolidIcon name="gitbranch" width="14" fill="var(--indigo-9)" />
                   {useWorkspaceBranchesStore.getState().currentBranch?.name || 'main'}
                 </span>
               </div>
@@ -2107,7 +2107,7 @@ class HomePageComponent extends React.Component {
               <div className="form-group">
                 <label
                   className="mb-1 tj-text-xsm font-weight-500"
-                  style={{ color: 'var(--slate8)' }}
+                  style={{ color: 'var(--slate-8)' }}
                   data-cy="import-from-label"
                 >
                   Import from
@@ -2160,9 +2160,15 @@ class HomePageComponent extends React.Component {
                 <>
                   {fetchingLatestCommitData ? (
                     <div className="d-flex flex-column" style={{ gap: '8px', padding: '4px 0' }}>
-                      <div style={{ height: '12px', borderRadius: '4px', background: 'var(--slate4)', width: '40%' }} />
-                      <div style={{ height: '12px', borderRadius: '4px', background: 'var(--slate4)', width: '65%' }} />
-                      <div style={{ height: '12px', borderRadius: '4px', background: 'var(--slate4)', width: '55%' }} />
+                      <div
+                        style={{ height: '12px', borderRadius: '4px', background: 'var(--slate-4)', width: '40%' }}
+                      />
+                      <div
+                        style={{ height: '12px', borderRadius: '4px', background: 'var(--slate-4)', width: '65%' }}
+                      />
+                      <div
+                        style={{ height: '12px', borderRadius: '4px', background: 'var(--slate-4)', width: '55%' }}
+                      />
                     </div>
                   ) : (
                     <>
@@ -2191,7 +2197,7 @@ class HomePageComponent extends React.Component {
 
                       {/* INFO ALERT */}
                       <div className="import-dependent-info-alert" data-cy="import-info-alert">
-                        <SolidIcon name="warning" width="16" fill="var(--indigo9)" />
+                        <SolidIcon name="warning" width="16" fill="var(--indigo-9)" />
                         <span>
                           This app with its <strong>dependent modules &amp; data sources</strong> will be pulled
                         </span>
@@ -2365,8 +2371,8 @@ class HomePageComponent extends React.Component {
                       this.props.appType === 'workflow'
                         ? 'workflows'
                         : this.props.appType === 'module'
-                        ? 'modules'
-                        : 'apps'
+                          ? 'modules'
+                          : 'apps'
                     }
                     isAvailable={true}
                     noTooltipIfValid={true}
@@ -2387,8 +2393,8 @@ class HomePageComponent extends React.Component {
                             this.props.appType === 'workflow'
                               ? 'workflows'
                               : this.props.appType === 'module'
-                              ? 'modules'
-                              : 'apps'
+                                ? 'modules'
+                                : 'apps'
                           }-button`}
                         >
                           <>
@@ -2652,8 +2658,8 @@ class HomePageComponent extends React.Component {
                       {this.props.appType === 'workflow'
                         ? this.props.t('homePage.noWorkflowFound', 'No Workflows found')
                         : this.props.appType === 'module'
-                        ? this.props.t('homePage.noModuleFound', 'No Modules found')
-                        : this.props.t('homePage.noApplicationFound', 'No Applications found')}
+                          ? this.props.t('homePage.noModuleFound', 'No Modules found')
+                          : this.props.t('homePage.noApplicationFound', 'No Applications found')}
                     </span>
                   </div>
                 )}

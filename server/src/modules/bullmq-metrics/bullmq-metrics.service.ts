@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { metrics } from '@opentelemetry/api';
-import { Queue, ConnectionOptions } from 'bullmq';
+import { Queue, ConnectionOptions, JobType } from 'bullmq';
 import Redis from 'ioredis';
 
 // All BullMQ queues in the platform. Queue depth/worker counts live in Redis,
@@ -43,7 +43,9 @@ export class BullMqMetricsService implements OnModuleInit, OnModuleDestroy {
     jobsGauge.addCallback(async (result) => {
       for (const queue of this.queues) {
         try {
-          const counts = await queue.getJobCounts(...JOB_STATES);
+          // 'paused' is still supported by the counts script at runtime but was
+          // dropped from the v6 JobType union.
+          const counts = await queue.getJobCounts(...(JOB_STATES as unknown as JobType[]));
           for (const state of JOB_STATES) {
             result.observe(counts[state] ?? 0, { 'queue.name': queue.name, state });
           }

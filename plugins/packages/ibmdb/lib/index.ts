@@ -12,7 +12,6 @@ let ibmdbModule: any;
 function getIbmdb(): any {
   if (ibmdbModule) return ibmdbModule;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     ibmdbModule = require('ibm_db');
   } catch (err: any) {
     throw new QueryError(

@@ -49,7 +49,7 @@ class VersionManagerErrorBoundary extends React.Component {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '24px',
-            backgroundColor: 'var(--slate1)',
+            backgroundColor: 'var(--slate-1)',
             borderRadius: '8px',
             border: '1px solid var(--border-weak)',
             minHeight: '200px',
@@ -124,7 +124,7 @@ class VersionManagerErrorBoundary extends React.Component {
               style={{
                 marginTop: '20px',
                 padding: '12px',
-                backgroundColor: 'var(--slate2)',
+                backgroundColor: 'var(--slate-2)',
                 borderRadius: '6px',
                 width: '100%',
                 maxWidth: '400px',

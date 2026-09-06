@@ -542,7 +542,7 @@ const RenderFilterSection = ({ darkMode }) => {
             className="px-1 rounded-0 border rounded-end col-2 qm-delete-btn"
             onClick={() => removeFilterConditionEntry(index)}
           >
-            <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+            <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
           </ButtonSolid>
         </Col>
       </Row>

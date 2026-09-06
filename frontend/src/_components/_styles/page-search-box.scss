@@ -1,7 +1,7 @@
 .ghost-search-box-wrapper {
   .form-control.ghost-search {
     background: none !important;
-    color: var(--slate12);
+    color: var(--slate-12);
     height: 48px;
     border: none !important;
     border-radius: 0 !important;
@@ -11,7 +11,7 @@
     &:hover {
       background: none !important;
       border-bottom: 1px solid var(--border-accent-weak) !important;
-      color: var(--slate12);
+      color: var(--slate-12);
     }
 
     &:focus {
@@ -37,7 +37,7 @@
   input {
     width: 200px;
     border-radius: 5px !important;
-    color: var(--slate12);
+    color: var(--slate-12);
     background-color: var(--base);
   }
 
@@ -66,7 +66,7 @@
       padding: 4px;
       width: 20px;
       height: 20px;
-      background: var(--indigo3) !important;
+      background: var(--indigo-3) !important;
       border-radius: 4px;
     }
 

@@ -471,7 +471,7 @@ export function BranchDropdown({ appId, organizationId }) {
             {isOnDefaultBranch ? (
               <>
                 <div className="branch-icon-container">
-                  <SolidIcon name="lockclosed" width="16" fill="var(--indigo9)" />
+                  <SolidIcon name="lockclosed" width="16" fill="var(--indigo-9)" />
                 </div>
                 <div className="branch-info">
                   <div className="branch-name-title">{displayBranchName || 'No branch selected'}</div>
@@ -491,7 +491,7 @@ export function BranchDropdown({ appId, organizationId }) {
             ) : (
               <>
                 <div className="branch-icon-container-feature">
-                  <SolidIcon name="gitbranch" width="16" fill="var(--indigo9)" />
+                  <SolidIcon name="gitbranch" width="16" fill="var(--indigo-9)" />
                 </div>
                 <div className="branch-info">
                   <div className="branch-name-title">{displayBranchName || 'No branch selected'}</div>
@@ -580,7 +580,7 @@ export function BranchDropdown({ appId, organizationId }) {
                       displayPRs.map((pr) => (
                         <div key={pr.id} className="pr-item" data-cy={`pr-item-${pr.id}`}>
                           <div className="pr-icon">
-                            <SolidIcon name="gitmerge" width="20" fill="var(--slate11)" />
+                            <SolidIcon name="gitmerge" width="20" fill="var(--slate-11)" />
                           </div>
                           <div className="pr-content">
                             <OverflowTooltip
@@ -680,7 +680,7 @@ export function BranchDropdown({ appId, organizationId }) {
                   }}
                   data-cy="create-branch-btn"
                 >
-                  <SolidIcon name="plus" width="14" fill="var(--indigo9)" />
+                  <SolidIcon name="plus" width="14" fill="var(--indigo-9)" />
                   <span>Create new branch</span>
                 </button>
                 {allBranches.length > 0 && (
@@ -702,7 +702,7 @@ export function BranchDropdown({ appId, organizationId }) {
                 {/* Feature branch footer: Create PR + Switch branch */}
                 {/* Always show Create PR button when on sub-branch */}
                 <button className="create-pr-btn" onClick={_handleCreatePR} data-cy="create-pr-btn">
-                  <SolidIcon name="gitmerge" width="14" fill="var(--indigo9)" />
+                  <SolidIcon name="gitmerge" width="14" fill="var(--indigo-9)" />
                   <span>Create pull request</span>
                 </button>
                 {allBranches.length > 0 && (
@@ -738,7 +738,7 @@ export function BranchDropdown({ appId, organizationId }) {
           onClick={() => setShowDropdown(!showDropdown)}
           data-cy="branch-dropdown-header"
         >
-          <SolidIcon name="gitbranch" width="16" fill="var(--slate12)" />
+          <SolidIcon name="gitbranch" width="16" fill="var(--slate-12)" />
           <span className="branch-name" data-cy="current-branch-name">
             {displayBranchName || 'Select branch'}
           </span>
@@ -818,8 +818,8 @@ export function BranchDropdown({ appId, organizationId }) {
         id="branch-dropdown-tooltip"
         className="branch-pr-tooltip"
         style={{
-          backgroundColor: 'var(--slate12)',
-          color: 'var(--slate1)',
+          backgroundColor: 'var(--slate-12)',
+          color: 'var(--slate-1)',
           padding: '8px 12px',
           borderRadius: '6px',
           fontSize: '12px',

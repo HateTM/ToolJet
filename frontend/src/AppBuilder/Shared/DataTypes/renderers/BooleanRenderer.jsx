@@ -37,9 +37,9 @@ export const BooleanRenderer = ({
 
   const renderReadOnlyContent = (isTruthyValue) =>
     isTruthyValue ? (
-      <SolidIcon name="tick" width="24" fill="var(--grass9)" />
+      <SolidIcon name="tick" width="24" fill="var(--grass-9)" />
     ) : (
-      <SolidIcon name="remove" width="24" fill="var(--tomato9)" />
+      <SolidIcon name="remove" width="24" fill="var(--tomato-9)" />
     );
 
   const renderEditableContent = () => (

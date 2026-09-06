@@ -248,7 +248,7 @@ export function WorkspaceBranchDropdown() {
             {isOnDefaultBranch ? (
               <>
                 <div className="branch-icon-container">
-                  <SolidIcon name="lockclosed" width="16" fill="var(--indigo9)" />
+                  <SolidIcon name="lockclosed" width="16" fill="var(--indigo-9)" />
                 </div>
                 <div className="branch-info">
                   <div className="branch-name-title">{displayBranchName}</div>
@@ -268,7 +268,7 @@ export function WorkspaceBranchDropdown() {
             ) : (
               <>
                 <div className="branch-icon-container-feature">
-                  <SolidIcon name="gitbranch" width="16" fill="var(--indigo9)" />
+                  <SolidIcon name="gitbranch" width="16" fill="var(--indigo-9)" />
                 </div>
                 <div className="branch-info">
                   <div className="branch-name-title">{displayBranchName}</div>
@@ -370,7 +370,7 @@ export function WorkspaceBranchDropdown() {
                       displayPRs.map((pr) => (
                         <div key={pr.id} className="pr-item" data-cy={`workspace-pr-item-${pr.id}`}>
                           <div className="pr-icon">
-                            <SolidIcon name="gitmerge" width="20" fill="var(--slate11)" />
+                            <SolidIcon name="gitmerge" width="20" fill="var(--slate-11)" />
                           </div>
                           <div className="pr-content">
                             <OverflowTooltip
@@ -481,7 +481,7 @@ export function WorkspaceBranchDropdown() {
                     }}
                     data-cy="workspace-create-branch-btn"
                   >
-                    <SolidIcon name="plus" width="14" fill="var(--indigo9)" />
+                    <SolidIcon name="plus" width="14" fill="var(--indigo-9)" />
                     <span>Create new branch</span>
                   </button>
                 )}
@@ -501,7 +501,7 @@ export function WorkspaceBranchDropdown() {
               <>
                 {/* Feature branch footer: Create PR + Switch branch */}
                 <button className="create-pr-btn" onClick={handleCreatePR} data-cy="workspace-create-pr-btn">
-                  <SolidIcon name="gitmerge" width="14" fill="var(--indigo9)" />
+                  <SolidIcon name="gitmerge" width="14" fill="var(--indigo-9)" />
                   <span>Create pull request</span>
                 </button>
                 <button
@@ -535,7 +535,7 @@ export function WorkspaceBranchDropdown() {
           onClick={() => setShowDropdown(!showDropdown)}
           data-cy="workspace-branch-dropdown-header"
         >
-          <SolidIcon name="gitbranch" width="16" fill="var(--slate12)" />
+          <SolidIcon name="gitbranch" width="16" fill="var(--slate-12)" />
           <span className="branch-name" data-cy="workspace-current-branch-name">
             {displayBranchName}
           </span>

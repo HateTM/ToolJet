@@ -27,12 +27,12 @@
 
 .tooljet-tag-default {
     @extend .tooljet-tag-base;
-    background: var(--indigo5);
-    border: 1px solid var(--indigo5);
+    background: var(--indigo-5);
+    border: 1px solid var(--indigo-5);
 }
 
 .tooljet-tag-filter {
     @extend .tooljet-tag-base;
-    background: var(--slate6);
-    border-color: var(--slate6);
+    background: var(--slate-6);
+    border-color: var(--slate-6);
 }

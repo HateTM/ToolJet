@@ -1062,8 +1062,8 @@ class DataSourceManagerComponent extends React.Component {
       const activeKey = Object.prototype.hasOwnProperty.call(normalizedCurrentOptions, key)
         ? key
         : Object.prototype.hasOwnProperty.call(normalizedCurrentOptions, camelize(key))
-        ? camelize(key)
-        : key;
+          ? camelize(key)
+          : key;
       if (normalizedSavedOptions[activeKey] === undefined) normalizedSavedOptions[activeKey] = { value: '' };
       if (normalizedCurrentOptions[activeKey] === undefined) normalizedCurrentOptions[activeKey] = { value: '' };
     });
@@ -1080,8 +1080,8 @@ class DataSourceManagerComponent extends React.Component {
     const docLink = isSampleDb
       ? 'https://docs.tooljet.com/docs/data-sources/sample-data-sources'
       : selectedDataSource?.pluginId && selectedDataSource.pluginId.trim() !== ''
-      ? `https://docs.tooljet.com/docs/marketplace/plugins/marketplace-plugin-${selectedDataSource?.kind}/`
-      : `https://docs.tooljet.com/docs/data-sources/${selectedDataSource?.kind}`;
+        ? `https://docs.tooljet.com/docs/marketplace/plugins/marketplace-plugin-${selectedDataSource?.kind}/`
+        : `https://docs.tooljet.com/docs/data-sources/${selectedDataSource?.kind}`;
     const OAuthDs = [
       'zendesk',
       'salesforce',
@@ -1221,7 +1221,7 @@ class DataSourceManagerComponent extends React.Component {
                       className={`close-btn mx-4 mt-3 ${this.props.darkMode ? 'dark' : ''}`}
                       onClick={() => this.hideModal()}
                     >
-                      <SolidIcon name="remove" width="20" fill={'var(--slate12)'} />
+                      <SolidIcon name="remove" width="20" fill={'var(--slate-12)'} />
                     </span>
                   )}
                 </div>

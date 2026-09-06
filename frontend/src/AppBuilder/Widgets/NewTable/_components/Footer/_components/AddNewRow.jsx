@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useCallback, useRef } from 'react';
-import { useReactTable, getCoreRowModel, flexRender } from '@tanstack/react-table';
+import { tableFeatures, useTable as useTanstackTable, flexRender } from '@tanstack/react-table';
 import { ButtonSolid } from '@/_ui/AppButton/AppButton';
 import SolidIcon from '@/_ui/Icon/SolidIcons';
 import { Tooltip } from 'react-tooltip';
@@ -93,10 +93,10 @@ export function AddNewRow({ id, hideAddNewRowPopup, darkMode, allColumns, fireEv
     ]
   );
 
-  const table = useReactTable({
+  const table = useTanstackTable({
     data: [...addNewRowDetails.values()],
     columns: columns,
-    getCoreRowModel: getCoreRowModel(),
+    features: tableFeatures({}),
   });
 
   const addNewRow = () => {

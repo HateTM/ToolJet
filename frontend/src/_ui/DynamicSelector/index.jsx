@@ -613,7 +613,7 @@ const DynamicSelector = ({
               <div
                 style={{
                   padding: '6px 12px',
-                  borderTop: '1px solid var(--slate5)',
+                  borderTop: '1px solid var(--slate-5)',
                   display: 'flex',
                   justifyContent: 'center',
                   backgroundColor: localStorage.getItem('darkMode') === 'true' ? 'rgb(31,40,55)' : 'white',
@@ -637,7 +637,7 @@ const DynamicSelector = ({
                     fontWeight: 500,
                     color: 'var(--primary-color)',
                     background: 'transparent',
-                    border: '1px solid var(--slate7)',
+                    border: '1px solid var(--slate-7)',
                     borderRadius: '6px',
                     cursor: loading ? 'not-allowed' : 'pointer',
                     opacity: loading ? 0.7 : 1,
@@ -661,17 +661,17 @@ const DynamicSelector = ({
         ...provided,
         minHeight: 32,
         height: 'auto',
-        border: '1px solid var(--slate7)',
+        border: '1px solid var(--slate-7)',
         boxShadow: 'none',
         backgroundColor: state.isDisabled
           ? darkMode
             ? '#1f2936'
             : '#f4f6fa'
           : darkMode
-          ? '#2b3547'
-          : state.menuIsOpen
-          ? '#F1F3F5'
-          : '#fff',
+            ? '#2b3547'
+            : state.menuIsOpen
+              ? '#F1F3F5'
+              : '#fff',
         cursor: 'pointer',
         '&:hover': {
           backgroundColor: darkMode ? '' : '#F8F9FA',
@@ -770,10 +770,10 @@ const DynamicSelector = ({
                       ? 'Discovering...'
                       : `Search or Select ${label ?? ''}`
                     : isMulti
-                    ? isLoading
-                      ? 'Discovering...'
+                      ? isLoading
+                        ? 'Discovering...'
+                        : `Select ${label ?? ''}`
                       : `Select ${label ?? ''}`
-                    : `Select ${label ?? ''}`
                 }
                 isDisabled={disabled || (isDependentField && !depsReady)}
                 isLoading={isMulti ? isLoading && getCurrentValue().length === 0 : isLoading}

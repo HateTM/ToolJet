@@ -1,10 +1,21 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-  getCoreRowModel,
-  useReactTable,
-  getSortedRowModel,
-  getPaginationRowModel,
-  getFilteredRowModel,
+  tableFeatures,
+  useTable as useTanstackTable,
+  rowSortingFeature,
+  rowPaginationFeature,
+  rowSelectionFeature,
+  rowPinningFeature,
+  columnPinningFeature,
+  columnVisibilityFeature,
+  columnOrderingFeature,
+  columnSizingFeature,
+  columnResizingFeature,
+  columnFilteringFeature,
+  globalFilteringFeature,
+  createSortedRowModel,
+  createPaginatedRowModel,
+  createFilteredRowModel,
 } from '@tanstack/react-table';
 import { applyFilters } from '../_components/Header/_components/Filter/filterUtils';
 
@@ -50,12 +61,13 @@ export function useTable({
       leftPinned.unshift('selection');
     }
 
-    return { left: leftPinned, right: rightPinned };
+    // v9 uses logical regions: start/end
+    return { start: leftPinned, end: rightPinned };
   }, [columns, columnOrder]);
 
   useEffect(() => {
     setPagination((prev) => ({
-      pageIndex: serverSidePagination ? prev.pageIndex ?? 0 : 0,
+      pageIndex: serverSidePagination ? (prev.pageIndex ?? 0) : 0,
       pageSize: enablePagination ? rowsPerPage : data.length,
     }));
   }, [enablePagination, rowsPerPage, data.length, serverSidePagination]);
@@ -66,14 +78,44 @@ export function useTable({
 
   const meta = useMemo(() => ({ expandedRows }), [expandedRows]);
 
-  const table = useReactTable({
+  const filterFns = useMemo(
+    () => ({
+      applyFilters: (row, columnId) => {
+        const filters = columnFilters.filter((f) => f.id === columnId);
+        if (filters.length === 0) return true;
+        return applyFilters(row, columnId, filters);
+      },
+    }),
+    [columnFilters]
+  );
+
+  const features = useMemo(
+    () =>
+      tableFeatures({
+        rowSortingFeature,
+        rowPaginationFeature,
+        rowSelectionFeature,
+        rowPinningFeature,
+        columnPinningFeature,
+        columnVisibilityFeature,
+        columnOrderingFeature,
+        columnSizingFeature,
+        columnResizingFeature,
+        columnFilteringFeature,
+        globalFilteringFeature,
+        sortedRowModel: createSortedRowModel(),
+        paginatedRowModel: createPaginatedRowModel(),
+        filteredRowModel: createFilteredRowModel(),
+        filterFns,
+      }),
+    [filterFns]
+  );
+
+  const table = useTanstackTable({
     data: newData,
     columns,
+    features,
     enableSorting: true,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     enableColumnPinning: true,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
@@ -93,13 +135,6 @@ export function useTable({
     onColumnOrderChange: setColumnOrder,
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters,
-    filterFns: {
-      applyFilters: (row, columnId) => {
-        const filters = columnFilters.filter((f) => f.id === columnId);
-        if (filters.length === 0) return true;
-        return applyFilters(row, columnId, filters);
-      },
-    },
     globalFilterFn: (row, columnId, filterValue) => {
       const value = String(row.getValue(columnId) || '').toLowerCase();
       return value.includes(String(filterValue).toLowerCase());

@@ -7,7 +7,7 @@
 .empty-custom-group-info {
   margin-top: 15px;
   border-radius: 6px;
-  border: 1px dashed var(--slate8) !important;
+  border: 1px dashed var(--slate-8) !important;
   width: 100%;
   height: 32px;
 
@@ -21,7 +21,7 @@
 
   .info-label {
     margin-left: 4px;
-    color: var(--slate9);
+    color: var(--slate-9);
   }
 }
 
@@ -39,14 +39,14 @@
     }
 
     &:hover {
-      background: var(--slate4) !important;
+      background: var(--slate-4) !important;
     }
   }
 }
 
 .group-title {
   font-weight: 500;
-  color: var(--slate11);
+  color: var(--slate-11);
   font-size: 12px;
   margin-left: 5px;
 }
@@ -91,42 +91,42 @@
       width: 190px !important;
       height: 28px !important;
       background: var(--base);
-      border: 1px solid var(--slate7);
+      border: 1px solid var(--slate-7);
       border-radius: 6px;
-      color: var(--slate12);
+      color: var(--slate-12);
       padding-left: 33px !important;
 
 
       ::placeholder {
-        color: var(--slate9);
+        color: var(--slate-9);
         margin-left: 5px !important;
         padding-left: 5px !important;
         background-color: red !important;
       }
 
       &:hover {
-        background: var(--slate2);
-        border: 1px solid var(--slate8);
+        background: var(--slate-2);
+        border: 1px solid var(--slate-8);
       }
 
       &:active {
-        background: var(--indigo2);
-        border: 2px solid var(--indigo11);
+        background: var(--indigo-2);
+        border: 2px solid var(--indigo-11);
         box-shadow: 0px 0px 0px 2px #C6D4F9;
         outline: none;
       }
 
       &:focus-visible {
-        background: var(--slate2);
-        border: 1px solid var(--slate8);
+        background: var(--slate-2);
+        border: 1px solid var(--slate-8);
         border-radius: 6px;
         outline: none;
         padding-left: 12px !important;
       }
 
       &:disabled {
-        background: var(--slate3);
-        border: 1px solid var(--slate7);
+        background: var(--slate-3);
+        border: 1px solid var(--slate-7);
       }
     }
   }
@@ -171,8 +171,8 @@
     padding: 2px 8px;
     margin: 0;
     border-radius: 6px;
-    background-color: var(--slate3);
-    color: var(--slate11);
+    background-color: var(--slate-3);
+    color: var(--slate-11);
     min-height: 24px;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -187,10 +187,10 @@
     top: 59px;
     display: flex;
     flex-direction: column;
-    background: var(--slate1);
+    background: var(--slate-1);
     align-items: flex-start;
     border-radius: 6px;
-    border: 1px solid var(--slate1);
+    border: 1px solid var(--slate-1);
     box-shadow: 0px 4px 6px -2px rgba(16, 24, 40, 0.03), 0px 12px 16px -4px rgba(16, 24, 40, 0.08);
     padding: 9px 10px;
     gap: 10px;
@@ -205,8 +205,8 @@
       padding: 2px 8px;
       margin: 0;
       border-radius: 6px;
-      background-color: var(--slate3);
-      color: var(--slate11);
+      background-color: var(--slate-3);
+      color: var(--slate-11);
       min-height: 24px;
       text-overflow: ellipsis;
       overflow: hidden;
@@ -218,7 +218,7 @@
 
 .groups-name-cell[data-active="true"] {
   display: flex;
-  background: var(--gray5) !important;
+  background: var(--gray-5) !important;
   justify-content: center;
 
   .groups-name-container {
@@ -251,8 +251,8 @@
     padding: 2px 8px;
     margin: 0;
     border-radius: 6px;
-    background-color: var(--slate3);
-    // color: var(--slate11);
+    background-color: var(--slate-3);
+    // color: var(--slate-11);
     min-height: 24px;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -266,10 +266,10 @@
     top: 41px;
     display: flex;
     flex-direction: column;
-    background: var(--slate1);
+    background: var(--slate-1);
     align-items: flex-start;
     border-radius: 6px;
-    border: 1px solid var(--slate1);
+    border: 1px solid var(--slate-1);
     box-shadow: 0px 4px 6px -2px rgba(16, 24, 40, 0.03), 0px 12px 16px -4px rgba(16, 24, 40, 0.08);
     padding: 9px 10px;
     gap: 10px;
@@ -283,7 +283,7 @@
 
 .role-name-cell[data-active="true"] {
   display: flex;
-  background: var(--gray5) !important;
+  background: var(--gray-5) !important;
   justify-content: center;
 
   .groups-name-container {
@@ -332,11 +332,11 @@
   display: flex;
   align-items: center;
   padding: 8px 0px;
-  border-bottom: 1px solid var(--slate5);
+  border-bottom: 1px solid var(--slate-5);
   
   p {
     margin: 0;
-    color: var(--slate11);
+    color: var(--slate-11);
     font-weight: 500;
     
     &:nth-child(1) {
@@ -361,13 +361,13 @@
 
 .manage-resource-permission {
   transition: background-color 0.3s ease;
-  border-bottom: 1px solid var(--slate5);
+  border-bottom: 1px solid var(--slate-5);
   display: flex;
   align-items: flex-start;
   padding: 12px;
 
   .tj-text-xxsm {
-    color: var(--slate11)
+    color: var(--slate-11)
   }
 
   .resource-name {
@@ -407,7 +407,7 @@
   }
 
   &:hover {
-    background-color: var(--slate3);
+    background-color: var(--slate-3);
   }
 }
 
@@ -423,14 +423,14 @@
     font-size: 12px;
     font-weight: 400;
     line-height: 20px;
-    color: var(--slate11);
+    color: var(--slate-11);
     width: 100%;
     text-align: center;
   }
 }
 
 .environment-tag {
-  background: var(--slate2);
+  background: var(--slate-2);
   border-radius: 6px;
   padding: 0px 6px;
   display: flex;
@@ -443,7 +443,7 @@
     font-size: 12px;
     font-weight: 500;
     line-height: 20px;
-    color: var(--slate11);
+    color: var(--slate-11);
     text-align: center;
   }
 }
@@ -502,7 +502,7 @@
       height: 64px;
       border-radius: 12px;
       margin-bottom: 4px;
-      background-color: var(--tomato3);
+      background-color: var(--tomato-3);
     }
 
     .modal-title {
@@ -510,7 +510,7 @@
       font-size: 16px;
       font-weight: 500;
       line-height: 24px;
-      color: var(--slate12, #11181C);
+      color: var(--slate-12, #11181C);
       margin: 8px 0;
     }
 
@@ -518,7 +518,7 @@
       font-family: 'IBM Plex Sans', sans-serif;
       font-size: 14px;
       line-height: 20px;
-      color: var(--slate11, #687076);
+      color: var(--slate-11, #687076);
 
       p {
         margin: 0 0 8px 0;
@@ -529,12 +529,12 @@
       }
 
       a {
-        color: var(--slate11, #687076);
+        color: var(--slate-11, #687076);
         text-decoration: underline;
         cursor: pointer;
 
         &:hover {
-          color: var(--slate12, #11181C);
+          color: var(--slate-12, #11181C);
         }
       }
 
@@ -548,7 +548,7 @@
       margin: 8px 0;
       font-size: 14px;
       line-height: 20px;
-      color: var(--slate12, #11181C);
+      color: var(--slate-12, #11181C);
 
       li {
         margin-bottom: 4px;

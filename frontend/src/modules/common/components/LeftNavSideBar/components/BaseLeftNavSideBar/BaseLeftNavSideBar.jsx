@@ -35,7 +35,7 @@ const BaseLeftNavSideBar = ({
               >
                 <SolidIcon
                   name="home"
-                  fill={router.pathname === getPrivateRoute('home') ? '#3E63DD' : 'var(--slate8)'}
+                  fill={router.pathname === getPrivateRoute('home') ? '#3E63DD' : 'var(--slate-8)'}
                 />
               </Link>
             </ToolTip>
@@ -57,7 +57,7 @@ const BaseLeftNavSideBar = ({
                 fill={
                   router.pathname === '/:workspaceId' || router.pathname === getPrivateRoute('dashboard')
                     ? '#3E63DD'
-                    : 'var(--slate8)'
+                    : 'var(--slate-8)'
                 }
               />
             </Link>
@@ -86,8 +86,8 @@ const BaseLeftNavSideBar = ({
                     router.pathname === getPrivateRoute('workflows') && `current-seleted-route`
                       ? '#3E63DD'
                       : darkMode
-                      ? '#4C5155'
-                      : '#C1C8CD'
+                        ? '#4C5155'
+                        : '#C1C8CD'
                   }
                 />
               </Link>
@@ -110,7 +110,7 @@ const BaseLeftNavSideBar = ({
                   fill={
                     router.pathname === getPrivateRoute('database') && `current-seleted-route`
                       ? '#3E63DD'
-                      : 'var(--slate8)'
+                      : 'var(--slate-8)'
                   }
                 />
               </Link>
@@ -132,7 +132,7 @@ const BaseLeftNavSideBar = ({
               >
                 <SolidIcon
                   name="datasource"
-                  fill={router.pathname === getPrivateRoute('data_sources') ? '#3E63DD' : 'var(--slate8)'}
+                  fill={router.pathname === getPrivateRoute('data_sources') ? '#3E63DD' : 'var(--slate-8)'}
                 />
               </Link>
             </ToolTip>
@@ -151,7 +151,7 @@ const BaseLeftNavSideBar = ({
               >
                 <SolidIcon
                   name="workspaceconstants"
-                  fill={router.pathname === getPrivateRoute('workspace_constants') ? '#3E63DD' : 'var(--slate8)'}
+                  fill={router.pathname === getPrivateRoute('workspace_constants') ? '#3E63DD' : 'var(--slate-8)'}
                   width={25}
                   viewBox={'0 0 20 20'}
                 />
@@ -168,7 +168,7 @@ const BaseLeftNavSideBar = ({
               onClick={() => switchDarkMode(!darkMode)}
               data-cy="mode-switch-button"
             >
-              <SolidIcon name={darkMode ? 'lightmode' : 'darkmode'} fill="var(--slate8)" />
+              <SolidIcon name={darkMode ? 'lightmode' : 'darkmode'} fill="var(--slate-8)" />
             </Link>
           </ToolTip>
           <SettingsMenu

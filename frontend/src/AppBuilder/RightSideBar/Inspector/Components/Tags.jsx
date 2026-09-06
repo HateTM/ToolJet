@@ -201,8 +201,8 @@ export const Tags = ({
       item?.iconVisibility?.value !== undefined
         ? getResolvedValue(item?.iconVisibility?.value)
         : item?.iconVisibility !== undefined
-        ? item?.iconVisibility
-        : false;
+          ? item?.iconVisibility
+          : false;
 
     return (
       <Popover className={`${darkMode && 'dark-theme theme-dark'}`} style={{ minWidth: '248px' }}>
@@ -342,7 +342,7 @@ export const Tags = ({
                           >
                             <div key={item?.title || index}>
                               <ListGroup.Item
-                                style={{ marginBottom: '8px', backgroundColor: 'var(--slate3)' }}
+                                style={{ marginBottom: '8px', backgroundColor: 'var(--slate-3)' }}
                                 onMouseEnter={() => setHoveredOptionIndex(index)}
                                 onMouseLeave={() => setHoveredOptionIndex(null)}
                               >
@@ -365,7 +365,7 @@ export const Tags = ({
                                         }}
                                       >
                                         <span className="d-flex">
-                                          <Trash fill={'var(--tomato9)'} width={12} />
+                                          <Trash fill={'var(--tomato-9)'} width={12} />
                                         </span>
                                       </ButtonSolid>
                                     )}

@@ -24,12 +24,12 @@
     }
 
     &:hover {
-        background: var(--slate4);
+        background: var(--slate-4);
         border-radius: 6px;
     }
 
     &:active {
-        background: var(--indigo4);
+        background: var(--indigo-4);
         box-shadow: none;
 
     }
@@ -41,15 +41,15 @@
 }
 
 .page-group-collapse:hover + .tj-list-item {
-    background: var(--slate4);
+    background: var(--slate-4);
 }
 
 .tj-list-item-disabled {
-    color: var(--slate8);
+    color: var(--slate-8);
 }
 
 .tj-list-item-option-opened {
-    background-color: var(--indigo4);
+    background-color: var(--indigo-4);
 }
 
 

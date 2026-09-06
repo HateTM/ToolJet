@@ -116,7 +116,7 @@ function Header({
                         display: 'flex',
                         justifyContent: 'center',
                         cursor: 'pointer',
-                        background: `${darkMode ? '#273E89' : 'var(--indigo3)'}`,
+                        background: `${darkMode ? '#273E89' : 'var(--indigo-3)'}`,
                         borderColor: `${darkMode ? 'rgba(62, 99, 221, 0.2)' : '#AEC0F5'} `,
                       }}
                       leftIcon="cheveronleftdouble"
@@ -147,7 +147,7 @@ function Header({
                       display: 'flex',
                       justifyContent: 'center',
                       cursor: 'pointer',
-                      background: `${darkMode ? '#273E89' : 'var(--indigo3)'}`,
+                      background: `${darkMode ? '#273E89' : 'var(--indigo-3)'}`,
                       borderColor: `${darkMode ? 'rgba(62, 99, 221, 0.2)' : '#AEC0F5'} `,
                     }}
                     leftIcon="cheveronrightdouble"

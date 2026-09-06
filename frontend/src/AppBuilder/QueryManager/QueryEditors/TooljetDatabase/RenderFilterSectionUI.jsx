@@ -120,7 +120,7 @@ const RenderFilterSectionUI = ({
               className="px-1 rounded-0 border rounded-end qm-delete-btn"
               onClick={() => removeFilterConditionPair(id)}
             >
-              <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+              <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
             </ButtonSolid>
           </Col>
           {/* <Col sm="content" className="p-0">
@@ -133,7 +133,7 @@ const RenderFilterSectionUI = ({
               }}
               onClick={() => removeFilterConditionPair(id)}
             >
-              <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+              <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
             </ButtonSolid>
           </Col> */}
         </Row>

@@ -36,7 +36,7 @@ export function DeleteBranchConfirmModal({ branchToDelete, onCancel, onDelete, o
   return (
     <AlertDialog show={true} closeModal={onCancel} customClassName="delete-branch-confirm-modal">
       <div className="delete-branch-icon-wrapper">
-        <TablerIcon iconName="IconTrash" size={48} color="var(--tomato9)" stroke={1.5} />
+        <TablerIcon iconName="IconTrash" size={48} color="var(--tomato-9)" stroke={1.5} />
       </div>
 
       <div className="delete-branch-title">Delete branch &ldquo;{branchToDelete.name}&rdquo;</div>

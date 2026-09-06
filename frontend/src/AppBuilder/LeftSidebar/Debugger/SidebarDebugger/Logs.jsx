@@ -18,17 +18,17 @@ function Logs({ logProps, idx }) {
     logProps?.type === 'navToDisablePage'
       ? logProps?.message
       : logProps?.isQuerySuccessLog
-      ? 'Completed'
-      : logProps?.type === 'component'
-      ? `Invalid property detected: ${logProps?.message}.`
-      : logProps?.type === 'Custom Log'
-      ? logProps?.description
-      : `${startCase(logProps?.type)} failed: ${
-          logProps?.description ||
-          (isString(logProps?.message) && logProps?.message) ||
-          (isString(logProps?.error?.description) && logProps?.error?.description) || //added string check since description can be an object. eg: runpy
-          logProps?.error?.message
-        }`;
+        ? 'Completed'
+        : logProps?.type === 'component'
+          ? `Invalid property detected: ${logProps?.message}.`
+          : logProps?.type === 'Custom Log'
+            ? logProps?.description
+            : `${startCase(logProps?.type)} failed: ${
+                logProps?.description ||
+                (isString(logProps?.message) && logProps?.message) ||
+                (isString(logProps?.error?.description) && logProps?.error?.description) || //added string check since description can be an object. eg: runpy
+                logProps?.error?.message
+              }`;
 
   const defaultStyles = {
     transform: open ? 'rotate(-90deg)' : 'rotate(0deg)',
@@ -105,7 +105,7 @@ function Logs({ logProps, idx }) {
               </div>
               {logProps?.type === 'Custom Log' && (
                 <div className="error-target-custom-log cursor-pointer">
-                  <SolidIcon name="code" fill={`var(--purple11)`} width="15" /> Custom Log
+                  <SolidIcon name="code" fill={`var(--purple-11)`} width="15" /> Custom Log
                 </div>
               )}
               <div

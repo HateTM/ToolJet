@@ -553,10 +553,10 @@ const GRPCv2Component = ({ darkMode, selectedDataSource, ...restProps }) => {
                   options?.service && options?.method
                     ? `${options.service} → ${options.method}`
                     : isLoadingServices
-                    ? 'Loading services...'
-                    : hierarchicalOptions.length === 0
-                    ? 'No services found'
-                    : 'Select service'
+                      ? 'Loading services...'
+                      : hierarchicalOptions.length === 0
+                        ? 'No services found'
+                        : 'Select service'
                 }
                 disabled={
                   (!options?.service || !options?.method) && (isLoadingServices || hierarchicalOptions.length === 0)
@@ -737,7 +737,7 @@ const TabContent = ({
                   removeKeyValuePair(index);
                 }}
               >
-                <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+                <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
               </button>
             </div>
           </div>

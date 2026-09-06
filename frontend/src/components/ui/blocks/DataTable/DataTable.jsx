@@ -8,7 +8,7 @@ import { TableSkeleton } from '@/components/ui/blocks/TableSkeleton';
 /**
  * DataTable — TanStack-driven table block.
  *
- * Pass a TanStack `table` instance (from `useReactTable`). This block renders
+ * Pass a TanStack `table` instance (from TanStack Table v9 `useTable`). This block renders
  * the header, body (or skeleton during loading), and a "no results" empty state.
  *
  * Higher-level features (sorting indicators, pagination controls, toolbar) are

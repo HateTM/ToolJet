@@ -1,6 +1,6 @@
 const plugins = [
   [
-    'console-source',
+    './babel-plugins/console-source',
     {
       segments: 1, // NOT REQUIRED
       // 0 = full file path (Default)

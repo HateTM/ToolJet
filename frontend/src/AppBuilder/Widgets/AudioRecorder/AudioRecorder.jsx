@@ -247,10 +247,10 @@ export const AudioRecorder = ({
 
   // Icons - dynamically loaded
   useEffect(() => {
-    import(`@tabler/icons-react/dist/esm/icons/${recorderIcon}.js`)
+    import(`@tabler/icons-react/dist/esm/icons/${recorderIcon}.mjs`)
       .then((mod) => setIconElement(() => mod.default))
       .catch(() =>
-        import('@tabler/icons-react/dist/esm/icons/IconMicrophone.js').then((mod) => setIconElement(() => mod.default))
+        import('@tabler/icons-react/dist/esm/icons/IconMicrophone.mjs').then((mod) => setIconElement(() => mod.default))
       );
   }, [recorderIcon]);
 

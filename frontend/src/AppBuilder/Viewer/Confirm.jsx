@@ -55,7 +55,7 @@ export function Confirm({
               data-tooltip-id="tooltip-for-copy-invitation-link"
               data-tooltip-content="Copy invitation link"
               width="16"
-              fill={'var(--slate12)'}
+              fill={'var(--slate-12)'}
               name="remove"
               className="cursor-pointer"
             />

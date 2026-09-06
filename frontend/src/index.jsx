@@ -61,14 +61,12 @@ appService
         release: releaseVersion,
         name: 'react',
         integrations: [
-          new Sentry.BrowserTracing({
-            routingInstrumentation: Sentry.reactRouterV6Instrumentation(
-              React.useEffect,
-              useLocation,
-              useNavigationType,
-              createRoutesFromChildren,
-              matchRoutes
-            ),
+          Sentry.reactRouterV6BrowserTracingIntegration({
+            useEffect: React.useEffect,
+            useLocation,
+            useNavigationType,
+            createRoutesFromChildren,
+            matchRoutes,
           }),
         ],
         tracesSampleRate: 0.5,

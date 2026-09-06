@@ -1,8 +1,13 @@
 import '@testing-library/jest-dom';
-import '@testing-library/jest-dom/extend-expect';
 import React from 'react';
 import { Pagination } from '../Pagination';
 import { fireEvent, render } from '@testing-library/react';
+
+// react-i18next 17 throws when useTranslation is called without an
+// I18nextProvider; the component only needs a no-op t().
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key) => key }),
+}));
 
 jest.mock('react', () => ({
   ...jest.requireActual('react'),

@@ -202,21 +202,21 @@ const DropDownSelect = ({
             width: isForeignKeyInEditCell
               ? '300px'
               : foreignKeyAccess
-              ? '403px'
-              : foreignKeyAccessInRowForm === true
-              ? '494px'
-              : isCellEdit
-              ? '266px'
-              : '244px',
+                ? '403px'
+                : foreignKeyAccessInRowForm === true
+                  ? '494px'
+                  : isCellEdit
+                    ? '266px'
+                    : '244px',
             maxWidth: isForeignKeyInEditCell
               ? '300px'
               : foreignKeyAccess
-              ? '403px'
-              : foreignKeyAccessInRowForm === true
-              ? '494px'
-              : isCellEdit
-              ? '266px'
-              : '246px',
+                ? '403px'
+                : foreignKeyAccessInRowForm === true
+                  ? '494px'
+                  : isCellEdit
+                    ? '266px'
+                    : '246px',
             overflow: 'hidden',
             boxShadow: '0px 2px 4px -2px rgba(16, 24, 40, 0.06), 0px 4px 8px -2px rgba(16, 24, 40, 0.10)',
           }}
@@ -304,7 +304,7 @@ const DropDownSelect = ({
             style={{
               color: darkMode ? '#fff' : '',
               width: (selected.label === null || selected.label === undefined) && '40px',
-              background: (selected.label === null || selected.label === undefined) && 'var(--slate3)',
+              background: (selected.label === null || selected.label === undefined) && 'var(--slate-3)',
             }}
           >
             {selected?.label ?? 'Null'}
@@ -369,8 +369,8 @@ const DropDownSelect = ({
                       {foreignKeyAccessInRowForm || showPlaceHolderInForeignKeyDrawer
                         ? topPlaceHolder
                         : placeholder
-                        ? placeholder
-                        : 'Select...'}
+                          ? placeholder
+                          : 'Select...'}
                     </span>
                   ) : (
                     ''
@@ -387,7 +387,7 @@ const DropDownSelect = ({
                           e.stopPropagation();
                         }}
                       >
-                        <Remove fill="var(--slate12)" width="12px" />
+                        <Remove fill="var(--slate-12)" width="12px" />
                       </span>
                     </Badge>
                   )}
@@ -420,7 +420,7 @@ function MultiSelectValueBadge({ options, selected, setSelected, onChange }) {
             e.preventDefault();
           }}
         >
-          <Remove fill="var(--slate12)" />
+          <Remove fill="var(--slate-12)" />
         </span>
       </Badge>
     );
@@ -440,7 +440,7 @@ function MultiSelectValueBadge({ options, selected, setSelected, onChange }) {
           e.stopPropagation();
         }}
       >
-        <Remove fill="var(--slate12)" />
+        <Remove fill="var(--slate-12)" />
       </span>
     </Badge>
   ));

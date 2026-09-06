@@ -74,8 +74,8 @@ export function SwitchBranchModal({ show, onClose, appId, organizationId }) {
   const currentBranchName = workspaceActiveBranch?.name
     ? workspaceActiveBranch.name
     : selectedVersion?.versionType === 'branch' || selectedVersion?.version_type === 'branch'
-    ? selectedVersion?.name
-    : currentBranch?.name || defaultBranchName;
+      ? selectedVersion?.name
+      : currentBranch?.name || defaultBranchName;
 
   useEffect(() => {
     if (show && appId && organizationId) {
@@ -338,7 +338,7 @@ export function SwitchBranchModal({ show, onClose, appId, organizationId }) {
           <div className="search-section">
             <label className="section-label">{branchingEnabled ? 'RECENT BRANCHES' : 'ALL OPEN BRANCHES'}</label>
             <div className="search-input-wrapper">
-              <SolidIcon name="search" width="16" fill="var(--slate11)" />
+              <SolidIcon name="search" width="16" fill="var(--slate-11)" />
               <input
                 type="text"
                 className="search-input"
@@ -374,7 +374,7 @@ export function SwitchBranchModal({ show, onClose, appId, organizationId }) {
                       data-cy={`branch-list-item-${branch.name}`}
                     >
                       <div className="branch-checkbox">
-                        {isCurrentBranch && <SolidIcon name="check2" width="16" fill="var(--indigo9)" />}
+                        {isCurrentBranch && <SolidIcon name="check2" width="16" fill="var(--indigo-9)" />}
                       </div>
                       <div className="branch-list-content">
                         <div className="branch-list-name">{branch.name}</div>
@@ -399,11 +399,11 @@ export function SwitchBranchModal({ show, onClose, appId, organizationId }) {
                               data-tooltip-id="ab-delete-branch-tooltip"
                               data-tooltip-content="Cannot delete default branch"
                             >
-                              <TablerIcon iconName="IconTrash" size={18} color="var(--slate8)" stroke={1.5} />
+                              <TablerIcon iconName="IconTrash" size={18} color="var(--slate-8)" stroke={1.5} />
                             </span>
                           ) : (
                             <span className="branch-delete-icon">
-                              <TablerIcon iconName="IconTrash" size={18} color="var(--tomato9)" stroke={1.5} />
+                              <TablerIcon iconName="IconTrash" size={18} color="var(--tomato-9)" stroke={1.5} />
                             </span>
                           )}
                         </div>
@@ -439,7 +439,7 @@ export function SwitchBranchModal({ show, onClose, appId, organizationId }) {
               }}
               data-cy="create-branch-from-modal-btn"
             >
-              <SolidIcon name="plusicon" width="14" fill="var(--indigo9)" />
+              <SolidIcon name="plusicon" width="14" fill="var(--indigo-9)" />
               <span>Create new branch</span>
             </button>
           </div>

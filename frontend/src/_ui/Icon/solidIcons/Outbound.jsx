@@ -1,6 +1,6 @@
 import React from 'react';
 
-const Outbound = ({ fill = 'var(--slate11)', width = '20', height = '20', className = '', viewBox = '0 0 20 20' }) => (
+const Outbound = ({ fill = 'var(--slate-11)', width = '20', height = '20', className = '', viewBox = '0 0 20 20' }) => (
   <svg
     width={width}
     height={height}

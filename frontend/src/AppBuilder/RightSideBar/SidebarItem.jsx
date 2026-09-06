@@ -9,7 +9,7 @@ import { generateCypressDataCy } from '../../modules/common/helpers/cypressHelpe
 // TODO: remove refs and related dependancies
 export const SidebarItem = forwardRef(
   (
-    { tip = '', selectedSidebarItem, className, icon, iconFill = 'var(--slate8)', text, onClick, children, ...rest },
+    { tip = '', selectedSidebarItem, className, icon, iconFill = 'var(--slate-8)', text, onClick, children, ...rest },
     ref
   ) => {
     const { t } = useTranslation();

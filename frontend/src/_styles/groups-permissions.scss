@@ -9,13 +9,13 @@
         width: 612px;
         border-radius: 6px;
         padding: 12px 24px 12px 24px;
-        background: var(--slate3);
-        border: 1px solid var(--slate5);
+        background: var(--slate-3);
+        border: 1px solid var(--slate-5);
         border-radius: 6px;
         margin-bottom: 16px;
 
         p {
-            color: var(--slate12);
+            color: var(--slate-12);
             // gap: 14px;
             display: flex;
             align-items: center;
@@ -25,7 +25,7 @@
   
 
     .manage-granular-permission-header {
-        border-bottom: 1px solid var(--slate5);
+        border-bottom: 1px solid var(--slate-5);
         display: flex;
         p {
             padding: 8px 12px;
@@ -33,7 +33,7 @@
             width: 230px;
             height: 36px;
             font-weight: 500;
-            color: var(--slate11) !important;
+            color: var(--slate-11) !important;
         }
         div{
             padding-top: 5px;
@@ -61,14 +61,14 @@
         .icon-container {
             width: 55px;
             height: 55px;
-            background: var(--indigo4);
+            background: var(--indigo-4);
             border-radius: 6px;
 
             svg {
                 width: 45px;
                 height: 45px;
                 path {
-                    fill: var(--indigo9);
+                    fill: var(--indigo-9);
                 }
             }
         }
@@ -85,7 +85,7 @@
     .permission-body-one {
         flex-grow: 1; /* Allow this to grow and fill available space */
         overflow-y: auto;
-        border-bottom: 1px solid var(--slate5);
+        border-bottom: 1px solid var(--slate-5);
         margin: 0; /* Ensure no margin */
         padding: 0; /* Ensure no padding */
         max-height: calc(100vh - 370px - 110px);
@@ -95,7 +95,7 @@
     .permission-body-two {
         flex-grow: 1; /* Allow this to grow and fill available space */
         overflow-y: auto;
-        border-bottom: 1px solid var(--slate5);
+        border-bottom: 1px solid var(--slate-5);
         margin: 0; /* Ensure no margin */
         padding: 0; /* Ensure no padding */
         max-height: calc(100vh - 300px - 115px);
@@ -155,7 +155,7 @@
     }
 
     .tj-text-xsm{
-        color: var(--slate11);
+        color: var(--slate-11);
     }
 }
 

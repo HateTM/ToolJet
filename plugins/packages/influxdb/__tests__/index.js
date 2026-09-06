@@ -3,5 +3,5 @@
 const influxdb = require('../lib');
 
 describe('influxdb', () => {
-    it.todo('needs tests');
+  it.todo('needs tests');
 });

@@ -91,7 +91,7 @@ const VirtualizedUserList = memo(
                       <ButtonSolid
                         variant="tertiary"
                         iconWidth="17"
-                        fill="var(--slate9)"
+                        fill="var(--slate-9)"
                         className="apps-remove-btn remove-decoration tj-text-xsm font-weight-600"
                         leftIcon="editable"
                         onClick={() => {

@@ -41,7 +41,7 @@ function ListItem({
   return (
     <div>
       <ListGroup.Item
-        style={{ marginBottom: '8px', backgroundColor: 'var(--slate3)' }}
+        style={{ marginBottom: '8px', backgroundColor: 'var(--slate-3)' }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         {...restProps}
@@ -123,7 +123,7 @@ function ListItem({
                 {enableActionsMenu && isHovered && (
                   <ButtonSolid variant="tertiary" size="xs" className={'list-menu-option-btn'}>
                     <span>
-                      <MoreVertical fill={'var(--slate12)'} width={'20'} />
+                      <MoreVertical fill={'var(--slate-12)'} width={'20'} />
                     </span>
                   </ButtonSolid>
                 )}
@@ -157,7 +157,7 @@ function ListItem({
                 }}
               >
                 <span className="d-flex">
-                  <Trash fill={'var(--tomato9)'} width={16} />
+                  <Trash fill={'var(--tomato-9)'} width={16} />
                 </span>
               </ButtonSolid>
             )}

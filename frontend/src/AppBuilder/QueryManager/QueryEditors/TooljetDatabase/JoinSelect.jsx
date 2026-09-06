@@ -277,9 +277,9 @@ const JsonBfieldsForSelect = ({ selectedJsonbColumns, handleJSonChange, table })
     <div className="d-flex flex-column custom-gap-4 w-100">
       <div>
         {isJsonbColumnSelected ? (
-          <RightArrow fill="var(--slate9)" width="14" />
+          <RightArrow fill="var(--slate-9)" width="14" />
         ) : (
-          <DownArrow fill="var(--slate9)" width="14" />
+          <DownArrow fill="var(--slate-9)" width="14" />
         )}
         <span>Access nested JSON field</span>
         <ToolTip
@@ -289,7 +289,7 @@ const JsonBfieldsForSelect = ({ selectedJsonbColumns, handleJSonChange, table })
           trigger={['hover', 'focus']}
         >
           <span>
-            <InfomrationCirlce fill="var(--slate9)" width="14" />
+            <InfomrationCirlce fill="var(--slate-9)" width="14" />
           </span>
         </ToolTip>
       </div>
@@ -343,7 +343,7 @@ const JsonBfieldsForSelect = ({ selectedJsonbColumns, handleJSonChange, table })
                       className="px-1 rounded-0 border rounded-end qm-delete-btn"
                       onClick={() => handleRemove(colDetails.id, colDetails.name, colDetails.table)}
                     >
-                      <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+                      <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
                     </ButtonSolid>
                   </Col>
                 </Row>

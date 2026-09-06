@@ -2304,7 +2304,7 @@ progress {
     line-height: 1.4285714;
     background: var(--base);
     background-clip: padding-box;
-    border: 1px solid var(--slate7);
+    border: 1px solid var(--slate-7);
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
@@ -6150,7 +6150,7 @@ fieldset:disabled .btn {
     animation: .75s linear infinite spinner-border
 }
 .spinner-light {
-    color: var(--indigo9) !important;
+    color: var(--indigo-9) !important;
 }
 
 .spinner-border-sm {

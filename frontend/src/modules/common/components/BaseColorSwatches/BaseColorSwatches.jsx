@@ -54,8 +54,8 @@ const BaseColorSwatches = ({
     paddingLeft: '4px',
     alignItems: 'center',
     gap: '4px',
-    background: showPicker && 'var(--indigo2)',
-    outline: showPicker && '1px solid var(--indigo9)',
+    background: showPicker && 'var(--indigo-2)',
+    outline: showPicker && '1px solid var(--indigo-9)',
     boxShadow: showPicker && '0px 0px 0px 1px #C6D4F9',
   };
 

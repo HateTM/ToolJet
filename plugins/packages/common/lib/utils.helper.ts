@@ -92,8 +92,8 @@ export const getCurrentToken = (isMultiAuthEnabled: boolean, tokenData: any, use
     return !isAppPublic
       ? tokenData.find((token: any) => token.user_id === userId)
       : userId
-      ? tokenData.find((token: any) => token.user_id === userId)
-      : tokenData[0];
+        ? tokenData.find((token: any) => token.user_id === userId)
+        : tokenData[0];
   } else {
     return tokenData;
   }

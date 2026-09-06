@@ -130,7 +130,7 @@
 
 .dataType-dropdown-value {
   margin-left: 8px;
-  color: var(--slate10);
+  color: var(--slate-10);
 }
 
 .tj-app-input,
@@ -144,17 +144,17 @@
   input.primary-idKey-light {
     gap: 16px !important;
     background: #f4f6fa !important;
-    border: 1px solid var(--slate7) !important;
+    border: 1px solid var(--slate-7) !important;
     border-radius: 6px !important;
     margin-bottom: 4px !important;
-    color: var(--slate12) !important;
+    color: var(--slate-12) !important;
     transition: none;
     width: 100% !important;
     padding: 7px 12px !important;
 
     &:hover {
       background: #F1F3F5 !important;
-      border: 1px solid var(--slate7) !important;
+      border: 1px solid var(--slate-7) !important;
       -webkit-box-shadow: none !important;
       box-shadow: none !important;
       outline: none;
@@ -167,14 +167,14 @@
     border: 1px solid #3a3f42 !important;
     border-radius: 6px !important;
     margin-bottom: 4px !important;
-    color: var(--slate12) !important;
+    color: var(--slate-12) !important;
     transition: none;
     width: 100% !important;
     padding: 7px 12px !important;
 
     &:hover {
       background: #1f2936 !important;
-      border: 1px solid var(--slate8) !important;
+      border: 1px solid var(--slate-8) !important;
       -webkit-box-shadow: none !important;
       box-shadow: none !important;
       outline: none;
@@ -184,17 +184,17 @@
   input.form-control:disabled {
     gap: 16px !important;
     background: var(--base) !important;
-    border: 1px solid var(--slate7) !important;
+    border: 1px solid var(--slate-7) !important;
     border-radius: 6px !important;
     margin-bottom: 4px !important;
-    color: var(--slate11) !important;
+    color: var(--slate-11) !important;
     transition: none;
     width: 100% !important;
     padding: 7px 12px !important;
 
     &:hover {
       background: #F1F3F5;
-      border: 1px solid var(--slate7) !important;
+      border: 1px solid var(--slate-7) !important;
       -webkit-box-shadow: none !important;
       box-shadow: none !important;
       outline: none;
@@ -204,17 +204,17 @@
   input.dark-form-row:disabled {
     gap: 16px !important;
     background: var(--base) !important;
-    border: 1px solid var(--slate7) !important;
+    border: 1px solid var(--slate-7) !important;
     border-radius: 6px !important;
     margin-bottom: 4px !important;
-    color: var(--slate12) !important;
+    color: var(--slate-12) !important;
     transition: none;
     width: 100% !important;
     padding: 7px 12px !important;
 
     &:hover {
       background: var(--base) !important;
-      border: 1px solid var(--slate8) !important;
+      border: 1px solid var(--slate-8) !important;
       -webkit-box-shadow: none !important;
       box-shadow: none !important;
       outline: none;
@@ -224,18 +224,18 @@
   input.form-error {
 
     gap: 16px !important;
-    background: var(--tomato4) !important;
-    border: 1px solid var(--tomato9) !important;
+    background: var(--tomato-4) !important;
+    border: 1px solid var(--tomato-9) !important;
     border-radius: 6px !important;
     margin-bottom: 4px !important;
-    color: var(--slate12) !important;
+    color: var(--slate-12) !important;
     transition: none;
     width: 100% !important;
     padding: 7px 12px !important;
 
     &:hover {
-      background: var(--tomato4) !important;
-      border: 1px solid var(--tomato9) !important;
+      background: var(--tomato-4) !important;
+      border: 1px solid var(--tomato-9) !important;
       -webkit-box-shadow: none !important;
       box-shadow: none !important;
       outline: none;
@@ -277,8 +277,8 @@
 }
 
 .null-tag {
-  background-color: var(--slate5) !important;
-  color: var(--slate11) !important;
+  background-color: var(--slate-5) !important;
+  color: var(--slate-11) !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -293,7 +293,7 @@
 }
 
 .null-tag-dark {
-  background-color: var(--slate5) !important;
+  background-color: var(--slate-5) !important;
   color: white !important;
   display: flex;
   align-items: center;
@@ -313,12 +313,12 @@
 }
 
 .form-error-message {
-  color: var(--tomato9);
+  color: var(--tomato-9);
   font-size: 12px;
 }
 
 .form-warning-message {
-  color: var(--slate10);
+  color: var(--slate-10);
   font-size: 12px;
 }
 
@@ -333,25 +333,25 @@
 
 .column-name-description {
   width: 130px !important;
-  color: var(--slate11) !important;
+  color: var(--slate-11) !important;
 }
 
 .dataType-description {
   width: 130px !important;
   margin-left: 12px !important;
-  color: var(--slate11) !important;
+  color: var(--slate-11) !important;
 }
 
 .defaultValue-description {
   width: 111px !important;
   margin-left: 8px !important;
-  color: var(--slate11) !important;
+  color: var(--slate-11) !important;
 }
 
 .primaryKey-description {
   width: 48px !important;
   margin-left: 16px !important;
-  color: var(--slate11) !important;
+  color: var(--slate-11) !important;
 }
 
 .column-schema-container {
@@ -360,13 +360,13 @@
   // max-height: 440px;
 
   .table-schema {
-    background-color: var(--slate3) !important;
+    background-color: var(--slate-3) !important;
     padding: 8px 5px !important;
     margin-bottom: 6px !important;
     border: 1px solid transparent !important;
 
     .not-null-with-disable {
-      color: var(--slate9) !important;
+      color: var(--slate-9) !important;
     }
 
     .table-schema-row {
@@ -441,7 +441,7 @@
 
         svg {
           path {
-            fill: var(--indigo9);
+            fill: var(--indigo-9);
           }
         }
 
@@ -467,8 +467,8 @@
   }
 
   .foreignKey-hover {
-    border: 1px solid var(--slate9) !important;
-    background-color: var(--slate6) !important;
+    border: 1px solid var(--slate-9) !important;
+    background-color: var(--slate-6) !important;
   }
 
 }
@@ -479,19 +479,19 @@
 }
 
 .new-changes-container {
-  background-color: var(--slate3) !important;
+  background-color: var(--slate-3) !important;
   border-radius: 6px !important;
-  border: 1px solid var(--slate5);
+  border: 1px solid var(--slate-5);
   margin-bottom: 12px;
 
   .changes-title {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid var(--slate5);
+    border-bottom: 1px solid var(--slate-5);
     padding: 12px;
     font-weight: 500;
-    color: var(--slate12);
+    color: var(--slate-12);
 
     span {
       width: 128px;
@@ -521,7 +521,7 @@
         .newPrimaryKey-columnName {
           font-size: 12px;
           font-weight: 400;
-          color: var(--slate11);
+          color: var(--slate-11);
         }
       }
 
@@ -558,12 +558,12 @@
   .tj-base-btn {
     &:disabled {
       background: none !important;
-      color: var(--slate9) !important;
+      color: var(--slate-9) !important;
       cursor: auto !important;
 
       svg {
         path:first-child {
-          fill: var(--slate7) !important;
+          fill: var(--slate-7) !important;
         }
 
         path:nth-child(2) {
@@ -573,7 +573,7 @@
     }
 
     &:disabled:hover {
-      background: var(--slate3) !important;
+      background: var(--slate-3) !important;
     }
   }
 }
@@ -583,8 +583,8 @@
   display: flex;
   align-items: center;
   border-radius: 16px;
-  background-color: var(--slate3);
-  border: 1px solid var(--slate7);
+  background-color: var(--slate-3);
+  border: 1px solid var(--slate-7);
   padding: 4px 12px 4px 12px;
   padding-inline-end: 40px !important;
   width: max-content;
@@ -601,10 +601,10 @@
   }
 
   .editForeignkey {
-    background-color: var(--slate3) !important;
+    background-color: var(--slate-3) !important;
     border-top-right-radius: 16px;
     border-bottom-right-radius: 16px;
-    border-left: 1px solid var(--slate6);
+    border-left: 1px solid var(--slate-6);
     position: absolute;
     right: 0;
     height: 27px;
@@ -625,7 +625,7 @@
   column-gap: 5px;
 
   .primaryKey-indication {
-    background: var(--slate8) !important;
+    background: var(--slate-8) !important;
     border-radius: 10px;
     display: flex;
     align-items: center;
@@ -663,7 +663,7 @@
     .source-description {
       font-size: 12px !important;
       font-weight: 400 !important;
-      color: var(--slate10) !important;
+      color: var(--slate-10) !important;
     }
 
     .keyRelation-column-title {
@@ -679,11 +679,11 @@
 }
 
 .columnInfoForTable {
-  background: var(--slate2) !important;
-  border: 1px solid var(--slate5);
+  background: var(--slate-2) !important;
+  border: 1px solid var(--slate-5);
   border-radius: 6px;
   font-size: 12px;
-  color: var(--slate11) !important;
+  color: var(--slate-11) !important;
   padding: 8px;
   gap: 10px;
 }
@@ -694,7 +694,7 @@
   justify-content: flex-start;
 
   .edit-row-tableName {
-    background: var(--slate3);
+    background: var(--slate-3);
     padding: 5px 10px 5px 10px !important;
     border-radius: 6px;
     margin-left: 10px;
@@ -704,7 +704,7 @@
     cursor: pointer;
 
     span {
-      color: var(--slate11);
+      color: var(--slate-11);
       font-size: 14px;
       font-weight: 500;
       line-height: 20px;
@@ -784,8 +784,8 @@
     height: 36px !important;
     &.cm-focused{
       outline: none !important;
-      background: var(--indigo2) !important;
-      border: 1px solid var(--indigo9) !important;
+      background: var(--indigo-2) !important;
+      border: 1px solid var(--indigo-9) !important;
     }
     .cm-content{
       display: flex;
