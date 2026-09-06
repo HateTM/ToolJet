@@ -17,7 +17,7 @@
     "mime-types": "^2.1.35",
     "prettier": "^2.8.7",
     "recursive-readdir": "^2.2.3",
-    "ts-jest": "^29.0.5"
+    "ts-jest": "^29.4.12"
   },
   "overrides": {
     "axios": "^1.16.1"
