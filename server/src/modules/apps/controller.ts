@@ -10,7 +10,9 @@ import { AppCreateDto, AppListDto, AppUpdateDto, VersionReleaseDto } from './dto
 import { FeatureAbilityGuard } from './ability/guard';
 import { InitFeature } from '@modules/app/decorators/init-feature.decorator';
 import { FEATURE_KEY } from './constants';
-import { AbilityDecorator as Ability, AppAbility } from '@modules/app/decorators/ability.decorator';
+import { AbilityDecorator as Ability } from '@modules/app/decorators/ability.decorator';
+// import type keeps design:paramtypes metadata from referencing a type-only alias at runtime
+import type { AppAbility } from '@modules/app/decorators/ability.decorator';
 import { AppDecorator as App } from '@modules/app/decorators/app.decorator';
 import { App as AppEntity } from '@entities/app.entity';
 import { skipAppEditingVersionHydration } from './subscribers/apps.subscriber';

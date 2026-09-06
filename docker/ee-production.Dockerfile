@@ -23,7 +23,10 @@ RUN python3.11 -m venv /opt/python-runtime && \
 # Node/npm (выровнено с CE: Node 24, npm 11)
 ENV NODE_OPTIONS="--max-old-space-size=8096"
 COPY ./.npmrc ./.npmrc
-RUN npm i -g npm@11.16.0
+RUN npm i -g npm@12.0.2
+# npm 12 blocks remote-tarball deps by default; locks pin xlsx via the sheetjs
+# CDN. `npm config set` does not survive `--prefix`, so every install below
+# carries the flag explicitly.
 RUN mkdir -p /app
 WORKDIR /app
 
@@ -33,16 +36,16 @@ COPY ./package.json ./package.json
 # Plugins — npm install для сборки, npm ci --omit=dev для продакшена
 # (вместо npm prune --production, который зависает на npm 11)
 COPY ./plugins/package.json ./plugins/package-lock.json ./plugins/
-RUN npm --prefix plugins install 
+RUN npm --prefix plugins install --allow-remote=all 
 COPY ./plugins/ ./plugins/
 RUN NODE_ENV=production npm --prefix plugins run build
-RUN rm -rf plugins/node_modules && npm --prefix plugins ci --omit=dev
+RUN rm -rf plugins/node_modules && npm --prefix plugins ci --omit=dev --allow-remote=all
 
 # Frontend — npm ci вместо npm install
 
 # Копируем манифесты зависимостей
 COPY ./frontend/package.json ./frontend/package-lock.json ./frontend/
-RUN npm --prefix frontend ci --legacy-peer-deps 
+RUN npm --prefix frontend ci --legacy-peer-deps --allow-remote=all 
 
 COPY ./frontend/ ./frontend/
 RUN npm --prefix frontend run build --production
@@ -50,9 +53,10 @@ RUN npm --prefix frontend run build --production
 
 # Server — npm ci + rm+ci pattern вместо prune
 ENV NODE_ENV=production
-ENV TOOLJET_EDITION=ee
+ENV TOOLJET_EDITION=ce
 COPY ./server/package.json ./server/package-lock.json ./server/
-RUN npm --prefix server ci --legacy-peer-deps --include=dev
+RUN npm --prefix server ci --legacy-peer-deps --include=dev && \
+    npm --prefix server install --no-save --include=dev --legacy-peer-deps --allow-remote=all dotenv@10.0.0 joi@17.4.1
 COPY ./server/ ./server/
 RUN npm install -g @nestjs/cli copyfiles
 RUN npm --prefix server run build
@@ -87,7 +91,7 @@ RUN curl -O https://nodejs.org/dist/v24.18.1/node-v24.18.1-linux-x64.tar.xz \
     && rm node-v24.18.1-linux-x64.tar.xz
 ENV PATH=/usr/local/lib/nodejs/bin:/opt/python-runtime/bin:$PATH
 ENV NODE_ENV=production
-ENV TOOLJET_EDITION=ee
+ENV TOOLJET_EDITION=ce
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 WORKDIR /
@@ -165,6 +169,5 @@ ENV HOME=/home/appuser
 USER appuser
 WORKDIR /app
 
-RUN npm install --prefix server --no-save --legacy-peer-deps dotenv@10.0.0 joi@17.4.1 
 ENTRYPOINT ["./server/ee-entrypoint.sh"]
 CMD ["npm", "run", "start:prod"]

@@ -23,7 +23,7 @@ import { FeatureAbilityGuard as DataSourceFeatureAbilityGuard } from './ability/
 import { ValidateQuerySourceGuard } from './guards/validate-query-source.guard';
 import { ValidateAppVersionGuard } from '@modules/versions/guards/validate-app-version.guard';
 import { AbilityDecorator as Ability } from '@modules/app/decorators/ability.decorator';
-import { AppAbility } from '@modules/casl/casl-ability.factory';
+import type { AppAbility } from '@modules/casl/casl-ability.factory';
 import { AppDecorator } from '@modules/app/decorators/app.decorator';
 import { DataQuery } from '@entities/data_query.entity';
 import { IDataQueriesController } from './interfaces/IController';
