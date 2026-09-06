@@ -1,6 +1,6 @@
 import * as Driver from 'driver.js';
 import { addToLocalStorage, getDataFromLocalStorage } from '@/_helpers/appUtils';
-import 'driver.js/dist/driver.min.css';
+import 'driver.js/dist/driver.css';
 
 export const initEditorWalkThrough = () => {
   if (

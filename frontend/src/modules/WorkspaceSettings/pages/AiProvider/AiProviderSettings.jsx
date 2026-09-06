@@ -67,8 +67,8 @@ export default function AiProviderSettings() {
   const statusLabel = settings?.useEnvironmentConfig
     ? t('workspaceSettings.aiProvider.sourceEnv', 'Using environment configuration')
     : settings?.hasKey
-    ? t('workspaceSettings.aiProvider.sourceOrg', 'Using organization key')
-    : t('workspaceSettings.aiProvider.sourceNone', 'No key configured');
+      ? t('workspaceSettings.aiProvider.sourceOrg', 'Using organization key')
+      : t('workspaceSettings.aiProvider.sourceNone', 'No key configured');
 
   return (
     <div className="wrapper ai-provider-settings-page animation-fade tw-max-w-[640px]">

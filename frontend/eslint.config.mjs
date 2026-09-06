@@ -148,7 +148,7 @@ export default [
       'import/no-unresolved': [
         'error',
         {
-          ignore: ['^@/', 'react-hot-toast', 'react-i18next', 'react-loading-skeleton', 'react-spring', 'class-variance-authority', '@radix-ui/', '\\?url$'],
+          ignore: ['^@/', 'react-hot-toast', 'react-i18next', 'react-loading-skeleton', 'react-spring', 'class-variance-authority', '@radix-ui/', '\\?url$', '^@ee/'],
         },
       ],
       'react/no-unknown-property': 'off',
@@ -185,11 +185,17 @@ export default [
       react: pluginReact,
       'react-hooks': pluginReactHooks,
       prettier: pluginPrettier,
+      import: pluginImportX,
     },
 
     settings: {
       react: {
         version: 'detect',
+      },
+      'import-x/resolver': {
+        node: {
+          extensions: ['.js', '.jsx', '.ts', '.tsx'],
+        },
       },
     },
 
@@ -207,7 +213,7 @@ export default [
       // @typescript-eslint recommended
       '@typescript-eslint/adjacent-overload-signatures': 'error',
       '@typescript-eslint/ban-ts-comment': 'error',
-      '@typescript-eslint/ban-types': 'error',
+
       '@typescript-eslint/no-array-constructor': 'error',
       '@typescript-eslint/no-empty-interface': 'error',
       '@typescript-eslint/no-extra-non-null-assertion': 'error',
@@ -260,7 +266,7 @@ export default [
       'import/no-unresolved': [
         'error',
         {
-          ignore: ['^@/', 'react-hot-toast', 'react-i18next', 'react-loading-skeleton', 'react-spring', 'class-variance-authority', '@radix-ui/', '\\?url$'],
+          ignore: ['^@/', 'react-hot-toast', 'react-i18next', 'react-loading-skeleton', 'react-spring', 'class-variance-authority', '@radix-ui/', '\\?url$', '^@ee/'],
         },
       ],
 
