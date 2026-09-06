@@ -88,7 +88,7 @@
     "humps": "^2.0.1",
     "i18next": "^26.4.2",
     "i18next-http-backend": "^4.0.2",
-    "immer": "^9.0.19",
+    "immer": "^11.1.18",
     "immutability-helper": "^3.1.1",
     "immutable": "^5.1.9",
     "jspdf": "^4.2.1",
