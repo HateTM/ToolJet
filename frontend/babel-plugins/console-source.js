@@ -9,6 +9,7 @@ module.exports = ({ types: t }) => {
     visitor: {
       CallExpression(path, state) {
         const { node } = path;
+        if (!node.loc) return;
         const callee = node.callee;
         if (
           !t.isMemberExpression(callee) ||
