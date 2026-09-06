@@ -29,7 +29,7 @@ export const Header = memo(
     const isRefreshing = useTableStore((state) => state.getIsRefreshing(id), shallow);
     const headerVisibility = useTableStore((state) => state.getHeaderVisibility(id), shallow);
 
-    const appliedFilters = table.getState().columnFilters;
+    const appliedFilters = table.state.columnFilters;
 
     const [showFilter, setShowFilter] = useState(false);
 

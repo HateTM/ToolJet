@@ -596,13 +596,13 @@ export default function generateColumnsData({
 
       // Add sorting configuration for specific column types
       if (columnType === 'number') {
-        columnDef.sortingFn = (rowA, rowB, columnId) => {
+        columnDef.sortFn = (rowA, rowB, columnId) => {
           const a = rowA.getValue(columnId);
           const b = rowB.getValue(columnId);
           return a < b ? -1 : a > b ? 1 : 0;
         };
       } else if (columnType === 'date' || columnType === 'datetime') {
-        columnDef.sortingFn = (rowA, rowB, columnId) => {
+        columnDef.sortFn = (rowA, rowB, columnId) => {
           const a = rowA.getValue(columnId);
           const b = rowB.getValue(columnId);
 
@@ -617,7 +617,7 @@ export default function generateColumnsData({
         // Datepicker cells hold the formatted display string (e.g. "12 May 2026, 5:30 PM"),
         // Parse each value back into a real Date using the same logic the renderer uses to
         // display it, then compare chronologically.
-        columnDef.sortingFn = (rowA, rowB, columnId) => {
+        columnDef.sortFn = (rowA, rowB, columnId) => {
           const a = rowA.getValue(columnId);
           const b = rowB.getValue(columnId);
 

@@ -55,17 +55,17 @@ export const TableExposedVariables = ({
     resetRowSelection,
   } = {
     selectedRows: table.getFilteredSelectedRowModel()?.rows,
-    sorting: table.getState()?.sorting,
-    currentPageData: table.getPaginationRowModel()?.rows,
+    sorting: table.state?.sorting,
+    currentPageData: table.getPaginatedRowModel()?.rows,
     filteredData: table.getFilteredRowModel()?.rows,
-    searchText: table.getState().globalFilter ?? '',
-    appliedFilters: table.getState().columnFilters,
+    searchText: table.state.globalFilter ?? '',
+    appliedFilters: table.state.columnFilters,
     toggleAllRowsSelected: table.toggleAllRowsSelected,
     setPageIndex: table.setPageIndex,
     setRowSelection: table.setRowSelection,
     setColumnFilters: table.setColumnFilters,
     columns: table.getAllColumns(),
-    columnSizing: table.getState().columnSizing,
+    columnSizing: table.state.columnSizing,
     resetRowSelection: table.resetRowSelection,
   };
 
@@ -325,7 +325,7 @@ export const TableExposedVariables = ({
     function selectRows(key, values) {
       const valueArray = Array.isArray(values) ? values : [values];
 
-      const currentSelection = table.getState().rowSelection || {};
+      const currentSelection = table.state.rowSelection || {};
       const newSelection = { ...currentSelection };
 
       valueArray.forEach((value) => {
@@ -341,7 +341,7 @@ export const TableExposedVariables = ({
     function deselectRows(key, values) {
       const valueArray = Array.isArray(values) ? values : [values];
 
-      const currentSelection = table.getState().rowSelection || {};
+      const currentSelection = table.state.rowSelection || {};
       const newSelection = { ...currentSelection };
 
       valueArray.forEach((value) => {
@@ -397,7 +397,7 @@ export const TableExposedVariables = ({
       }
       let desc;
       if (direction === 'auto') {
-        const currentSort = table.getState().sorting?.find((s) => s.id === tanstackId);
+        const currentSort = table.state.sorting?.find((s) => s.id === tanstackId);
         desc = currentSort ? !currentSort.desc : false;
       } else {
         desc = direction === 'desc';

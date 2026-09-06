@@ -131,8 +131,8 @@ export const TableContainer = ({
     if (enableExpandableRows) collapseAllRows(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    JSON.stringify(table.getState().sorting),
-    JSON.stringify(table.getState().columnFilters),
+    JSON.stringify(table.state.sorting),
+    JSON.stringify(table.state.columnFilters),
     globalFilter,
     pagination.pageIndex,
   ]);
@@ -142,7 +142,7 @@ export const TableContainer = ({
   const allColumns = useMemo(() => {
     return table.getAllLeafColumns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(table.getState().columnOrder), table]);
+  }, [JSON.stringify(table.state.columnOrder), table]);
 
   useEffect(() => {
     if (serverSideSearch && globalFilter?.trim() !== '') {
@@ -198,7 +198,7 @@ export const TableContainer = ({
         globalFilter={globalFilter}
         table={table}
         setFilters={handleFilterChange}
-        appliedFiltersLength={table.getState().columnFilters.length}
+        appliedFiltersLength={table.state.columnFilters.length}
         componentName={componentName}
       />
       <TableData

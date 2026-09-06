@@ -1,6 +1,10 @@
+// v9 uses logical pinning regions (start/end); ToolJet's widget DSL and the
+// sticky CSS inset it feeds keep the physical left/right naming.
+const logicalToPhysical = { start: 'left', end: 'right' };
+
 export const getPinnedPosition = (column) => {
-  const pinnedPosition = column.getIsPinned?.();
-  if (pinnedPosition === 'left' || pinnedPosition === 'right') {
+  const pinnedPosition = logicalToPhysical[column.getIsPinned?.()];
+  if (pinnedPosition) {
     return pinnedPosition;
   }
 
@@ -14,7 +18,7 @@ export const getPinnedPosition = (column) => {
 
 const getPinnedLeafColumns = (table, position) => {
   if (!table) return [];
-  return position === 'left' ? (table.getLeftLeafColumns?.() ?? []) : (table.getRightLeafColumns?.() ?? []);
+  return position === 'left' ? (table.getStartLeafColumns?.() ?? []) : (table.getEndLeafColumns?.() ?? []);
 };
 
 const getPinnedOffsetFallback = (column, table, position) => {
@@ -36,11 +40,11 @@ const getPinnedOffsetFallback = (column, table, position) => {
 
 export const getPinnedOffset = (column, table, position) => {
   if (position === 'left' && typeof column.getStart === 'function') {
-    return column.getStart('left');
+    return column.getStart('start');
   }
 
   if (position === 'right' && typeof column.getAfter === 'function') {
-    return column.getAfter('right');
+    return column.getAfter('end');
   }
 
   return getPinnedOffsetFallback(column, table, position);
@@ -49,7 +53,7 @@ export const getPinnedOffset = (column, table, position) => {
 export const getPinnedBoundaryState = (column, table, position) => {
   if (position === 'left') {
     if (typeof column.getIsLastColumn === 'function') {
-      return column.getIsLastColumn('left');
+      return column.getIsLastColumn('start');
     }
 
     const leftColumns = getPinnedLeafColumns(table, 'left');
@@ -57,7 +61,7 @@ export const getPinnedBoundaryState = (column, table, position) => {
   }
 
   if (typeof column.getIsFirstColumn === 'function') {
-    return column.getIsFirstColumn('right');
+    return column.getIsFirstColumn('end');
   }
 
   const rightColumns = getPinnedLeafColumns(table, 'right');

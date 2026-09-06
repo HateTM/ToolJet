@@ -1,5 +1,5 @@
 import React from 'react';
-import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
+import { tableFeatures, useTable, createColumnHelper } from '@tanstack/react-table';
 import { DataTable } from './DataTable';
 
 export default {
@@ -24,11 +24,11 @@ const columns = [
   columnHelper.accessor('editedAt', { header: 'Edited at', cell: (info) => info.getValue() }),
 ];
 
-function useTable(data) {
-  return useReactTable({
+function useStorybookTable(data) {
+  return useTable({
     data,
     columns,
-    getCoreRowModel: getCoreRowModel(),
+    features: tableFeatures({}),
   });
 }
 
@@ -36,7 +36,7 @@ function useTable(data) {
 
 export const Default = {
   render: () => {
-    const table = useTable(sampleData);
+    const table = useStorybookTable(sampleData);
     return <DataTable table={table} />;
   },
 };
@@ -45,7 +45,7 @@ export const Default = {
 
 export const Compact = {
   render: () => {
-    const table = useTable(sampleData);
+    const table = useStorybookTable(sampleData);
     return <DataTable table={table} density="compact" />;
   },
 };
@@ -54,7 +54,7 @@ export const Compact = {
 
 export const Loading = {
   render: () => {
-    const table = useTable([]);
+    const table = useStorybookTable([]);
     return <DataTable table={table} isLoading />;
   },
 };
@@ -63,7 +63,7 @@ export const Loading = {
 
 export const Empty = {
   render: () => {
-    const table = useTable([]);
+    const table = useStorybookTable([]);
     return <DataTable table={table} emptyMessage="No apps found. Create one to get started." />;
   },
 };

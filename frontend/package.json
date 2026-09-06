@@ -47,7 +47,7 @@
     "@sentry/react": "^10.73.0",
     "@sentry/webpack-plugin": "^5.4.0",
     "@tabler/icons-react": "^3.46.0",
-    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-table": "^9.2.4",
     "@tanstack/react-virtual": "^3.14.10",
     "@textea/json-viewer": "^4.0.1",
     "@tooljet/plugins": "../plugins",
@@ -202,7 +202,6 @@
     "@typescript-eslint/parser": "^8.69.0",
     "autoprefixer": "^10.5.5",
     "babel-loader": "^10.1.1",
-    "babel-plugin-console-source": "^2.0.5",
     "babel-plugin-import": "^1.13.8",
     "babel-plugin-istanbul": "^8.0.0",
     "compression-webpack-plugin": "^12.0.0",
@@ -314,7 +313,7 @@
       "^.+\\.svg$": "<rootDir>/__mocks__/svg.js"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!(react|mpx-error-boundary)/)"
+      "node_modules/(?!(react|mpx-error-boundary|@tanstack)/)"
     ],
     "moduleNameMapper": {
       "@/(.*)": "<rootDir>/src/$1"

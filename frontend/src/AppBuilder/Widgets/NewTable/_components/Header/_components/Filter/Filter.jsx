@@ -8,7 +8,7 @@ import { debounce, isEqual } from 'lodash';
 
 export const Filter = memo(({ id, table, darkMode, setFilters, setShowFilter, componentName }) => {
   const { t } = useTranslation();
-  const [localFilters, setLocalFilters] = useState(table.getState().columnFilters);
+  const [localFilters, setLocalFilters] = useState(table.state.columnFilters);
 
   // Memoize columns
   const columns = useMemo(
@@ -113,7 +113,7 @@ export const Filter = memo(({ id, table, darkMode, setFilters, setShowFilter, co
   const debouncedApplyFilters = useMemo(
     () =>
       debounce((filters) => {
-        const currentTableFilters = table.getState().columnFilters;
+        const currentTableFilters = table.state.columnFilters;
         if (!isEqual(filters, currentTableFilters)) {
           setFilters(
             filters.map((filter) => ({
