@@ -2,7 +2,7 @@ import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString, ValidateNested, I
 import { Type } from 'class-transformer';
 import { PartialType } from '@nestjs/mapped-types';
 import { IsEmail, IsEnum, IsInt } from 'class-validator';
-import { Stripe } from 'stripe';
+import Stripe from 'stripe';
 
 export class PortalDto {
   @IsString()
