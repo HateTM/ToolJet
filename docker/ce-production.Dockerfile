@@ -1,14 +1,17 @@
+
 FROM node:24.18.1 AS builder
 
-# Fix for JS heap limit allocation issue
 ENV NODE_OPTIONS="--max-old-space-size=8096"
 
-RUN npm i -g npm@11.16.0
-RUN mkdir -p /app
+# Инструменты для node-gyp (cpu-features, ssh2 и др.)
+RUN apt-get update && apt-get install -y \
+    build-essential python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 
+RUN npm i -g npm@12.0.2
+RUN mkdir -p /app
 WORKDIR /app
 
-# Scripts for building
 COPY ./package.json ./package.json
 
 # Build plugins
@@ -16,67 +19,51 @@ COPY ./plugins/package.json ./plugins/package-lock.json ./plugins/
 RUN npm --prefix plugins install
 COPY ./plugins/ ./plugins/
 RUN NODE_ENV=production npm --prefix plugins run build
-# `npm prune` walks the existing tree deleting devDependencies in place and hangs
-# indefinitely under npm 11.16.0 on this workspace (reproduced repeatedly — no
-# CPU, no network, no child process, stuck in its own epoll_wait). A clean
-# reinstall from the lockfile sidesteps it entirely — same end state (prod-only
-# node_modules), same pattern generation-engine/Dockerfile already uses.
 RUN rm -rf plugins/node_modules && npm --prefix plugins ci --omit=dev
 
 # Build frontend
 COPY ./frontend/package.json ./frontend/package-lock.json ./frontend/
-RUN npm --prefix frontend ci --legacy-peer-deps
+RUN npm --prefix frontend ci --legacy-peer-deps --allow-remote root
 COPY ./frontend/ ./frontend/
 RUN npm --prefix frontend run build --production
-# No prune here: frontend/node_modules is never copied into the final image
-# below (only the static frontend/build output is) — pruning it was dead work.
 
 ENV NODE_ENV=production
 
-# Build server
+# Build server — npm ci вместо npm install
 COPY ./server/package.json ./server/package-lock.json ./server/
-RUN npm --prefix server install
+RUN npm --prefix server ci --legacy-peer-deps --allow-remote root
 COPY ./server/ ./server/
-RUN npm install -g @nestjs/cli
-RUN npm install -g copyfiles
+RUN npm install -g @nestjs/cli@^11 copyfiles
 RUN npm --prefix server run build
 
 FROM debian:12
 
+# Только нужные пакеты, без Oracle и freetds
 RUN apt-get update -yq \
-    && apt-get install curl gnupg zip -yq \
-    && apt-get install -yq build-essential \
-    && apt-get clean -y
+    && apt-get install -yq curl zip wget xz-utils postgresql-client redis-server supervisor \
+    && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
-
+# Node.js (как есть — скачивание tarball)
 RUN curl -O https://nodejs.org/dist/v24.18.1/node-v24.18.1-linux-x64.tar.xz \
     && tar -xf node-v24.18.1-linux-x64.tar.xz \
     && mv node-v24.18.1-linux-x64 /usr/local/lib/nodejs \
-    && echo 'export PATH="/usr/local/lib/nodejs/bin:$PATH"' >> /etc/profile.d/nodejs.sh \
-    && /bin/bash -c "source /etc/profile.d/nodejs.sh" \
     && rm node-v24.18.1-linux-x64.tar.xz
 ENV PATH=/usr/local/lib/nodejs/bin:$PATH
-
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN apt-get update && \
-    apt-get install -y postgresql-client freetds-dev libaio1 libxml2 wget redis-server supervisor && \
-    apt-get -o Dpkg::Options::="--force-confold" upgrade -q -y --force-yes && \
-    apt-get -y autoremove && \
-    apt-get -y autoclean
 
 # Install Instantclient Basic Light Oracle and Dependencies
-WORKDIR /opt/oracle
-
-RUN wget https://tooljet-plugins-production.s3.us-east-2.amazonaws.com/marketplace-assets/oracledb/instantclients/instantclient-basiclite-linuxx64.zip && \
-    wget https://tooljet-plugins-production.s3.us-east-2.amazonaws.com/marketplace-assets/oracledb/instantclients/instantclient-basiclite-linux.x64-11.2.0.4.0.zip && \
-    unzip instantclient-basiclite-linuxx64.zip && rm -f instantclient-basiclite-linuxx64.zip && \
-    unzip instantclient-basiclite-linux.x64-11.2.0.4.0.zip && rm -f instantclient-basiclite-linux.x64-11.2.0.4.0.zip && \
-    cd /opt/oracle/instantclient_21_10 && rm -f *jdbc* *occi* *mysql* *mql1* *ipc1* *jar uidrvci genezi adrci && \
-    cd /opt/oracle/instantclient_11_2 && rm -f *jdbc* *occi* *mysql* *mql1* *ipc1* *jar uidrvci genezi adrci && \
-    echo /opt/oracle/instantclient* > /etc/ld.so.conf.d/oracle-instantclient.conf && ldconfig
+#WORKDIR /opt/oracle
+#
+#RUN wget https://tooljet-plugins-production.s3.us-east-2.amazonaws.com/marketplace-assets/oracledb/instantclients/instantclient-basiclite-linuxx64.zip && \
+#   wget https://tooljet-plugins-production.s3.us-east-2.amazonaws.com/marketplace-assets/oracledb/instantclients/instantclient-basiclite-linux.x64-11.2.0.4.0.zip && \
+#   unzip instantclient-basiclite-linuxx64.zip && rm -f instantclient-basiclite-linuxx64.zip && \
+#   unzip instantclient-basiclite-linux.x64-11.2.0.4.0.zip && rm -f instantclient-basiclite-linux.x64-11.2.0.4.0.zip && \
+#   cd /opt/oracle/instantclient_21_10 && rm -f *jdbc* *occi* *mysql* *mql1* *ipc1* *jar uidrvci genezi adrci && \
+#   cd /opt/oracle/instantclient_11_2 && rm -f *jdbc* *occi* *mysql* *mql1* *ipc1* *jar uidrvci genezi adrci && \
+#   echo /opt/oracle/instantclient* > /etc/ld.so.conf.d/oracle-instantclient.conf && ldconfig
 # Set the Instant Client library paths
-ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_11_2:/opt/oracle/instantclient_21_10:${LD_LIBRARY_PATH}"
+#ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_11_2:/opt/oracle/instantclient_21_10:${LD_LIBRARY_PATH}"
 
 
 WORKDIR /
