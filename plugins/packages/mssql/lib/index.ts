@@ -131,7 +131,7 @@ export default class MssqlQueryService implements QueryService {
         if (queryOptions['database']) sourceOptions.database = queryOptions['database'];
       }
     }
-    // eslint-disable-next-line prefer-const
+
     checkCache = sourceOptions.allow_dynamic_connection_parameters ? false : true;
     try {
       knexInstance = await this.getConnection(sourceOptions, {}, checkCache, dataSourceId, dataSourceUpdatedAt);

@@ -27,22 +27,22 @@ describe('graphql', () => {
         ['source-query-header', 'should be overriden'],
       ],
       url_params: [],
-    }
+    };
     const queryOptions = {
       query: '{ greeting }',
       headers: [
         ['source-query-header', 'query takes precedence over source'],
         ['query-only-header', 'query value'],
       ],
-    }
+    };
 
     const _graphql = new graphql.default();
 
     const spy = jest.spyOn(_graphql, 'sendRequest').mockImplementation(() => ({
-      body: JSON.stringify({ data: { greeting: 'hello' }})
-    }))
+      body: JSON.stringify({ data: { greeting: 'hello' } }),
+    }));
 
-    const result = await _graphql.run(sourceOptions, queryOptions, 'no-datasource-id')
+    const result = await _graphql.run(sourceOptions, queryOptions, 'no-datasource-id');
 
     expect(result.data).toEqual({ data: { greeting: 'hello' } });
     expect(spy).toHaveBeenCalledWith('https://example.com/graphql', {
@@ -56,7 +56,7 @@ describe('graphql', () => {
       json: {
         query: '{ greeting }',
         variables: {},
-      }
+      },
     });
   });
 });

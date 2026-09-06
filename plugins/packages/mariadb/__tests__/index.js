@@ -3,5 +3,5 @@
 const mariadb = require('../lib');
 
 describe('mariadb', () => {
-    it.todo('needs tests');
+  it.todo('needs tests');
 });

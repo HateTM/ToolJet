@@ -3,5 +3,5 @@
 const rethinkdb = require('../lib');
 
 describe('rethinkdb', () => {
-    it.todo('needs tests');
+  it.todo('needs tests');
 });

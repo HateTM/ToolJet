@@ -241,8 +241,8 @@ export default class MysqlQueryService implements QueryService {
         const normalizedPrimaryKeys = Array.isArray(primary_key_columns)
           ? primary_key_columns.filter(Boolean)
           : typeof primary_key_columns === 'string' && primary_key_columns.trim()
-          ? [primary_key_columns.trim()]
-          : [];
+            ? [primary_key_columns.trim()]
+            : [];
         const columnEntries = Object.values(columns || {});
         const whereFiltersForSelect = Object.fromEntries(
           normalizedPrimaryKeys
