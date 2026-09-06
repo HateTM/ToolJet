@@ -274,9 +274,9 @@ export class TooljetDbTableOperationsService {
     return await this.manager.find(InternalTable, {
       where: { organizationId },
       select: {
-                id: true,
-                tableName: true,
-              },
+        id: true,
+        tableName: true,
+      },
       order: { tableName: 'ASC' },
     });
   }
@@ -463,9 +463,7 @@ export class TooljetDbTableOperationsService {
     const isTableInUse = await this.findQueriesLinkedToTable(internalTable.id);
 
     if (isTableInUse) {
-      throw new BadRequestException(
-        "Table can't be deleted, it is being used in app queries"
-      );
+      throw new BadRequestException("Table can't be deleted, it is being used in app queries");
     }
 
     const tenantSchema = findTenantSchema(organizationId);
@@ -1408,9 +1406,9 @@ export class TooljetDbTableOperationsService {
         ...(type === 'TABLEID' && { id: In(referenced_table_list) }),
       },
       select: {
-                tableName: true,
-                id: true,
-              },
+        tableName: true,
+        id: true,
+      },
     });
 
     const referenced_tables_info = {};

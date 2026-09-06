@@ -37,9 +37,9 @@ export class ReplaceTooljetDbTableNamesWithId1679604241777 implements MigrationI
         const dataQueriesToReplaceWithIds = await entityManager.find(DataQuery, {
           where: { dataSourceId: tjDbSource.data_sources_id },
           select: {
-                    id: true,
-                    options: true,
-                  },
+            id: true,
+            options: true,
+          },
         });
         console.log(`TjDb dataqueries: ${dataQueriesToReplaceWithIds.length}`);
 
@@ -50,9 +50,9 @@ export class ReplaceTooljetDbTableNamesWithId1679604241777 implements MigrationI
           const internalTable = await entityManager.findOne(InternalTable, {
             where: { organizationId: organization.id, tableName },
             select: {
-                      id: true,
-                      tableName: true,
-                    },
+              id: true,
+              tableName: true,
+            },
           });
 
           // There was a bug wherein if the table name had changed, the name in app definition

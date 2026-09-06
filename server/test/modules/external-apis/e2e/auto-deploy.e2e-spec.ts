@@ -100,10 +100,7 @@ describe('External API — POST /ext/apps/:appIdOrSlug/git-sync/release', () => 
       const { user } = await seedOrg();
       const app = await seedApp(user);
 
-      await request(nestApp.getHttpServer())
-        .post(`/api/ext/apps/${app.id}/git-sync/release`)
-        .send({})
-        .expect(403);
+      await request(nestApp.getHttpServer()).post(`/api/ext/apps/${app.id}/git-sync/release`).send({}).expect(403);
     });
 
     it('returns 403 when Authorization header has wrong token', async () => {

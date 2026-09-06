@@ -118,8 +118,8 @@ export class MoveToolJetDatabaseTablesFromPublicToTenantSchema1721236971725 impl
       const workspaceTableList = await entityManager.find(InternalTable, {
         where: { organizationId: workspaceId },
         select: {
-                  id: true,
-                },
+          id: true,
+        },
       });
 
       if (workspaceTableList.length) {

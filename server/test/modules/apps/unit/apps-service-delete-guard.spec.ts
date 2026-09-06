@@ -31,9 +31,20 @@ function makeMockManager() {
   const qb: any = {};
   // Chain every known QueryBuilder method back to the same object
   const chainMethods = [
-    'innerJoin', 'innerJoinAndSelect', 'leftJoin', 'leftJoinAndSelect',
-    'where', 'andWhere', 'orWhere', 'select', 'addSelect',
-    'orderBy', 'addOrderBy', 'take', 'skip', 'distinct',
+    'innerJoin',
+    'innerJoinAndSelect',
+    'leftJoin',
+    'leftJoinAndSelect',
+    'where',
+    'andWhere',
+    'orWhere',
+    'select',
+    'addSelect',
+    'orderBy',
+    'addOrderBy',
+    'take',
+    'skip',
+    'distinct',
   ];
   for (const m of chainMethods) {
     qb[m] = jest.fn().mockReturnValue(qb);
@@ -95,7 +106,7 @@ function makeService(): AppsService {
     null as any, // aiUtilService
     null as any, // componentsService
     null as any, // eventEmitter
-    null as any, // appGitRepository
+    null as any // appGitRepository
   );
 }
 

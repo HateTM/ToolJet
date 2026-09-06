@@ -88,8 +88,8 @@ export class OrganizationUsersService implements IOrganizationUsersService {
       const organizationUser = await manager.findOneOrFail(OrganizationUser, {
         where: { id, organizationId },
         relations: {
-                     user: true,
-                   },
+          user: true,
+        },
       });
 
       await this.organizationUsersUtilService.throwErrorIfUserIsLastActiveAdmin(organizationUser?.user, organizationId);
@@ -128,8 +128,8 @@ export class OrganizationUsersService implements IOrganizationUsersService {
       const archivedUserWorkspaces = await manager.find(OrganizationUser, {
         where: { userId },
         relations: {
-                     user: true,
-                   },
+          user: true,
+        },
       });
       await manager.update(
         OrganizationUser,
@@ -164,17 +164,17 @@ export class OrganizationUsersService implements IOrganizationUsersService {
       const targetUser = await manager.findOneOrFail(User, {
         where: { id: userId },
         select: {
-                  id: true,
-                  status: true,
-                  invitationToken: true,
-                  source: true,
-                },
+          id: true,
+          status: true,
+          invitationToken: true,
+          source: true,
+        },
       });
       const unarchivedUserWorkspaces = await manager.find(OrganizationUser, {
         where: { userId },
         relations: {
-                     user: true,
-                   },
+          user: true,
+        },
       });
       const { status, invitationToken } = targetUser;
       /* Special case. what if the user is archived when the status is invited. we were changing status to active before */
@@ -206,9 +206,9 @@ export class OrganizationUsersService implements IOrganizationUsersService {
     const organizationUser = await this.organizationUsersRepository.findOne({
       where: { id, organizationId },
       relations: {
-                   user: true,
-                   organization: true,
-                 },
+        user: true,
+        organization: true,
+      },
     });
 
     if (!(organizationUser && organizationUser.organization && organizationUser.user)) {

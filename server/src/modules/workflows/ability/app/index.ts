@@ -39,8 +39,8 @@ export class FeatureAbilityFactory extends AbilityFactory<FEATURE_KEY, Subjects>
       await this.appVersionsRepository.findOneOrFail({
         where: { id: appVersionId },
         relations: {
-                     app: true,
-                   },
+          app: true,
+        },
       })
     ).app;
   }

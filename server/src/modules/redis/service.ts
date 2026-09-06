@@ -85,7 +85,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.client.quit();
     } catch (err) {
-      this.transactionLogger.error(`[RedisService] Graceful quit failed, forcing disconnect: ${err.message}`, err.stack);
+      this.transactionLogger.error(
+        `[RedisService] Graceful quit failed, forcing disconnect: ${err.message}`,
+        err.stack
+      );
       this.client.disconnect();
     }
     this.transactionLogger.log('[RedisService] Redis client disconnected');

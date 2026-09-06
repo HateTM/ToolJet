@@ -91,7 +91,10 @@ export class ConvertAllUserEmailsToLowercaseAndDeleteDuplicateUsers1654596810662
       await this.migrateUserGroupPermissions(entityManager, deletingUser, originalUser);
 
       //apps
-      const appsOfDeletingUser = await entityManager.find(App, { select: { id: true }, where: { userId: deletingUser.id } });
+      const appsOfDeletingUser = await entityManager.find(App, {
+        select: { id: true },
+        where: { userId: deletingUser.id },
+      });
       for (const app of appsOfDeletingUser) {
         await entityManager.update(App, app.id, {
           userId: originalUser.id,

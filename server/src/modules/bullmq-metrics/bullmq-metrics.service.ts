@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { metrics } from '@opentelemetry/api';
-import { Queue } from 'bullmq';
+import { Queue, ConnectionOptions } from 'bullmq';
 import Redis from 'ioredis';
 
 // All BullMQ queues in the platform. Queue depth/worker counts live in Redis,
@@ -28,7 +28,11 @@ export class BullMqMetricsService implements OnModuleInit, OnModuleDestroy {
       ...(process.env.REDIS_TLS === 'true' && { tls: {} }),
       maxRetriesPerRequest: null,
     });
-    this.queues = QUEUE_NAMES.map((name) => new Queue(name, { connection: this.connection }));
+    // ioredis' default generic resolves to the legacy-status client, which bullmq's
+    // ConnectionOptions union doesn't accept verbatim — runtime shape is identical.
+    this.queues = QUEUE_NAMES.map(
+      (name) => new Queue(name, { connection: this.connection as unknown as ConnectionOptions })
+    );
 
     const meter = metrics.getMeter('bullmq');
 

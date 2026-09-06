@@ -13,8 +13,8 @@ export class AddingUsersToRespectiveRolesBuilderAndEndUsers1720365772516 impleme
     const organizationIds = (
       await manager.find(Organization, {
         select: {
-                  id: true,
-                },
+          id: true,
+        },
       })
     ).map((organization) => organization.id);
     await this.getAndConvertEditorBuilderUsers(manager, organizationIds);

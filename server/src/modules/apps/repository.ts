@@ -86,8 +86,8 @@ export class AppsRepository extends Repository<App> {
       const version = await this.dataSource.getRepository(AppVersion).findOne({
         where: { slug, branchId },
         relations: {
-                     app: true,
-                   },
+          app: true,
+        },
       });
       if (!version?.app || version.app.organizationId !== organizationId) {
         return null;
@@ -105,16 +105,16 @@ export class AppsRepository extends Repository<App> {
       resolvedVersion = await this.dataSource.getRepository(AppVersion).findOne({
         where: { slug, branchId: defaultBranchId },
         relations: {
-                     app: true,
-                   },
+          app: true,
+        },
       });
     } else {
       // Git sync disabled — find any slug match across all versions in the workspace.
       resolvedVersion = await this.dataSource.getRepository(AppVersion).findOne({
         where: { slug },
         relations: {
-                     app: true,
-                   },
+          app: true,
+        },
       });
     }
 
@@ -214,8 +214,8 @@ export class AppsRepository extends Repository<App> {
     const candidate = await this.dataSource.getRepository(AppVersion).findOne({
       where: { slug },
       relations: {
-                   app: true,
-                 },
+        app: true,
+      },
     });
 
     let resolved: AppVersion | null = candidate;
@@ -225,8 +225,8 @@ export class AppsRepository extends Repository<App> {
         resolved = await this.dataSource.getRepository(AppVersion).findOne({
           where: { slug, branchId: defaultBranchId },
           relations: {
-                       app: true,
-                     },
+            app: true,
+          },
         });
       }
     }
@@ -325,10 +325,10 @@ export class AppsRepository extends Repository<App> {
   async findByDataQuery(dataQueryId: string, organizationId?: string, versionId?: string): Promise<App> {
     const app = await this.findOne({
       relations: {
-                   appVersions: {
-                     dataQueries: true,
-                   },
-                 },
+        appVersions: {
+          dataQueries: true,
+        },
+      },
       where: {
         ...(organizationId ? { organizationId } : {}),
         appVersions: { dataQueries: { id: dataQueryId }, ...(versionId ? { id: versionId } : {}) },
@@ -468,8 +468,8 @@ export class AppsRepository extends Repository<App> {
     const app = await mgr.findOne(App, {
       where: { id: appId },
       relations: {
-                   appVersions: true,
-                 },
+        appVersions: true,
+      },
     });
     if (app && app.type !== APP_TYPES.WORKFLOW) {
       const version = await this.resolveMetadataVersion(mgr, app);
@@ -484,8 +484,8 @@ export class AppsRepository extends Repository<App> {
       const app = await manager.findOne(App, {
         where: { id: idOrSlug },
         relations: {
-                     appVersions: true,
-                   },
+          appVersions: true,
+        },
       });
       if (app) {
         if (app.type === APP_TYPES.WORKFLOW) return app;
@@ -543,8 +543,8 @@ export class AppsRepository extends Repository<App> {
     const branch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     return branch?.id ?? null;
   }
@@ -554,8 +554,8 @@ export class AppsRepository extends Repository<App> {
     const branch = await manager.findOne(WorkspaceBranch, {
       where: { isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     return !!branch?.id;
   }

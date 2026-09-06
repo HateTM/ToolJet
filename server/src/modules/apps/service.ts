@@ -117,9 +117,9 @@ export class AppsService implements IAppsService {
           const targetBranch = await manager.findOne(WorkspaceBranch, {
             where: { id: branchId, organizationId: user.organizationId },
             select: {
-                      id: true,
-                      isDefault: true,
-                    },
+              id: true,
+              isDefault: true,
+            },
           });
           if (targetBranch?.isDefault) {
             throw new BadRequestException('Apps cannot be created on the default branch. Switch to a feature branch.');
@@ -376,9 +376,9 @@ export class AppsService implements IAppsService {
         const branch = await this.appRepository.manager.findOne(WorkspaceBranch, {
           where: { id: appUpdateDto.branch_id, organizationId: app.organizationId },
           select: {
-                    id: true,
-                    isDefault: true,
-                  },
+            id: true,
+            isDefault: true,
+          },
         });
         // Unknown branch → treat as block. Default branch → block (must edit from a
         // feature branch and let push + merge flow the change to default).
@@ -452,10 +452,7 @@ export class AppsService implements IAppsService {
           .innerJoin(Page, 'page', 'page.id = component.page_id')
           .innerJoin(AppVersion, 'appVersion', 'appVersion.id = page.app_version_id')
           .where("component.type = 'ModuleViewer'")
-          .andWhere(
-            "component.properties::jsonb -> 'moduleAppId' ->> 'value' = :moduleId",
-            { moduleId: app.id }
-          )
+          .andWhere("component.properties::jsonb -> 'moduleAppId' ->> 'value' = :moduleId", { moduleId: app.id })
           .andWhere('appVersion.app_id != :appId', { appId: app.id })
           .getCount();
         if (refCount > 0) {
@@ -488,7 +485,10 @@ export class AppsService implements IAppsService {
       if (versionIds.length > 0) {
         const folders = await manager.find(DataQueryFolder, { where: { appVersionId: In(versionIds) } });
         const folderIds = folders.map((f) => f.id);
-        const queries = await manager.find(DataQuery, { select: { id: true }, where: { appVersionId: In(versionIds) } });
+        const queries = await manager.find(DataQuery, {
+          select: { id: true },
+          where: { appVersionId: In(versionIds) },
+        });
         const queryIds = queries.map((q) => q.id);
         const allChildIds = [...folderIds, ...queryIds];
 
@@ -575,8 +575,8 @@ export class AppsService implements IAppsService {
           const defaultBranch = await manager.findOne(WorkspaceBranch, {
             where: { organizationId: user.organizationId, isDefault: true },
             select: {
-                      id: true,
-                    },
+              id: true,
+            },
           });
           const qb = manager
             .createQueryBuilder()
@@ -646,8 +646,8 @@ export class AppsService implements IAppsService {
     const defaultBranch = await this.appRepository.manager.findOne(WorkspaceBranch, {
       where: { organizationId: user.organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     return defaultBranch?.id;
   }
@@ -677,7 +677,14 @@ export class AppsService implements IAppsService {
       const apps = await this.appsUtilService.all(user, page, searchKey, type, true, branchId, context);
       return { apps, totalCount: 0, folderCount: 0 };
     }
-    const { apps, totalCount } = await this.appsUtilService.allWithCount(user, page, searchKey, type, branchId, context);
+    const { apps, totalCount } = await this.appsUtilService.allWithCount(
+      user,
+      page,
+      searchKey,
+      type,
+      branchId,
+      context
+    );
     return { apps, totalCount, folderCount: 0 };
   }
 
@@ -780,8 +787,8 @@ export class AppsService implements IAppsService {
     const defaultBranch = await this.appRepository.manager.findOne(WorkspaceBranch, {
       where: { organizationId: app.organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     if (!defaultBranch) return; // git off — subscriber should have handled it
 
@@ -789,8 +796,8 @@ export class AppsService implements IAppsService {
     const version = await this.versionRepository.findOne({
       where: { appId: app.id, branchId: targetBranchId, isStub: false },
       relations: {
-                   branch: true,
-                 },
+        branch: true,
+      },
       order: { updatedAt: 'DESC' },
     });
     if (version) {
@@ -1063,8 +1070,8 @@ export class AppsService implements IAppsService {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId: user.organizationId, isDefault: true },
           select: {
-                    id: true,
-                  },
+            id: true,
+          },
         });
 
         const slugVersion = defaultBranch

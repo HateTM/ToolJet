@@ -20,8 +20,8 @@ export class AddUniqueConstraintToFolderName1684145489093 implements MigrationIn
   public async migrateFolderNames(entityManager: EntityManager) {
     const workspaces = await entityManager.find(Organization, {
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     for (const workspace of workspaces) {
       const { id: organizationId } = workspace;

@@ -34,7 +34,7 @@ export class PageService implements IPageService {
     protected pageHelperService: PageHelperService,
     protected eventHandlerService: EventsService,
     protected readonly transactionLogger: TransactionLogger
-  ) { }
+  ) {}
 
   /**
    * Hook called before page creation - override in EE to capture state for history
@@ -544,8 +544,8 @@ export class PageService implements IPageService {
           const childPages = await manager.find(Page, {
             where: { appVersionId, pageGroupId: pageId },
             select: {
-                      id: true,
-                    },
+              id: true,
+            },
           });
           context.childPageIds = childPages.map((p) => p.id);
         }

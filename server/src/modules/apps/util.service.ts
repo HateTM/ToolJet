@@ -94,8 +94,8 @@ export class AppsUtilService implements IAppsUtilService {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId: user.organizationId, isDefault: true },
           select: {
-                    id: true,
-                  },
+            id: true,
+          },
         });
         if (!defaultBranch) {
           const conflictingNameVersion = await manager
@@ -470,9 +470,9 @@ export class AppsUtilService implements IAppsUtilService {
   getAppOrganizationDetails(app: App): Promise<Organization> {
     return this.organizationRepository.findOneOrFail({
       select: {
-                id: true,
-                slug: true,
-              },
+        id: true,
+        slug: true,
+      },
       where: { id: app.organizationId, status: WORKSPACE_STATUS.ACTIVE },
     });
   }
@@ -663,8 +663,8 @@ export class AppsUtilService implements IAppsUtilService {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId, isDefault: true },
           select: {
-                    id: true,
-                  },
+            id: true,
+          },
         });
         if (!defaultBranch) {
           const conflictingNameVersion = await manager
@@ -691,8 +691,8 @@ export class AppsUtilService implements IAppsUtilService {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId, isDefault: true },
           select: {
-                    id: true,
-                  },
+            id: true,
+          },
         });
         const isGitEnabled = !!defaultBranch;
 
@@ -779,8 +779,8 @@ export class AppsUtilService implements IAppsUtilService {
       }
       const nextEnvironment = await AppEnvironment.findOne({
         select: {
-                  id: true,
-                },
+          id: true,
+        },
         where: {
           priority: MoreThan(currentEnvironment.priority),
           organizationId,
@@ -881,9 +881,7 @@ export class AppsUtilService implements IAppsUtilService {
       organizationId: user.organizationId,
     });
     // INNER JOIN enforces branch scope; skip EE NOT EXISTS predicate (~600x subplan cost)
-    const willInnerJoinOnBranch =
-      !!branchId &&
-      (type === APP_TYPES.MODULE || type === APP_TYPES.FRONT_END);
+    const willInnerJoinOnBranch = !!branchId && (type === APP_TYPES.MODULE || type === APP_TYPES.FRONT_END);
     const qb = this.viewableAppsQueryUsingPermissions(
       user,
       userPermission[resourceType],
@@ -933,7 +931,7 @@ export class AppsUtilService implements IAppsUtilService {
     type?: string,
     branchId?: string,
     // consumed by the EE override (which applies addBranchFilter); unused in CE base
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _skipBranchScope?: boolean,
     context?: string
   ): SelectQueryBuilder<AppBase> {
@@ -1008,10 +1006,7 @@ export class AppsUtilService implements IAppsUtilService {
       // module ids, exactly like front-end apps. Previously modules were returned unfiltered.
       case APP_TYPES.MODULE:
         if (context === 'picker') {
-          return this.addPickerModulesFilter(
-            viewableAppsQb,
-            userAppPermissions as unknown as UserAppsPermissions
-          );
+          return this.addPickerModulesFilter(viewableAppsQb, userAppPermissions as unknown as UserAppsPermissions);
         }
         // Modules support hide-from-dashboard on Edit groups (#5135) — use dedicated helpers
         // that treat editable ids the same as viewable ids for hiding purposes.
@@ -1394,8 +1389,7 @@ export class AppsUtilService implements IAppsUtilService {
 
   async fetchModules(app: App, allVersions: boolean = false, versionId: string): Promise<any[]> {
     return skipAppEditingVersionHydration.run(true, async () => {
-      const versionToLoadId =
-        versionId || app.currentVersionId || (app as any).editingVersion?.id;
+      const versionToLoadId = versionId || app.currentVersionId || (app as any).editingVersion?.id;
       if (!versionToLoadId && !allVersions) return [];
 
       const manager = getConnectionInstance().manager;
@@ -1438,8 +1432,8 @@ export class AppsUtilService implements IAppsUtilService {
       const defaultBranch = await manager.findOne(WorkspaceBranch, {
         where: { organizationId: app.organizationId, isDefault: true },
         select: {
-                  id: true,
-                },
+          id: true,
+        },
       });
       const gitEnabled = !!defaultBranch;
 
@@ -1518,9 +1512,7 @@ export class AppsUtilService implements IAppsUtilService {
 
         const meta = metaMap.get(moduleApp.id);
         if (gitEnabled && !meta && parentBranchId) {
-          throw new BadRequestException(
-            `No DRAFT version found for app ${moduleApp.id} on branch ${parentBranchId}.`
-          );
+          throw new BadRequestException(`No DRAFT version found for app ${moduleApp.id} on branch ${parentBranchId}.`);
         }
         if (meta) {
           // apps.name/slug/icon/isPublic are NULL for modules (metadata on app_versions).
@@ -1725,8 +1717,8 @@ export class AppsUtilService implements IAppsUtilService {
       const defaultBranch = await manager.findOne(WorkspaceBranch, {
         where: { organizationId: app.organizationId, isDefault: true },
         select: {
-                  id: true,
-                },
+          id: true,
+        },
       });
       const gitEnabled = !!defaultBranch;
 
@@ -1737,12 +1729,12 @@ export class AppsUtilService implements IAppsUtilService {
           where: { appId: app.id, branchId: targetBranchId, status: AppVersionStatus.DRAFT },
           order: { updatedAt: 'DESC' },
           select: {
-                    id: true,
-                    appName: true,
-                    slug: true,
-                    icon: true,
-                    isPublic: true,
-                  },
+            id: true,
+            appName: true,
+            slug: true,
+            icon: true,
+            isPublic: true,
+          },
         });
         if (!source && branchId) {
           throw new BadRequestException(`No DRAFT version found for app ${app.id} on branch ${branchId}.`);
@@ -1753,12 +1745,12 @@ export class AppsUtilService implements IAppsUtilService {
           where: { appId: app.id },
           order: { updatedAt: 'DESC' },
           select: {
-                    id: true,
-                    appName: true,
-                    slug: true,
-                    icon: true,
-                    isPublic: true,
-                  },
+            id: true,
+            appName: true,
+            slug: true,
+            icon: true,
+            isPublic: true,
+          },
         });
       }
 

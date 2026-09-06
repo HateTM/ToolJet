@@ -22,8 +22,8 @@ export class SetDefaultWorkspace1740401100000 implements MigrationInterface {
           const organization = await queryRunner.manager.findOne(Organization, {
             where: { slug: workspaceSlug, status: WORKSPACE_STATUS.ACTIVE },
             select: {
-                      id: true,
-                    },
+              id: true,
+            },
           });
           if (organization) {
             await queryRunner.query(

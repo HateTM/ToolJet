@@ -27,11 +27,11 @@ export class OrganizationsAiFeatureRepository extends Repository<OrganizationsAi
     return dbTransactionWrap(async (txnManager: EntityManager) => {
       const rows = await txnManager.find(OrganizationsAiFeature, {
         select: {
-                  walletType: true,
-                  balance: true,
-                  expiryDate: true,
-                  totalAmount: true,
-                },
+          walletType: true,
+          balance: true,
+          expiryDate: true,
+          totalAmount: true,
+        },
         where: {
           organizationId,
           walletType: In([WalletType.RECURRING, WalletType.TOPUP]),

@@ -80,12 +80,10 @@ export class OnboardingService implements IOnboardingService {
     protected readonly licenseUserService: LicenseUserService,
     protected readonly instanceSettingsUtilService: InstanceSettingsUtilService,
     protected readonly metadataUtilService: MetadataUtilService,
-    protected readonly setupOrganizationsUtilService: SetupOrganizationsUtilService,
-  ) { }
+    protected readonly setupOrganizationsUtilService: SetupOrganizationsUtilService
+  ) {}
 
-  private async getDefaultOrOldestWorkspaceOfInstance(
-    manager: EntityManager
-  ): Promise<Organization | null> {
+  private async getDefaultOrOldestWorkspaceOfInstance(manager: EntityManager): Promise<Organization | null> {
     const defaultWorkspace = await manager.findOne(Organization, {
       where: { isDefault: true },
     });
@@ -125,16 +123,23 @@ export class OnboardingService implements IOnboardingService {
           throw new ForbiddenException('Workspace signup has been disabled. Please contact the workspace admin.');
         }
         if (
-          !(await validatePasswordDomain(email, passwordAllowedDomains, passwordRestrictedDomains, this.instanceSettingsUtilService))
+          !(await validatePasswordDomain(
+            email,
+            passwordAllowedDomains,
+            passwordRestrictedDomains,
+            this.instanceSettingsUtilService
+          ))
         ) {
-          throw new ForbiddenException('This login method is not available for your domain. Please contact admin or try another method.');
+          throw new ForbiddenException(
+            'This login method is not available for your domain. Please contact admin or try another method.'
+          );
         }
       } else {
         // No organization provided - validate against instance-level settings
-        if (
-          !(await validatePasswordDomain(email, undefined, undefined, this.instanceSettingsUtilService))
-        ) {
-          throw new ForbiddenException('This login method is not available for your domain. Please contact admin or try another method.');
+        if (!(await validatePasswordDomain(email, undefined, undefined, this.instanceSettingsUtilService))) {
+          throw new ForbiddenException(
+            'This login method is not available for your domain. Please contact admin or try another method.'
+          );
         }
       }
 
@@ -279,8 +284,8 @@ export class OnboardingService implements IOnboardingService {
       const user: User | undefined = await manager.findOne(User, {
         where: { invitationToken: token },
         relations: {
-                     organizationUsers: true,
-                   },
+          organizationUsers: true,
+        },
       });
       let organizationUser: OrganizationUser;
       let isSSOVerify: boolean;
@@ -288,7 +293,7 @@ export class OnboardingService implements IOnboardingService {
       const allowPersonalWorkspace =
         (await this.userRepository.count()) === 0 ||
         (await this.instanceSettingsUtilService.getSettings(INSTANCE_USER_SETTINGS.ALLOW_PERSONAL_WORKSPACE)) ===
-        'true';
+          'true';
 
       const defaultWorkspace = await this.organizationRepository.getDefaultWorkspaceOfInstance();
       if (!(defaultWorkspace || allowPersonalWorkspace || organizationToken)) {
@@ -298,8 +303,8 @@ export class OnboardingService implements IOnboardingService {
         organizationUser = await manager.findOne(OrganizationUser, {
           where: { invitationToken: organizationToken },
           relations: {
-                       user: true,
-                     },
+            user: true,
+          },
         });
       }
 
@@ -452,9 +457,9 @@ export class OnboardingService implements IOnboardingService {
       const organizationUser: OrganizationUser = await manager.findOne(OrganizationUser, {
         where: { invitationToken: token },
         relations: {
-                     user: true,
-                     organization: true,
-                   },
+          user: true,
+          organization: true,
+        },
       });
 
       if (!organizationUser?.user) {
@@ -502,9 +507,9 @@ export class OnboardingService implements IOnboardingService {
         const organizationUser = await manager.findOne(OrganizationUser, {
           where: { organizationId: user.defaultOrganizationId },
           relations: {
-                       user: true,
-                       organization: true,
-                     },
+            user: true,
+            organization: true,
+          },
         });
         await this.organizationUsersUtilService.activateOrganization(organizationUser, manager);
       }
@@ -537,9 +542,9 @@ export class OnboardingService implements IOnboardingService {
       organizationUser = await this.organizationUsersRepository.findOne({
         where: { invitationToken: organizationToken },
         relations: {
-                     user: true,
-                     organization: true,
-                   },
+          user: true,
+          organization: true,
+        },
       });
 
       if (!user && organizationUser) {
@@ -658,9 +663,10 @@ export class OnboardingService implements IOnboardingService {
       }
 
       const rawExpiryDays = parseInt(process.env.PASSWORD_EXPIRY_DAYS || '0', 10);
-      const passwordExpiry = (password && !isNaN(rawExpiryDays) && rawExpiryDays > 0)
-        ? new Date(Date.now() + rawExpiryDays * 24 * 60 * 60 * 1000)
-        : null;
+      const passwordExpiry =
+        password && !isNaN(rawExpiryDays) && rawExpiryDays > 0
+          ? new Date(Date.now() + rawExpiryDays * 24 * 60 * 60 * 1000)
+          : null;
 
       await this.userRepository.updateOne(
         signupUser.id,
@@ -706,12 +712,12 @@ export class OnboardingService implements IOnboardingService {
     const organizationUser: OrganizationUser = await this.organizationUsersRepository.findOneOrFail({
       where: { invitationToken: token },
       select: {
-                id: true,
-                user: true,
-              },
+        id: true,
+        user: true,
+      },
       relations: {
-                   user: true,
-                 },
+        user: true,
+      },
     });
     return { email: organizationUser.user.email };
   }
@@ -720,8 +726,8 @@ export class OnboardingService implements IOnboardingService {
     const organizationUser: OrganizationUser = await this.organizationUsersRepository.findOne({
       where: { invitationToken: token },
       relations: {
-                   user: true,
-                 },
+        user: true,
+      },
     });
 
     const user: User = organizationUser?.user;
@@ -796,9 +802,9 @@ export class OnboardingService implements IOnboardingService {
       const invitedOrganization = await this.organizationRepository.findOne({
         where: { id: organizationUser.organizationId },
         select: {
-                  name: true,
-                  id: true,
-                },
+          name: true,
+          id: true,
+        },
       });
       if (existingUser.invitationToken) {
         /* Not activated. Regenerate User-level token on re-invite. */

@@ -321,9 +321,9 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
           const branch = await manager.findOne(WorkspaceBranch, {
             where: { id: branchId },
             select: {
-                      id: true,
-                      isDefault: true,
-                    },
+              id: true,
+              isDefault: true,
+            },
           });
           shouldUpdateDefault = !!branch?.isDefault;
         }
@@ -502,8 +502,8 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
         const isGitEnabled = !!(await manager.findOne(WorkspaceBranch, {
           where: { organizationId, isDefault: true },
           select: {
-                    id: true,
-                  },
+            id: true,
+          },
         }));
 
         if (!isGitEnabled && name) {
@@ -674,10 +674,10 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
     return this.dataSourceRepository.find({
       where: { organizationId },
       select: {
-                id: true,
-                name: true,
-                kind: true,
-              },
+        id: true,
+        name: true,
+        kind: true,
+      },
     });
   }
 
@@ -685,17 +685,17 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
     return this.dataSourceRepository.findOneOrFail({
       where: { name: ILike(name), organizationId },
       relations: {
-                   apps: true,
-                   dataSourceVersions: true,
-                   appVersion: {
-                     app: true,
-                   },
-                   plugin: {
-                     iconFile: true,
-                     manifestFile: true,
-                     operationsFile: true,
-                   },
-                 },
+        apps: true,
+        dataSourceVersions: true,
+        appVersion: {
+          app: true,
+        },
+        plugin: {
+          iconFile: true,
+          manifestFile: true,
+          operationsFile: true,
+        },
+      },
     });
   }
 
@@ -708,16 +708,16 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
     const dataSource = await this.dataSourceRepository.findOneOrFail({
       where: { id: dataSourceId, organizationId },
       relations: {
-                   apps: true,
-                   appVersion: {
-                     app: true,
-                   },
-                   plugin: {
-                     iconFile: true,
-                     manifestFile: true,
-                     operationsFile: true,
-                   },
-                 },
+        apps: true,
+        appVersion: {
+          app: true,
+        },
+        plugin: {
+          iconFile: true,
+          manifestFile: true,
+          operationsFile: true,
+        },
+      },
     });
 
     if (!environmentId) {
@@ -885,16 +885,9 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
     let tokenOptions: any;
     const isMultiAuthEnabled = dataSource.options['multiple_auth_enabled']?.value;
     if (
-      [
-        'zendesk',
-        'salesforce',
-        'googlecalendar',
-        'snowflake',
-        'microsoft_graph',
-        'hubspot',
-        'xero',
-        'asana',
-      ].includes(dataSource.kind)
+      ['zendesk', 'salesforce', 'googlecalendar', 'snowflake', 'microsoft_graph', 'hubspot', 'xero', 'asana'].includes(
+        dataSource.kind
+      )
     ) {
       const newTokenData = await this.fetchAPITokenFromPlugins(
         dataSource,
@@ -982,9 +975,9 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
         const branch = await manager.findOne(WorkspaceBranch, {
           where: { id: branchId },
           select: {
-                    id: true,
-                    isDefault: true,
-                  },
+            id: true,
+            isDefault: true,
+          },
         });
         shouldUpdateDefault = !!branch?.isDefault;
       }
@@ -1356,7 +1349,10 @@ export class DataSourcesUtilService implements IDataSourcesUtilService {
       const allEnvs = await this.appEnvironmentUtilService.getAllEnvironments(organizationId, manager);
 
       // Create default DataSourceVersion + DataSourceVersionOptions
-      const dataSource = await manager.findOne(DataSource, { where: { id: dataSourceId }, select: { id: true, name: true } });
+      const dataSource = await manager.findOne(DataSource, {
+        where: { id: dataSourceId },
+        select: { id: true, name: true },
+      });
       const dsv = manager.create(DataSourceVersion, {
         dataSourceId,
         name: dataSource?.name || 'v1',

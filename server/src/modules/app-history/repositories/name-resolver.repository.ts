@@ -16,9 +16,9 @@ export class NameResolverRepository {
       const components = await manager.find(Component, {
         where: { id: In(componentIds) },
         select: {
-                  id: true,
-                  name: true,
-                },
+          id: true,
+          name: true,
+        },
       });
 
       return components.reduce((acc, comp) => {
@@ -35,9 +35,9 @@ export class NameResolverRepository {
       const pages = await manager.find(Page, {
         where: { id: In(pageIds) },
         select: {
-                  id: true,
-                  name: true,
-                },
+          id: true,
+          name: true,
+        },
       });
 
       return pages.reduce((acc, page) => {
@@ -54,9 +54,9 @@ export class NameResolverRepository {
       const queries = await manager.find(DataQuery, {
         where: { id: In(queryIds) },
         select: {
-                  id: true,
-                  name: true,
-                },
+          id: true,
+          name: true,
+        },
       });
 
       return queries.reduce((acc, query) => {
@@ -73,9 +73,9 @@ export class NameResolverRepository {
       const dataSources = await manager.find(DataSourceEntity, {
         where: { id: In(dataSourceIds) },
         select: {
-                  id: true,
-                  name: true,
-                },
+          id: true,
+          name: true,
+        },
       });
 
       return dataSources.reduce((acc, ds) => {
@@ -92,9 +92,9 @@ export class NameResolverRepository {
       const events = await manager.find(EventHandler, {
         where: { id: In(eventIds) },
         select: {
-                  id: true,
-                  name: true,
-                },
+          id: true,
+          name: true,
+        },
       });
 
       return events.reduce((acc, event) => {
@@ -109,13 +109,13 @@ export class NameResolverRepository {
       const component = await manager.findOne(Component, {
         where: { id: componentId },
         relations: {
-                     page: true,
-                   },
+          page: true,
+        },
         select: {
-                  id: true,
-                  name: true,
-                  page: true,
-                },
+          id: true,
+          name: true,
+          page: true,
+        },
       });
 
       return {
@@ -136,9 +136,9 @@ export class NameResolverRepository {
         const component = await manager.findOne(Component, {
           where: { id: entityId },
           select: {
-                    id: true,
-                    name: true,
-                  },
+            id: true,
+            name: true,
+          },
         });
         return component?.name || 'Unknown Component';
       }
@@ -148,9 +148,9 @@ export class NameResolverRepository {
         const query = await manager.findOne(DataQuery, {
           where: { id: entityId },
           select: {
-                    id: true,
-                    name: true,
-                  },
+            id: true,
+            name: true,
+          },
         });
         return query?.name || 'Unknown Query';
       }
@@ -160,9 +160,9 @@ export class NameResolverRepository {
         const page = await manager.findOne(Page, {
           where: { id: entityId },
           select: {
-                    id: true,
-                    name: true,
-                  },
+            id: true,
+            name: true,
+          },
         });
         return page?.name || 'Unknown Page';
       }

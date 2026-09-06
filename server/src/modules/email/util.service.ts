@@ -197,7 +197,7 @@ export class EmailUtilService implements IEmailUtilService {
           jsonTransport: true,
         });
         const result = await transport.sendMail(mailOptions);
-        previewEmail(JSON.parse(result.message)).then(console.log).catch(console.error);
+        previewEmail(JSON.parse(String(result.message))).then(console.log).catch(console.error);
       } else {
         const transport = this.mailTransport(this.SMTP);
         const result = await transport.sendMail(mailOptions);

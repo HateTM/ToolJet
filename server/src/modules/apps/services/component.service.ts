@@ -194,7 +194,10 @@ export class ComponentsService implements IComponentsService {
         if (component) {
           let resolvedParent = component.parent;
           if (moduleContainerId && !resolvedParent) {
-            const existing = await manager.findOne(Component, { where: { id: componentId }, select: { id: true, type: true } });
+            const existing = await manager.findOne(Component, {
+              where: { id: componentId },
+              select: { id: true, type: true },
+            });
             if (existing?.type !== 'ModuleContainer') {
               resolvedParent = moduleContainerId;
             }
@@ -311,20 +314,17 @@ export class ComponentsService implements IComponentsService {
    * For module-type apps, resolves the ModuleContainer component id for the given version.
    * Returns null for non-module apps or if no ModuleContainer exists.
    */
-  protected async resolveModuleContainerId(
-    appVersionId: string,
-    manager: EntityManager
-  ): Promise<string | null> {
+  protected async resolveModuleContainerId(appVersionId: string, manager: EntityManager): Promise<string | null> {
     const appVersion = await manager.findOne(AppVersion, {
       where: { id: appVersionId },
       select: {
-                id: true,
-                appId: true,
-                homePageId: true,
-              },
+        id: true,
+        appId: true,
+        homePageId: true,
+      },
       relations: {
-                   app: true,
-                 },
+        app: true,
+      },
     });
 
     if (!appVersion?.app || appVersion.app.type !== APP_TYPES.MODULE) {
@@ -337,8 +337,8 @@ export class ComponentsService implements IComponentsService {
         pageId: appVersion.homePageId,
       },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
 
     return moduleContainer?.id ?? null;
@@ -643,15 +643,19 @@ export class ComponentsService implements IComponentsService {
           where: { componentId, type: layout.type },
         });
         if (existing) {
-          await manager.update(Layout, { id: existing.id }, {
-            top: layout.top,
-            left: layout.left,
-            width: layout.width,
-            height: layout.height,
-            widthPx: layout.widthPx,
-            fillWidth: layout.fillWidth,
-            dimensionUnit: layout.dimensionUnit,
-          });
+          await manager.update(
+            Layout,
+            { id: existing.id },
+            {
+              top: layout.top,
+              left: layout.left,
+              width: layout.width,
+              height: layout.height,
+              widthPx: layout.widthPx,
+              fillWidth: layout.fillWidth,
+              dimensionUnit: layout.dimensionUnit,
+            }
+          );
         } else {
           layoutsToInsert.push(layout);
         }
@@ -842,8 +846,8 @@ export class ComponentsService implements IComponentsService {
       const sampleComponent = await manager.findOne(Component, {
         where: { id: firstComponentId },
         relations: {
-                     page: true,
-                   },
+          page: true,
+        },
       });
       if (sampleComponent?.page?.appVersionId) {
         await this.assertNoParentCycle(parentWrites, sampleComponent.page.appVersionId, manager);
@@ -884,7 +888,10 @@ export class ComponentsService implements IComponentsService {
       if (component) {
         let resolvedParent = component.parent;
         if (moduleContainerId && !resolvedParent) {
-          const existing = await manager.findOne(Component, { where: { id: componentId }, select: { id: true, type: true } });
+          const existing = await manager.findOne(Component, {
+            where: { id: componentId },
+            select: { id: true, type: true },
+          });
           if (existing?.type !== 'ModuleContainer') {
             resolvedParent = moduleContainerId;
           }

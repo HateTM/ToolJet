@@ -16,7 +16,13 @@ type ComponentSummary = { id: string; name: string; type: string; co_relation_id
 type AppSummary = { id: string; name: string; slug: string; co_relation_id: string | null };
 type AppVersionSummary = { id: string; name: string; createdAt: Date; co_relation_id: string | null };
 type AppVersionWithComponents = AppVersionSummary & { components: ComponentSummary[] };
-type AppDetail = { id: string; name: string; slug: string; co_relation_id: string | null; versions: AppVersionWithComponents[] };
+type AppDetail = {
+  id: string;
+  name: string;
+  slug: string;
+  co_relation_id: string | null;
+  versions: AppVersionWithComponents[];
+};
 type QueryGroup = {
   appId: string;
   appName: string;
@@ -72,10 +78,10 @@ export class WorkspaceContextService {
         },
       },
       select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
+        id: true,
+        name: true,
+        slug: true,
+      },
       order: { name: 'ASC' },
     });
 
@@ -96,7 +102,12 @@ export class WorkspaceContextService {
         .orderBy('app.created_at', 'ASC')
         .getRawMany();
 
-    return rows.map((r) => ({ id: r.appId, name: r.appName, slug: r.appSlug, co_relation_id: r.appCoRelationId ?? null }));
+    return rows.map((r) => ({
+      id: r.appId,
+      name: r.appName,
+      slug: r.appSlug,
+      co_relation_id: r.appCoRelationId ?? null,
+    }));
   }
 
   async fetchAppById(appId: string, organizationId: string): Promise<AppDetail> {
@@ -241,13 +252,13 @@ export class WorkspaceContextService {
     const dataSources = await this.dataSourcesRepository.find({
       where: { organizationId, scope: DataSourceScopes.GLOBAL },
       select: {
-                id: true,
-                name: true,
-                kind: true,
-                pluginId: true,
-                scope: true,
-                co_relation_id: true,
-              },
+        id: true,
+        name: true,
+        kind: true,
+        pluginId: true,
+        scope: true,
+        co_relation_id: true,
+      },
       order: { name: 'ASC' },
     });
 
@@ -256,14 +267,14 @@ export class WorkspaceContextService {
     const versions = await this.dataSourcesRepository.manager.find(DataSourceVersion, {
       where: { dataSourceId: In(dataSources.map((ds) => ds.id)) },
       select: {
-                id: true,
-                name: true,
-                isDefault: true,
-                isActive: true,
-                branchId: true,
-                createdAt: true,
-                dataSourceId: true,
-              },
+        id: true,
+        name: true,
+        isDefault: true,
+        isActive: true,
+        branchId: true,
+        createdAt: true,
+        dataSourceId: true,
+      },
       order: { isDefault: 'DESC', createdAt: 'ASC' },
     });
 

@@ -32,8 +32,8 @@ export class AuthorizeWorkspaceGuard extends AuthGuard('jwt') {
         const org = await manager.findOne(Organization, {
           where: { id: organizationId },
           select: {
-                    id: true,
-                  },
+            id: true,
+          },
         });
         if (!org) {
           throw new NotFoundException();

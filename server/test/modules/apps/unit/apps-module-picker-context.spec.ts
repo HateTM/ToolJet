@@ -34,7 +34,17 @@ class TestableAppsUtilService extends AppsUtilService {
   ): SelectQueryBuilder<AppBase> {
     // The service gained positional branchId/_skipBranchScope params before context —
     // forward context in its real slot so tests exercise the intended branch.
-    return this.viewableAppsQueryUsingPermissions(user, perms, manager, searchKey, select, type, undefined, undefined, context);
+    return this.viewableAppsQueryUsingPermissions(
+      user,
+      perms,
+      manager,
+      searchKey,
+      select,
+      type,
+      undefined,
+      undefined,
+      context
+    );
   }
 }
 
@@ -103,7 +113,7 @@ function buildService(): TestableAppsUtilService {
     {} as any, // VersionRepository
     {} as any, // LicenseTermsService
     {} as any, // OrganizationRepository
-    {} as any  // AbilityService
+    {} as any // AbilityService
   );
 }
 

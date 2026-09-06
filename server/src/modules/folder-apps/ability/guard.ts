@@ -59,10 +59,10 @@ export class FeatureAbilityGuard extends AbilityGuard {
       const folder = await this.dataSource.manager.findOne(Folder, {
         where: { id: folderId, organizationId: request.user.organizationId },
         select: {
-                  id: true,
-                  createdBy: true,
-                  type: true,
-                },
+          id: true,
+          createdBy: true,
+          type: true,
+        },
       });
 
       const folderOwnedByUser = !!folder && folder.createdBy === request.user.id;
@@ -72,13 +72,12 @@ export class FeatureAbilityGuard extends AbilityGuard {
         const app = await this.dataSource.manager.findOne(App, {
           where: { id: request.body.app_id, organizationId: request.user.organizationId },
           select: {
-                    id: true,
-                    userId: true,
-                    type: true,
-                  },
+            id: true,
+            userId: true,
+            type: true,
+          },
         });
-        request.tj_allow_owner_folder_app_create =
-          folderOwnedByUser && !!app && app.userId === request.user.id;
+        request.tj_allow_owner_folder_app_create = folderOwnedByUser && !!app && app.userId === request.user.id;
         request.tj_allow_owner_folder_app_delete = folderOwnedByUser && !!app;
         request.tj_app_is_module = app?.type === APP_TYPES.MODULE;
         request.tj_folder_app_type_mismatch = !!(folder?.type && app?.type && folder.type !== app.type);

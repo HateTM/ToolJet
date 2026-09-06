@@ -10,16 +10,16 @@ export class UpdateOracleDbOptionsWithInstantClientVersion1687188169091 implemen
     const dataSources = await entityManager.find(DataSource, {
       where: { kind: 'oracledb' },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
 
     const dataSourceOptions = await entityManager.find(DataSourceOptions, {
       where: { dataSourceId: In(dataSources.map((d) => d.id)) },
       select: {
-                id: true,
-                options: true,
-              },
+        id: true,
+        options: true,
+      },
     });
 
     for (const dataSourceOption of dataSourceOptions) {

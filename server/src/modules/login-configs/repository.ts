@@ -46,8 +46,8 @@ export class SSOConfigsRepository extends Repository<SSOConfigs> {
         sso: sso as SSOType,
       },
       relations: {
-                   organization: true,
-                 },
+        organization: true,
+      },
     });
   }
 
@@ -55,9 +55,9 @@ export class SSOConfigsRepository extends Repository<SSOConfigs> {
     const result: SSOConfigs = await this.findOne({
       where: { id, enabled: true },
       relations: {
-                   organization: true,
-                   oidcGroupSyncs: true,
-                 },
+        organization: true,
+        oidcGroupSyncs: true,
+      },
     });
     return result;
   }

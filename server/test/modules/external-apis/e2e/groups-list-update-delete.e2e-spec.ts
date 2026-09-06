@@ -1,7 +1,14 @@
 import * as request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { initTestApp, closeTestApp, createUser, createApplication, createApplicationVersion, getDefaultDataSource } from 'test-helper';
+import {
+  initTestApp,
+  closeTestApp,
+  createUser,
+  createApplication,
+  createApplicationVersion,
+  getDefaultDataSource,
+} from 'test-helper';
 import { GroupPermissions } from '@entities/group_permissions.entity';
 import { AppVersion } from '@entities/app_version.entity';
 import { GranularPermissions } from '@entities/granular_permissions.entity';

@@ -21,8 +21,8 @@ export class OrganizationConstantRepository extends Repository<OrganizationConst
     return this.find({
       where: whereCondition,
       relations: {
-                   orgEnvironmentConstantValues: true,
-                 },
+        orgEnvironmentConstantValues: true,
+      },
     });
   }
 
@@ -30,8 +30,8 @@ export class OrganizationConstantRepository extends Repository<OrganizationConst
     return this.findOne({
       where: { id: constantId, organizationId },
       relations: {
-                   orgEnvironmentConstantValues: true,
-                 },
+        orgEnvironmentConstantValues: true,
+      },
     });
   }
 
@@ -39,8 +39,8 @@ export class OrganizationConstantRepository extends Repository<OrganizationConst
     return this.findOne({
       where: { constantName, organizationId },
       relations: {
-                   orgEnvironmentConstantValues: true,
-                 },
+        orgEnvironmentConstantValues: true,
+      },
     });
   }
 
@@ -60,8 +60,8 @@ export class OrganizationConstantRepository extends Repository<OrganizationConst
     return this.find({
       where: whereCondition,
       relations: {
-                   orgEnvironmentConstantValues: true,
-                 },
+        orgEnvironmentConstantValues: true,
+      },
     });
   }
 
@@ -73,8 +73,8 @@ export class OrganizationConstantRepository extends Repository<OrganizationConst
     return this.findOne({
       where: { constantName, organizationId, type },
       relations: {
-                   orgEnvironmentConstantValues: true,
-                 },
+        orgEnvironmentConstantValues: true,
+      },
     });
   }
 

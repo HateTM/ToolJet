@@ -11,17 +11,14 @@ export class PromoteAndReleaseExistingModuleVersions1776419051000 implements Mig
 
     const organizations = await manager.find(Organization, {
       select: {
-                id: true,
-              },
+        id: true,
+      },
       relations: {
-                   appEnvironments: true,
-                 },
+        appEnvironments: true,
+      },
     });
 
-    const migrationProgress = new MigrationProgress(
-      'PromoteAndReleaseExistingModuleVersions',
-      organizations.length
-    );
+    const migrationProgress = new MigrationProgress('PromoteAndReleaseExistingModuleVersions', organizations.length);
 
     for (const organization of organizations) {
       const productionEnvironment = organization.appEnvironments.find((env) => env.isDefault);
@@ -34,9 +31,9 @@ export class PromoteAndReleaseExistingModuleVersions1776419051000 implements Mig
       const moduleApps = await manager.find(App, {
         where: { organizationId: organization.id, type: APP_TYPES.MODULE },
         select: {
-                  id: true,
-                  currentVersionId: true,
-                },
+          id: true,
+          currentVersionId: true,
+        },
       });
 
       for (const app of moduleApps) {
@@ -44,9 +41,9 @@ export class PromoteAndReleaseExistingModuleVersions1776419051000 implements Mig
           where: { appId: app.id },
           order: { createdAt: 'DESC' },
           select: {
-                    id: true,
-                    createdAt: true,
-                  },
+            id: true,
+            createdAt: true,
+          },
         });
 
         if (!versions.length) continue;

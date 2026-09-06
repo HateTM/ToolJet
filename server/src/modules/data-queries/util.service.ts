@@ -101,12 +101,12 @@ export class DataQueriesUtilService implements IDataQueriesUtilService {
           return manager.findOne(AppVersion, {
             where: { id: dataQuery.appVersionId },
             select: {
-                      id: true,
-                      versionType: true,
-                      branchId: true,
-                      isPublic: true,
-                      appName: true,
-                    },
+              id: true,
+              versionType: true,
+              branchId: true,
+              isPublic: true,
+              appName: true,
+            },
           });
         });
       }

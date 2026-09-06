@@ -44,12 +44,12 @@ export class PopulateSSOConfigs1650485473528 implements MigrationInterface {
 
     const organizations: Organization[] = await entityManager.find(Organization, {
       relations: {
-                   ssoConfigs: true,
-                 },
+        ssoConfigs: true,
+      },
       select: {
-                ssoConfigs: true,
-                id: true,
-              },
+        ssoConfigs: true,
+        id: true,
+      },
     });
 
     if (organizations && organizations.length > 0) {

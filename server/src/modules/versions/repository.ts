@@ -62,7 +62,12 @@ export class VersionRepository extends Repository<AppVersion> {
     }, manager || this.manager);
   }
 
-  findById(id: string, appId: string, relations?: FindOptionsRelations<AppVersion>, manager?: EntityManager): Promise<AppVersion> {
+  findById(
+    id: string,
+    appId: string,
+    relations?: FindOptionsRelations<AppVersion>,
+    manager?: EntityManager
+  ): Promise<AppVersion> {
     const m = manager ?? this.manager;
     return m.findOneOrFail(AppVersion, {
       where: { id, appId },
@@ -70,7 +75,12 @@ export class VersionRepository extends Repository<AppVersion> {
     });
   }
 
-  async findByName(name: string, appId: string, relations?: FindOptionsRelations<AppVersion>, manager?: EntityManager): Promise<AppVersion> {
+  async findByName(
+    name: string,
+    appId: string,
+    relations?: FindOptionsRelations<AppVersion>,
+    manager?: EntityManager
+  ): Promise<AppVersion> {
     const m = manager ?? this.manager;
     // Direct lookup by the `name` column (works for regular versions and legacy UUID-based URLs)
     const version = await m.findOne(AppVersion, {
@@ -134,8 +144,8 @@ export class VersionRepository extends Repository<AppVersion> {
     return m.find(DataQuery, {
       where: { appVersionId },
       relations: {
-                   dataSource: true,
-                 },
+        dataSource: true,
+      },
       select: { dataSource: { kind: true } },
     });
   }
@@ -175,15 +185,15 @@ export class VersionRepository extends Repository<AppVersion> {
     const appVersion = await m.findOneOrFail(AppVersion, {
       where: { id },
       relations: {
-                   app: true,
-                   branch: true,
-                   dataQueries: {
-                     dataSource: true,
-                     plugins: {
-                       manifestFile: true,
-                     },
-                   },
-                 },
+        app: true,
+        branch: true,
+        dataQueries: {
+          dataSource: true,
+          plugins: {
+            manifestFile: true,
+          },
+        },
+      },
     });
 
     if (appVersion?.dataQueries) {
@@ -243,7 +253,10 @@ export class VersionRepository extends Repository<AppVersion> {
     // When branchId is provided, also include versions with null branchId
     // (created before branching was enabled) so they remain visible on the default branch.
     const where = branchId
-      ? [{ appId, branchId, isStub: false }, { appId, branchId: IsNull(), isStub: false }]
+      ? [
+          { appId, branchId, isStub: false },
+          { appId, branchId: IsNull(), isStub: false },
+        ]
       : { appId, isStub: false };
     return m.find(AppVersion, { where, order: { createdAt: 'DESC' }, relations: { branch: true } });
   }
@@ -264,8 +277,8 @@ export class VersionRepository extends Repository<AppVersion> {
     const appVersion = await m.findOneOrFail(AppVersion, {
       where: { id, app: { organizationId } },
       relations: {
-                   app: true,
-                 },
+        app: true,
+      },
     });
     const app = appVersion.app;
     // Workflows keep metadata on apps.*; non-workflows must overlay from the
@@ -286,8 +299,8 @@ export class VersionRepository extends Repository<AppVersion> {
     const branch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     return branch?.id ?? null;
   }
@@ -359,15 +372,15 @@ export class VersionRepository extends Repository<AppVersion> {
     return m.find(AppVersion, {
       where: { appId: app.id },
       relations: {
-                   app: true,
-                   branch: true,
-                   dataQueries: {
-                     dataSource: true,
-                     plugins: {
-                       manifestFile: true,
-                     },
-                   },
-                 },
+        app: true,
+        branch: true,
+        dataQueries: {
+          dataSource: true,
+          plugins: {
+            manifestFile: true,
+          },
+        },
+      },
     });
   }
 
@@ -387,8 +400,8 @@ export class VersionRepository extends Repository<AppVersion> {
     const version = await this.manager.findOneOrFail(AppVersion, {
       where: { id: versionId },
       relations: {
-                   app: true,
-                 },
+        app: true,
+      },
     });
     if (!version) throw new BadRequestException('Wrong version Id');
 
@@ -418,17 +431,17 @@ export class VersionRepository extends Repository<AppVersion> {
       version = await this.manager.findOneOrFail(AppVersion, {
         where: { name: versionId, appId },
         relations: {
-                     app: true,
-                     branch: true,
-                   },
+          app: true,
+          branch: true,
+        },
       });
     } catch (error) {
       version = await this.manager.findOneOrFail(AppVersion, {
         where: { id: versionId },
         relations: {
-                     app: true,
-                     branch: true,
-                   },
+          app: true,
+          branch: true,
+        },
       });
     }
     if (!version) throw new BadRequestException('Wrong version Id');

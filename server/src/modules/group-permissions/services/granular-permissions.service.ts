@@ -69,8 +69,8 @@ export class GranularPermissionsService implements IGranularPermissionsService {
     const defaultBranch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
 
     const qb = manager
@@ -178,8 +178,8 @@ export class GranularPermissionsService implements IGranularPermissionsService {
     const defaultBranch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
 
     let metadataRows: Pick<AppVersion, 'appId' | 'appName' | 'slug' | 'icon' | 'isPublic'>[];

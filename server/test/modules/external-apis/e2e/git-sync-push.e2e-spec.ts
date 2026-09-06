@@ -78,10 +78,7 @@ describe('External API — POST /ext/apps/:appId/versions/:versionId/git-sync/pu
     return createApplication(nestApp, { user, name: `App-${Date.now()}`, isPublic: false });
   }
 
-  async function seedPublishedVersion(
-    app: App & { organizationId: string },
-    name = 'v1'
-  ): Promise<AppVersion> {
+  async function seedPublishedVersion(app: App & { organizationId: string }, name = 'v1'): Promise<AppVersion> {
     const version = await createApplicationVersion(nestApp, app, { name });
     await versionRepo.update(version.id, { status: AppVersionStatus.PUBLISHED });
     return versionRepo.findOne({ where: { id: version.id } });

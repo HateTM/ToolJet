@@ -5,6 +5,8 @@ import { OrganizationConstantRepository } from './repository';
 import { FeatureAbilityFactory } from './ability';
 import { OrganizationRepository } from '@modules/organizations/repository';
 import { AppsRepository } from '@modules/apps/repository';
+import { AppsUtilService } from '@modules/apps/util.service';
+import { VersionRepository } from '@modules/versions/repository';
 import { SubModule } from '@modules/app/sub-module';
 
 @Module({})
@@ -39,6 +41,8 @@ export class OrganizationConstantModule extends SubModule {
         OrganizationConstantRepository,
         OrganizationRepository,
         AppsRepository,
+        AppsUtilService,
+        VersionRepository,
         OrganizationConstantsService,
         FeatureAbilityFactory,
       ],

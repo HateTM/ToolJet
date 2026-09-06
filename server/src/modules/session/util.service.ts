@@ -26,7 +26,7 @@ import {
   UserAppsPermissions,
   UserDataSourcePermissions,
   UserFolderPermissions,
-  UserPermissions
+  UserPermissions,
 } from '@modules/ability/types';
 import { JwtService } from '@nestjs/jwt';
 import { RolesRepository } from '@modules/roles/repository';
@@ -396,10 +396,10 @@ export class SessionUtilService {
           : await manager.findOneOrFail(Organization, {
               where: { id: currentOrganizationId },
               select: {
-                        slug: true,
-                        name: true,
-                        id: true,
-                      },
+                slug: true,
+                name: true,
+                id: true,
+              },
             })
         : null;
 
@@ -578,11 +578,11 @@ export class SessionUtilService {
       const organization = await manager.findOneOrFail(Organization, {
         where: { id: slug },
         select: {
-                  id: true,
-                  slug: true,
-                  name: true,
-                  status: true,
-                },
+          id: true,
+          slug: true,
+          name: true,
+          status: true,
+        },
       });
       if (organization && organization.status !== WORKSPACE_STATUS.ACTIVE)
         throw new BadRequestException('Organization is Archived');

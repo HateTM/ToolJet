@@ -403,9 +403,9 @@ export class AppImportExportService {
         const branch = await manager.findOne(WorkspaceBranch, {
           where: { id: branchId },
           select: {
-                    id: true,
-                    isDefault: true,
-                  },
+            id: true,
+            isDefault: true,
+          },
         });
         if (branch && !branch.isDefault) {
           queryAppVersions
@@ -802,8 +802,8 @@ export class AppImportExportService {
     const defaultBranch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId: user.organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
 
     const existingModules =
@@ -897,9 +897,9 @@ export class AppImportExportService {
         ? await manager.findOne(WorkspaceBranch, {
             where: { id: branchId },
             select: {
-                      id: true,
-                      isDefault: true,
-                    },
+              id: true,
+              isDefault: true,
+            },
           })
         : null;
     const shouldHydrateBranchStub = !!targetBranch && !targetBranch.isDefault;
@@ -1045,8 +1045,8 @@ export class AppImportExportService {
       const existingRows = await manager.find(AppVersion, {
         where: uniqueAppIds.map((appId) => ({ appId, branchId: stubBranchId })),
         select: {
-                  appId: true,
-                },
+          appId: true,
+        },
       });
       const alreadyOnBranch = new Set(existingRows.map((r) => r.appId));
 
@@ -1394,9 +1394,9 @@ export class AppImportExportService {
         id: In(appVersionIds),
       },
       select: {
-                id: true,
-                globalSettings: true,
-              },
+        id: true,
+        globalSettings: true,
+      },
     });
     for (const appVersion of newAppVersions) {
       if (appVersion.globalSettings) {
@@ -1431,8 +1431,8 @@ export class AppImportExportService {
         const defaultBranch = await manager.findOne(WorkspaceBranch, {
           where: { organizationId: user?.organizationId, isDefault: true },
           select: {
-                    id: true,
-                  },
+            id: true,
+          },
         });
         if (!defaultBranch) {
           const conflictingNameVersion = await manager
@@ -3065,8 +3065,8 @@ export class AppImportExportService {
       const defaultBranch = await manager.findOne(WorkspaceBranch, {
         where: { organizationId, isDefault: true },
         select: {
-                  id: true,
-                },
+          id: true,
+        },
       });
       if (!defaultBranch) return;
       targetBranchId = defaultBranch.id;
@@ -3358,8 +3358,8 @@ export class AppImportExportService {
     const organization: Organization = await manager.findOne(Organization, {
       where: { id: user?.organizationId },
       relations: {
-                   appEnvironments: true,
-                 },
+        appEnvironments: true,
+      },
     });
     let currentEnvironmentId: string;
 
@@ -3383,10 +3383,10 @@ export class AppImportExportService {
       const targetBranch = await manager.findOne(WorkspaceBranch, {
         where: { id: branchId },
         select: {
-                  id: true,
-                  isDefault: true,
-                  name: true,
-                },
+          id: true,
+          isDefault: true,
+          name: true,
+        },
       });
       isSubBranch = !!targetBranch && !targetBranch.isDefault;
       if (isSubBranch) targetBranchName = targetBranch.name;
@@ -3754,8 +3754,8 @@ export class AppImportExportService {
     const organization: Organization = await manager.findOne(Organization, {
       where: { id: user?.organizationId },
       relations: {
-                   appEnvironments: true,
-                 },
+        appEnvironments: true,
+      },
     });
     envIdArray = [...organization.appEnvironments.map((env) => env.id)];
 
@@ -4117,8 +4117,8 @@ export class AppImportExportService {
           ...(organizationId ? { organizationId } : {}),
         },
         relations: {
-                     appVersions: true,
-                   },
+          appVersions: true,
+        },
       })) as App;
 
       if (!moduleApp) {
@@ -4827,10 +4827,10 @@ const applyPageSettingsMigration = async (manager: EntityManager, appVersionIds:
       id: In(appVersionIds),
     },
     select: {
-              id: true,
-              pageSettings: true,
-              globalSettings: true,
-            },
+      id: true,
+      pageSettings: true,
+      globalSettings: true,
+    },
   });
 
   for (const version of appVersions) {

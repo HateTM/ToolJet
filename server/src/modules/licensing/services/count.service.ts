@@ -261,8 +261,8 @@ export class LicenseCountsService implements ILicenseCountsService {
 
     const users = await manager.find(User, {
       select: {
-                id: true,
-              },
+        id: true,
+      },
       where: {
         status: Not(USER_STATUS.ARCHIVED),
         organizationUsers: {
@@ -276,11 +276,11 @@ export class LicenseCountsService implements ILicenseCountsService {
         },
       },
       relations: {
-                   organizationUsers: true,
-                   userPermissions: {
-                     organization: true,
-                   },
-                 },
+        organizationUsers: true,
+        userPermissions: {
+          organization: true,
+        },
+      },
     });
 
     // Extract unique user IDs
@@ -298,8 +298,8 @@ export class LicenseCountsService implements ILicenseCountsService {
           },
         },
         relations: {
-                     organization: true,
-                   },
+          organization: true,
+        },
       });
     } else {
       return manager.count(App, { where: { type: APP_TYPES.FRONT_END, organizationId } });

@@ -35,12 +35,12 @@ export class MigrationProgress {
 export const updateCurrentEnvironmentId = async (manager: EntityManager, migrationName = '') => {
   const organizations = await manager.find(Organization, {
     select: {
-              id: true,
-              appEnvironments: true,
-            },
+      id: true,
+      appEnvironments: true,
+    },
     relations: {
-                 appEnvironments: true,
-               },
+      appEnvironments: true,
+    },
   });
 
   const migrationProgress = new MigrationProgress(migrationName, organizations.length);

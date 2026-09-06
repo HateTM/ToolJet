@@ -178,10 +178,10 @@ export class DataQueriesService implements IDataQueriesService {
         const existing = await manager.findOne(DataQuery, {
           where: { id: dataQueryId },
           select: {
-                    id: true,
-                    appVersionId: true,
-                    name: true,
-                  },
+            id: true,
+            appVersionId: true,
+            name: true,
+          },
         });
         if (existing && existing.name !== name) {
           await this.assertUniqueQueryName(manager, existing.appVersionId, name, dataQueryId);
@@ -218,8 +218,8 @@ export class DataQueriesService implements IDataQueriesService {
         await this.dataQueryRepository.findOneOrFail({
           where: { id, dataSource: { organizationId: user.organizationId } },
           relations: {
-                       dataSource: true,
-                     },
+            dataSource: true,
+          },
         });
         await this.dataQueryRepository.updateOne(id, { options }, manager);
       }

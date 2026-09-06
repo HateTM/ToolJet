@@ -24,8 +24,8 @@ export class CustomDomainRepository extends Repository<CustomDomain> {
     return this.findOne({
       where: { domain: domain.toLowerCase(), status: 'active' },
       relations: {
-                   organization: true,
-                 },
+        organization: true,
+      },
     });
   }
 

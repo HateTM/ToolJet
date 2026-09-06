@@ -176,8 +176,13 @@ export async function resolveModuleRef(
     if (branchlessForName) return branchlessForName;
     if (!isGitSyncEnabled) {
       const branchlessDraft = await manager.findOne(AppVersion, {
-        where: { appId: moduleApp.id, name: versionName, branchId: IsNull(),
-                 versionType: AppVersionType.VERSION, isStub: false },
+        where: {
+          appId: moduleApp.id,
+          name: versionName,
+          branchId: IsNull(),
+          versionType: AppVersionType.VERSION,
+          isStub: false,
+        },
       });
       if (branchlessDraft) return branchlessDraft;
     }
@@ -260,9 +265,9 @@ export async function reconcileModuleViewerPinsFromDefault(
   const featureVersion = await manager.findOne(AppVersion, {
     where: { id: featureBranchVersionId },
     select: {
-              id: true,
-              appId: true,
-            },
+      id: true,
+      appId: true,
+    },
   });
   if (!featureVersion) return;
 
@@ -346,11 +351,7 @@ export async function reconcileModuleViewerPinsFromDefault(
  *   unpinned-fallback  — pin empty/missing; same fallback path.
  *   no-row             — no module app OR no usable rows. Module unrenderable.
  */
-export type ModuleResolutionMatch =
-  | 'pin-hit'
-  | 'orphan-fallback'
-  | 'unpinned-fallback'
-  | 'no-row';
+export type ModuleResolutionMatch = 'pin-hit' | 'orphan-fallback' | 'unpinned-fallback' | 'no-row';
 
 export interface ResolvedModuleViewer {
   componentId: string;
@@ -394,9 +395,9 @@ export async function resolveAllModuleViewersForVersion(
   const parent = await manager.findOne(AppVersion, {
     where: { id: parentVersionId },
     select: {
-              id: true,
-              branchId: true,
-            },
+      id: true,
+      branchId: true,
+    },
   });
   if (!parent) return [];
 
@@ -562,9 +563,7 @@ export async function resolveAllModuleViewersForVersion(
         if (published) return pickKind(published, 'pin-hit');
       } else {
         // Non-git-sync: branchless, no status filter.
-        const byMref = candidates.find(
-          (r) => r.moduleReferenceId === pin && r.branchId === null && r.isStub === false
-        );
+        const byMref = candidates.find((r) => r.moduleReferenceId === pin && r.branchId === null && r.isStub === false);
         if (byMref) return pickKind(byMref, 'pin-hit');
       }
     } else if (pin) {
@@ -584,8 +583,7 @@ export async function resolveAllModuleViewersForVersion(
       // Clause 3: pin is a branch_name → default-branch version_type='version' row
       if (branchNameSet.has(pin) && defaultBranch) {
         const onDefault = candidates.find(
-          (r) =>
-            r.branchId === defaultBranch.id && r.versionType === AppVersionType.VERSION && r.isStub === false
+          (r) => r.branchId === defaultBranch.id && r.versionType === AppVersionType.VERSION && r.isStub === false
         );
         if (onDefault) return pickKind(onDefault, 'pin-hit');
       }

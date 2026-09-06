@@ -134,9 +134,9 @@ export class AppEnvironmentUtilService implements IAppEnvironmentUtilService {
     }
     const appDetails = await manager.findOneOrFail(App, {
       select: {
-                id: true,
-                currentVersionId: true,
-              },
+        id: true,
+        currentVersionId: true,
+      },
       where: { id: appId },
     });
     const isVersionReleased = appDetails.currentVersionId && appDetails.currentVersionId === versionId;
@@ -292,8 +292,8 @@ export class AppEnvironmentUtilService implements IAppEnvironmentUtilService {
         const environment = await manager.findOne(AppEnvironment, {
           where: { id: envId, organizationId },
           select: {
-                    name: true,
-                  },
+            name: true,
+          },
         });
         envName = environment?.name || 'unknown';
       }

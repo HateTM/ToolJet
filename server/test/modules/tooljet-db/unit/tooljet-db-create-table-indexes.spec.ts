@@ -24,9 +24,21 @@ const PG_LIKE_ERROR = {
 const TABLE_PARAMS = {
   table_name: 'orders',
   columns: [
-    { column_name: 'id', data_type: 'serial', constraints_type: { is_primary_key: true, is_not_null: true, is_unique: true } },
-    { column_name: 'customer_id', data_type: 'integer', constraints_type: { is_primary_key: false, is_not_null: true, is_unique: false } },
-    { column_name: 'status', data_type: 'character varying', constraints_type: { is_primary_key: false, is_not_null: false, is_unique: false } },
+    {
+      column_name: 'id',
+      data_type: 'serial',
+      constraints_type: { is_primary_key: true, is_not_null: true, is_unique: true },
+    },
+    {
+      column_name: 'customer_id',
+      data_type: 'integer',
+      constraints_type: { is_primary_key: false, is_not_null: true, is_unique: false },
+    },
+    {
+      column_name: 'status',
+      data_type: 'character varying',
+      constraints_type: { is_primary_key: false, is_not_null: false, is_unique: false },
+    },
   ],
 };
 

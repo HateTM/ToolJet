@@ -14,10 +14,10 @@ export class OrganizationGitSyncRepository extends Repository<OrganizationGitSyn
     return await repository.findOne({
       where: { organizationId: organizationId },
       relations: {
-                   gitSsh: true,
-                   gitHttps: true,
-                   gitLab: true,
-                 },
+        gitSsh: true,
+        gitHttps: true,
+        gitLab: true,
+      },
     });
   }
 
@@ -47,8 +47,8 @@ export class OrganizationGitSyncRepository extends Repository<OrganizationGitSyn
     const defaultBranch = await repo.findOne({
       where: { organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     return defaultBranch?.id;
   }

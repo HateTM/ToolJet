@@ -36,8 +36,8 @@ export class BackfillAiPluginManifestType1784790000000 implements MigrationInter
     const plugins = await manager.find(Plugin, {
       where: { pluginId: In(AI_PLUGIN_IDS) },
       relations: {
-                   manifestFile: true,
-                 },
+        manifestFile: true,
+      },
     });
 
     for (const plugin of plugins) {

@@ -11,7 +11,7 @@ import { VersionRepository } from '@modules/versions/repository';
 
 @Injectable()
 export class WorkflowAccessGuard implements CanActivate {
-  constructor(private readonly versionRepository: VersionRepository) { }
+  constructor(private readonly versionRepository: VersionRepository) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -47,8 +47,8 @@ export class WorkflowAccessGuard implements CanActivate {
     const appVersion = await this.versionRepository.findOne({
       where: { id: appVersionId },
       relations: {
-                   app: true,
-                 },
+        app: true,
+      },
     });
 
     if (!appVersion || appVersion.app?.type !== 'workflow') {

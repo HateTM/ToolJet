@@ -65,10 +65,10 @@ async function setupInitialGroupPermissions(
       id: In(createdGroupPermissionIds),
     },
     select: {
-              id: true,
-              group: true,
-              organizationId: true,
-            },
+      id: true,
+      group: true,
+      organizationId: true,
+    },
   });
 }
 
@@ -82,17 +82,17 @@ async function setupUserAndAppGroupPermissions(
   const organizationApps = await appRepository.find({
     where: { organizationId: organization.id },
     select: {
-              id: true,
-            },
+      id: true,
+    },
   });
 
   for (const groupPermission of createdGroupPermissions) {
     const orgUsers = await entityManager.find(OrganizationUser, {
       where: { organizationId: organization.id },
       select: {
-                id: true,
-                role: true,
-              },
+        id: true,
+        role: true,
+      },
     });
     const usersForGroup = orgUsers.filter(
       (u) => u.role == groupPermission.group || groupPermission.group == 'all_users'

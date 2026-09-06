@@ -1,5 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, EntityManager, FindManyOptions, FindOptionsSelect, ILike, In, LessThan, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  FindManyOptions,
+  FindOptionsSelect,
+  ILike,
+  In,
+  LessThan,
+  Repository,
+} from 'typeorm';
 import { User } from '@entities/user.entity';
 import { Organization } from '@entities/organization.entity';
 import { WorkspaceBanList } from '@entities/workspace_ban_list.entity';
@@ -78,9 +87,9 @@ export class OrganizationRepository extends Repository<Organization> {
 
     return await this.manager.find(Organization, {
       relations: {
-                   ssoConfigs: true,
-                   organizationUsers: true,
-                 },
+        ssoConfigs: true,
+        organizationUsers: true,
+      },
       where: conditions,
       order: {
         name: 'ASC',
@@ -182,8 +191,8 @@ export class OrganizationRepository extends Repository<Organization> {
     const [organizations, totalCount] = await m.findAndCount(Organization, {
       where: whereClause,
       relations: {
-                   organizationUsers: true,
-                 },
+        organizationUsers: true,
+      },
       order: { name: 'ASC' },
       skip: currentPage && perPageCount ? (currentPage - 1) * perPageCount : undefined,
       take: isNaN(perPageCount) ? undefined : perPageCount,

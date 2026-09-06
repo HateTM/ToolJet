@@ -7,7 +7,10 @@ import { PAGE_PERMISSION_TYPE } from '../constants';
 
 @Injectable()
 export class QueryPermissionsRepository extends Repository<QueryPermission> {
-  constructor(private dataSource: DataSource, private readonly queryUsersRepository: QueryUsersRepository) {
+  constructor(
+    private dataSource: DataSource,
+    private readonly queryUsersRepository: QueryUsersRepository
+  ) {
     super(QueryPermission, dataSource.createEntityManager());
   }
 
@@ -16,11 +19,11 @@ export class QueryPermissionsRepository extends Repository<QueryPermission> {
       const queryPermissions = await manager.find(QueryPermission, {
         where: { queryId },
         relations: {
-                     users: {
-                       user: true,
-                       permissionGroup: true,
-                     },
-                   },
+          users: {
+            user: true,
+            permissionGroup: true,
+          },
+        },
       });
 
       return queryPermissions.map((permission) => {

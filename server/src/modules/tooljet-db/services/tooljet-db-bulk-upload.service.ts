@@ -36,8 +36,8 @@ export class TooljetDbBulkUploadService {
   async perform(organizationId: string, tableName: string, fileBuffer: Buffer) {
     const internalTable = await this.manager.findOne(InternalTable, {
       select: {
-                id: true,
-              },
+        id: true,
+      },
       where: { organizationId, tableName },
     });
 

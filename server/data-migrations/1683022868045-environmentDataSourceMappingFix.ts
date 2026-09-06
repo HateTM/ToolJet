@@ -19,8 +19,8 @@ export class environmentDataSourceMappingFix1683022868045 implements MigrationIn
     const entityManager = queryRunner.manager;
     const organizations = await entityManager.find(Organization, {
       relations: {
-                   appEnvironments: true,
-                 },
+        appEnvironments: true,
+      },
     });
     if (organizations?.length === 0) {
       console.log('No organizations found, skipping migration.');
@@ -50,8 +50,8 @@ export class environmentDataSourceMappingFix1683022868045 implements MigrationIn
             const envOption = await entityManager.find(DataSourceOptions, {
               where: { environmentId: nonDefaultEnv.id },
               select: {
-                        dataSourceId: true,
-                      },
+                dataSourceId: true,
+              },
             });
 
             const envOptionDS = envOption.map((options) => options.dataSourceId);

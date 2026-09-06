@@ -12,9 +12,9 @@ export class UserSessionRepository extends Repository<UserSessions> {
     return this.findOne({
       where: { id: sessionId },
       relations: {
-                   user: true,
-                   pat: true,
-                 },
+        user: true,
+        pat: true,
+      },
     });
   }
 }

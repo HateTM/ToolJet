@@ -37,7 +37,7 @@ export class WorkspaceBranchService implements IWorkspaceBranchService {
     organizationId: string,
     user?: User,
     sourceBranch?: string,
-    branchId?: string,
+    branchId?: string
   ): Promise<{ success: boolean }> {
     throw new NotFoundException();
   }
@@ -49,7 +49,7 @@ export class WorkspaceBranchService implements IWorkspaceBranchService {
     branchId?: string,
     tagSha?: string,
     tagName?: string,
-    tagDescription?: string,
+    tagDescription?: string
   ): Promise<{ success: boolean; draftVersionId: string | null }> {
     throw new NotFoundException();
   }
@@ -61,7 +61,7 @@ export class WorkspaceBranchService implements IWorkspaceBranchService {
     branchId?: string,
     tagSha?: string,
     tagName?: string,
-    tagDescription?: string,
+    tagDescription?: string
   ): Promise<{ success: boolean; draftVersionId: string | null }> {
     throw new NotFoundException();
   }

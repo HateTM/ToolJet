@@ -16,9 +16,9 @@ export class BackfillDataSourcesAndQueriesForAppVersions1639734070615 implements
     const entityManager = queryRunner.manager;
     const organizations = await entityManager.find(Organization, {
       select: {
-                id: true,
-                name: true,
-              },
+        id: true,
+        name: true,
+      },
     });
 
     if (organizations.length === 0) {

@@ -10,9 +10,9 @@ export class MigrateEnvironmentsUnderWorkspace1675844361118 implements Migration
 
     const organizations = await entityManager.find(Organization, {
       select: {
-                id: true,
-                name: true,
-              },
+        id: true,
+        name: true,
+      },
     });
 
     //Insert new environments under workspace

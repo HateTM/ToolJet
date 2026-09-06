@@ -109,7 +109,7 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
           [user.id],
           manager
         );
-        for (const addGroup of (addGroups ?? [])) {
+        for (const addGroup of addGroups ?? []) {
           await this.groupPermissionsUtilService.addUsersToGroup(
             { allowRoleChange: false, userIds: [user.id], groupId: addGroup, endUsers },
             organizationId,
@@ -235,9 +235,10 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
       const userType = (await manager.count(User)) === 0 ? USER_TYPE.INSTANCE : USER_TYPE.WORKSPACE;
       const isCloud = getTooljetEdition() === 'cloud';
       const linkExpiryMinutes = parseInt(process.env.LINK_EXPIRY_MINUTES || '0', 10);
-      const invitationTokenExpiry = (isCloud && !isNaN(linkExpiryMinutes) && linkExpiryMinutes > 0)
-        ? new Date(Date.now() + linkExpiryMinutes * 60 * 1000)
-        : null;
+      const invitationTokenExpiry =
+        isCloud && !isNaN(linkExpiryMinutes) && linkExpiryMinutes > 0
+          ? new Date(Date.now() + linkExpiryMinutes * 60 * 1000)
+          : null;
 
       return await this.userRepository.createOrUpdate(
         {
@@ -360,10 +361,10 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
   async personalWorkspaces(userId: string): Promise<OrganizationUser[]> {
     const personalWorkspaces: Partial<OrganizationUser[]> = await this.organizationUsersRepository.find({
       select: {
-                organizationId: true,
-                invitationToken: true,
-                id: true,
-              },
+        organizationId: true,
+        invitationToken: true,
+        id: true,
+      },
       where: { userId },
     });
     const personalWorkspaceArray: OrganizationUser[] = [];
@@ -387,8 +388,8 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
     return await this.organizationUsersRepository.findOneOrFail({
       where: { invitationToken: token },
       relations: {
-                   user: true,
-                 },
+        user: true,
+      },
     });
   }
 
@@ -540,9 +541,9 @@ export class OrganizationUsersUtilService implements IOrganizationUsersUtilServi
         const orgGroupPermissions = await this.groupPermissionsRepository.find({
           where: groupQuery,
           select: {
-                    id: true,
-                    name: true,
-                  },
+            id: true,
+            name: true,
+          },
         });
         groupsArray.push(...orgGroupPermissions.map((group) => group.name));
       }

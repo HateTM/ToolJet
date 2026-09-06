@@ -217,18 +217,18 @@ export class VersionUtilService implements IVersionUtilService {
     const parentApp = await manager.findOne(App, {
       where: { id: appVersion.appId },
       select: {
-                id: true,
-                organizationId: true,
-                type: true,
-              },
+        id: true,
+        organizationId: true,
+        type: true,
+      },
     });
     if (!parentApp?.organizationId) return;
 
     const defaultBranch = await manager.findOne(WorkspaceBranch, {
       where: { organizationId: parentApp.organizationId, isDefault: true },
       select: {
-                id: true,
-              },
+        id: true,
+      },
     });
     if (!defaultBranch || defaultBranch.id !== appVersion.branchId) return;
 
@@ -239,10 +239,10 @@ export class VersionUtilService implements IVersionUtilService {
     const sourceVersion = await manager.findOne(AppVersion, {
       where: { appId: appVersion.appId },
       relations: {
-                   dataSources: {
-                     dataQueries: true,
-                   },
-                 },
+        dataSources: {
+          dataQueries: true,
+        },
+      },
       order: { updatedAt: 'DESC' },
     });
 
@@ -377,10 +377,10 @@ export class VersionUtilService implements IVersionUtilService {
       const versionFrom = await manager.findOneOrFail(AppVersion, {
         where: { id: versionFromId, appId: app.id },
         relations: {
-                     dataSources: {
-                       dataQueries: true,
-                     },
-                   },
+          dataSources: {
+            dataQueries: true,
+          },
+        },
       });
 
       const firstPriorityEnv = await this.appEnvironmentUtilService.get(organizationId, null, true, manager);

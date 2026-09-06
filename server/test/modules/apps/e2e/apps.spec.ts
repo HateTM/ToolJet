@@ -454,9 +454,7 @@ describe('AppsController', () => {
 
           // With the granular permission system, the developer only sees apps they own.
           // No explicit group permissions were granted on publicApp, appNotInFolder, or appInFolder.
-          expect(new Set(appNames)).toEqual(
-            new Set([ownedApp.name])
-          );
+          expect(new Set(appNames)).toEqual(new Set([ownedApp.name]));
           expect(meta).toEqual({
             total_pages: 1,
             total_count: 1,
@@ -546,11 +544,7 @@ describe('AppsController', () => {
           expect(response.statusCode).toBe(200);
           await logout(app, adminUserData['tokenCookie'], adminUserData.user.defaultOrganizationId);
           await logout(app, developerUserData['tokenCookie'], developerUserData.user.defaultOrganizationId);
-          await logout(
-            app,
-            anotherOrgAdminUserData['tokenCookie'],
-            anotherOrgAdminUserData.user.defaultOrganizationId
-          );
+          await logout(app, anotherOrgAdminUserData['tokenCookie'], anotherOrgAdminUserData.user.defaultOrganizationId);
         });
       });
 
@@ -1631,9 +1625,13 @@ describe('AppsController', () => {
             const loggedUser = await login(app);
             adminUserData['tokenCookie'] = loggedUser.tokenCookie;
 
-            const { application, appVersion: initialVersion } = await createAppWithDependencies(app, adminUserData.user, {
-              dsOptions: [{ key: 'foo', value: 'bar', encrypted: 'true' }],
-            });
+            const { application, appVersion: initialVersion } = await createAppWithDependencies(
+              app,
+              adminUserData.user,
+              {
+                dsOptions: [{ key: 'foo', value: 'bar', encrypted: 'true' }],
+              }
+            );
 
             let credentials = await findEntities(Credential);
             expect(credentials.length).toBeGreaterThan(0);
@@ -1711,11 +1709,7 @@ describe('AppsController', () => {
             .set('Cookie', anotherOrgAdminUserData['tokenCookie']);
 
           expect(response.statusCode).toBe(404);
-          await logout(
-            app,
-            anotherOrgAdminUserData['tokenCookie'],
-            anotherOrgAdminUserData.user.defaultOrganizationId
-          );
+          await logout(app, anotherOrgAdminUserData['tokenCookie'], anotherOrgAdminUserData.user.defaultOrganizationId);
         });
 
         it('should able to delete app versions if user is a super admin', async () => {
@@ -1965,11 +1959,7 @@ describe('AppsController', () => {
             .set('Cookie', anotherOrgAdminUserData['tokenCookie']);
 
           expect(response.statusCode).toBe(404);
-          await logout(
-            app,
-            anotherOrgAdminUserData['tokenCookie'],
-            anotherOrgAdminUserData.user.defaultOrganizationId
-          );
+          await logout(app, anotherOrgAdminUserData['tokenCookie'], anotherOrgAdminUserData.user.defaultOrganizationId);
         });
       });
 
@@ -2201,11 +2191,7 @@ describe('AppsController', () => {
             });
 
           expect(response.statusCode).toBe(404);
-          await logout(
-            app,
-            anotherOrgAdminUserData['tokenCookie'],
-            anotherOrgAdminUserData.user.defaultOrganizationId
-          );
+          await logout(app, anotherOrgAdminUserData['tokenCookie'], anotherOrgAdminUserData.user.defaultOrganizationId);
         });
 
         it('should be able to release the app if the version is promoted to production', async () => {

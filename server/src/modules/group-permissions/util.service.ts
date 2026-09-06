@@ -60,28 +60,28 @@ export class GroupPermissionsUtilService implements IGroupPermissionsUtilService
     if (Object.values(USER_ROLE).includes(createGroupPermissionDto.name as USER_ROLE))
       throw new BadRequestException(ERROR_HANDLER.RESERVED_KEYWORDS_FOR_GROUP_NAME);
   }
-    async checkIfGroupHasBuilderGranularPermissions(
-      groupId: string,
-      organizationId: string,
-      manager?: EntityManager
-    ): Promise<boolean> {
-      const allGranularPermissions = await this.groupPermissionsRepository.getAllGranularPermissions(
-        { groupId },
-        organizationId,
-        manager
-      );
+  async checkIfGroupHasBuilderGranularPermissions(
+    groupId: string,
+    organizationId: string,
+    manager?: EntityManager
+  ): Promise<boolean> {
+    const allGranularPermissions = await this.groupPermissionsRepository.getAllGranularPermissions(
+      { groupId },
+      organizationId,
+      manager
+    );
 
-      for (const granularPerm of allGranularPermissions) {
-        if (granularPerm.type === ResourceType.APP || granularPerm.type === ResourceType.WORKFLOWS) {
-          if (granularPerm.appsGroupPermissions?.canEdit) return true;
-        }
-        if (granularPerm.type === ResourceType.FOLDER) {
-          const fp = granularPerm.foldersGroupPermissions;
-          if (fp?.canEditFolder || fp?.canEditApps) return true;
-        }
+    for (const granularPerm of allGranularPermissions) {
+      if (granularPerm.type === ResourceType.APP || granularPerm.type === ResourceType.WORKFLOWS) {
+        if (granularPerm.appsGroupPermissions?.canEdit) return true;
       }
-      return false;
+      if (granularPerm.type === ResourceType.FOLDER) {
+        const fp = granularPerm.foldersGroupPermissions;
+        if (fp?.canEditFolder || fp?.canEditApps) return true;
+      }
     }
+    return false;
+  }
 
   validateAddGroupUserOperation(group: GroupPermissions) {
     if (!group || Object.keys(group)?.length === 0) throw new BadRequestException(ERROR_HANDLER.GROUP_NOT_EXIST);
@@ -224,7 +224,11 @@ export class GroupPermissionsUtilService implements IGroupPermissionsUtilService
           CreateResourcePermissionObject<any>
         > = DEFAULT_RESOURCE_PERMISSIONS[group.name];
         for (const resource of Object.keys(groupGranularPermissions)) {
-          if (getTooljetEdition() === TOOLJET_EDITIONS.CE && (resource == ResourceType.WORKFLOWS || resource == ResourceType.MODULE)) continue;
+          if (
+            getTooljetEdition() === TOOLJET_EDITIONS.CE &&
+            (resource == ResourceType.WORKFLOWS || resource == ResourceType.MODULE)
+          )
+            continue;
           const createResourcePermissionObj: CreateResourcePermissionObject<any> = groupGranularPermissions[resource];
 
           // End users only have access to released apps by default
@@ -261,8 +265,8 @@ export class GroupPermissionsUtilService implements IGroupPermissionsUtilService
           },
         },
         relations: {
-                     group: true,
-                   },
+          group: true,
+        },
       });
 
       if (groupUsersToDelete.length > 0) {
@@ -307,7 +311,7 @@ export class GroupPermissionsUtilService implements IGroupPermissionsUtilService
         groupId,
         organizationId,
         manager
-    );
+      );
       if ((isBuilderLevel || hasBuilderEnvironments || hasBuilderGranularPermissions) && endUserRoleUsers.length) {
         // Group has builder-level permissions or environment access and end users are to be added
         if (!allowRoleChange) {
