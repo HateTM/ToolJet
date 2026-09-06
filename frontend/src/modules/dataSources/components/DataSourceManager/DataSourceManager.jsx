@@ -1221,7 +1221,7 @@ class DataSourceManagerComponent extends React.Component {
                       className={`close-btn mx-4 mt-3 ${this.props.darkMode ? 'dark' : ''}`}
                       onClick={() => this.hideModal()}
                     >
-                      <SolidIcon name="remove" width="20" fill={'var(--slate12)'} />
+                      <SolidIcon name="remove" width="20" fill={'var(--slate-12)'} />
                     </span>
                   )}
                 </div>

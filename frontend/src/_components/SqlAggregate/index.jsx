@@ -94,7 +94,7 @@ const SqlAggregateRow = React.memo(function SqlAggregateRow({
           onClick={handleRemove}
           style={{ marginTop: '-4px', borderLeft: '0px !important' }}
         >
-          <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+          <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
         </ButtonSolid>
       </div>
     </div>

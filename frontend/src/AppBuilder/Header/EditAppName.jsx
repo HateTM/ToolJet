@@ -94,7 +94,7 @@ function EditAppName() {
             disabled={isRenameDisabled}
           >
             <span
-              className="tw-font-title-large tw-truncate tw-w-full tw-block tw-text-start group-hover:tw-w-[calc(100%-24px)] tw-text-[var(--slate12)]"
+              className="tw-font-title-large tw-truncate tw-w-full tw-block tw-text-start group-hover:tw-w-[calc(100%-24px)] tw-text-[var(--slate-12)]"
               data-cy="editor-app-name-input"
             >
               {appName}

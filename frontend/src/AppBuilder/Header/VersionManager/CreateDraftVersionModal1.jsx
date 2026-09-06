@@ -192,8 +192,8 @@ const CreateDraftVersionModal1 = ({ show, onClose, appId, versions, environments
             style={{
               fontSize: '13px',
               padding: '12px',
-              backgroundColor: 'var(--indigo1)',
-              border: '1px solid var(--indigo3)',
+              backgroundColor: 'var(--indigo-1)',
+              border: '1px solid var(--indigo-3)',
               borderRadius: '6px',
               marginBottom: 0,
             }}
@@ -201,7 +201,7 @@ const CreateDraftVersionModal1 = ({ show, onClose, appId, versions, environments
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ marginRight: '8px', flexShrink: 0 }}>
               <path
                 d="M8 1C4.13438 1 1 4.13438 1 8C1 11.8656 4.13438 15 8 15C11.8656 15 15 11.8656 15 8C15 4.13438 11.8656 1 8 1ZM8.75 11.5C8.75 11.9125 8.4125 12.25 8 12.25C7.5875 12.25 7.25 11.9125 7.25 11.5V7.75C7.25 7.3375 7.5875 7 8 7C8.4125 7 8.75 7.3375 8.75 7.75V11.5ZM8 6C7.45 6 7 5.55 7 5C7 4.45 7.45 4 8 4C8.55 4 9 4.45 9 5C9 5.55 8.55 6 8 6Z"
-                fill="var(--indigo6)"
+                fill="var(--indigo-6)"
               />
             </svg>
             <span>

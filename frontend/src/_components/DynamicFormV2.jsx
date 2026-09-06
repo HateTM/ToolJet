@@ -753,7 +753,7 @@ const DynamicFormV2 = ({
               ? `${generateCypressDataCy(label)}-dropdown-label`
               : `${generateCypressDataCy(label)}-label`
           }
-          style={{ textDecoration: tooltip ? 'underline 2px dashed' : 'none', textDecorationColor: 'var(--slate8)' }}
+          style={{ textDecoration: tooltip ? 'underline 2px dashed' : 'none', textDecorationColor: 'var(--slate-8)' }}
         >
           {label}
         </label>

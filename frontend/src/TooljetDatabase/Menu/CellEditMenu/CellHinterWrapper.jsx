@@ -197,7 +197,7 @@ export const CellHinterWrapper = ({
           <div className="d-flex align-items-center">
             <span className="d-flex mx-2">
               {' '}
-              <SolidIcon name="warning" width="16px" fill={'var(--tomato9)'} />
+              <SolidIcon name="warning" width="16px" fill={'var(--tomato-9)'} />
             </span>
             <span>Invalid JSON syntax</span>
           </div>
@@ -224,7 +224,7 @@ export const CellHinterWrapper = ({
             <div className="d-flex align-items-center">
               <span className="d-flex mx-2">
                 {' '}
-                <SolidIcon name="warning" width="16px" fill={'var(--tomato9)'} />
+                <SolidIcon name="warning" width="16px" fill={'var(--tomato-9)'} />
               </span>
               <span>Invalid JSON syntax</span>
             </div>

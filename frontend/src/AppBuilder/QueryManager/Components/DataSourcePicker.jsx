@@ -227,7 +227,7 @@ function DataSourcePicker({ darkMode }) {
             onClick={handleAddClick}
             data-cy="landing-page-add-new-ds-button"
           >
-            <SolidIcon name="plus" width="16" height="16" fill="var(--indigo9)" />
+            <SolidIcon name="plus" width="16" height="16" fill="var(--indigo-9)" />
             Add
           </ButtonSolid>
         )}
@@ -254,7 +254,7 @@ function DataSourcePicker({ darkMode }) {
 const EmptyDataSourceBanner = () => (
   <div className="bg-slate3 p-3 d-flex align-items-center lh-lg mt-2 datasource-picker-empty-banner">
     <div className="me-2">
-      <Information fill="var(--slate9)" />
+      <Information fill="var(--slate-9)" />
     </div>
     <div>No Data sources have been added yet.</div>
   </div>

@@ -484,7 +484,7 @@ const JoinOn = ({
             style={{
               height: '30px',
               borderRadius: 0,
-              color: 'var(--slate9)',
+              color: 'var(--slate-9)',
             }}
             className="tj-small-btn px-2 border border-end-0 rounded-start"
           >
@@ -650,7 +650,7 @@ const JoinOn = ({
             className="px-1 rounded-0 border border-start-0 rounded-en qm-delete-btn"
             onClick={onRemove}
           >
-            <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+            <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
           </ButtonSolid>
         )}
       </Col>

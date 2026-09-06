@@ -81,9 +81,9 @@ const PreviewSettings = ({ isMobileLayout, showHeader, darkMode }) => {
           as={(props) => (
             <div
               className="released-version-no-header-mbl-preview"
-              style={{ backgroundColor: 'var(--slate5)', top: '7px', left: showHeader ? '61%' : '41%' }}
+              style={{ backgroundColor: 'var(--slate-5)', top: '7px', left: showHeader ? '61%' : '41%' }}
             >
-              <span className="preview-chip" style={{ color: 'var(--slate11)' }} data-cy="preview-chip">
+              <span className="preview-chip" style={{ color: 'var(--slate-11)' }} data-cy="preview-chip">
                 Preview
               </span>
               <span
@@ -101,7 +101,7 @@ const PreviewSettings = ({ isMobileLayout, showHeader, darkMode }) => {
             <div className="w-100 d-flex align-self-start justify-content-between">
               <Offcanvas.Title>Preview settings</Offcanvas.Title>
               <div onClick={() => togglePreviewNavbar(false)} className="cursor-pointer">
-                <Cross fill="var(--slate12)" />
+                <Cross fill="var(--slate-12)" />
               </div>
             </div>
           </Offcanvas.Header>
@@ -138,9 +138,9 @@ const PreviewSettings = ({ isMobileLayout, showHeader, darkMode }) => {
   return (
     <div
       className="released-version-no-header-mbl-preview"
-      style={{ backgroundColor: 'var(--slate5)', top: showHeader ? '' : '14px' }}
+      style={{ backgroundColor: 'var(--slate-5)', top: showHeader ? '' : '14px' }}
     >
-      <span className="preview-chip" style={{ color: 'var(--slate12)' }} data-cy="preview-chip">
+      <span className="preview-chip" style={{ color: 'var(--slate-12)' }} data-cy="preview-chip">
         Preview
       </span>
       <OverlayTrigger rootClose trigger="click" placement="bottom" overlay={renderOverlay()}>

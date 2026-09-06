@@ -613,7 +613,7 @@ const DynamicSelector = ({
               <div
                 style={{
                   padding: '6px 12px',
-                  borderTop: '1px solid var(--slate5)',
+                  borderTop: '1px solid var(--slate-5)',
                   display: 'flex',
                   justifyContent: 'center',
                   backgroundColor: localStorage.getItem('darkMode') === 'true' ? 'rgb(31,40,55)' : 'white',
@@ -637,7 +637,7 @@ const DynamicSelector = ({
                     fontWeight: 500,
                     color: 'var(--primary-color)',
                     background: 'transparent',
-                    border: '1px solid var(--slate7)',
+                    border: '1px solid var(--slate-7)',
                     borderRadius: '6px',
                     cursor: loading ? 'not-allowed' : 'pointer',
                     opacity: loading ? 0.7 : 1,
@@ -661,7 +661,7 @@ const DynamicSelector = ({
         ...provided,
         minHeight: 32,
         height: 'auto',
-        border: '1px solid var(--slate7)',
+        border: '1px solid var(--slate-7)',
         boxShadow: 'none',
         backgroundColor: state.isDisabled
           ? darkMode

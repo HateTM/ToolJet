@@ -32,13 +32,13 @@
     }
 
     &:disabled {
-        background: var(--slate6) !important;
-        color: var(--slate9) !important;
+        background: var(--slate-6) !important;
+        color: var(--slate-9) !important;
         cursor: auto !important;
 
         svg {
             path {
-                fill: var(--slate9) !important;
+                fill: var(--slate-9) !important;
             }
         }
     }
@@ -81,28 +81,28 @@
 .tj-primary-btn {
     border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.00);
-    background: var(--indigo9);
+    background: var(--indigo-9);
     box-shadow: 0px 2px 0px 0px rgba(0, 0, 0, 0.04);
     color: #FDFDFE;
 
     &:hover {
         border: 1px solid rgba(255, 255, 255, 0.00);
-        background: var(--indigo10);
+        background: var(--indigo-10);
         color: #FDFDFE;
     }
 
     &:focus-visible {
         border: 1px solid rgba(255, 255, 255, 0.00);
         outline: none;
-        background: var(--indigo10);
+        background: var(--indigo-10);
     }
 
 
     &:active {
-        background: var(--slate1);
+        background: var(--slate-1);
         border: 1px solid rgba(255, 255, 255, 0.00);
-        box-shadow: 0px 0px 0px 4px var(--indigo6);
-        background: var(--indigo9);
+        box-shadow: 0px 0px 0px 4px var(--indigo-6);
+        background: var(--indigo-9);
     }
 
     &:disabled {
@@ -141,98 +141,98 @@
 }
 
 .tj-secondary-btn {
-    color: var(--indigo9) !important;
+    color: var(--indigo-9) !important;
     border: 1px solid rgba(255, 255, 255, 0.00) !important;
-    background: var(--indigo3, #F0F4FF) !important;
+    background: var(--indigo-3, #F0F4FF) !important;
 
     &:hover {
-        color: var(--indigo10) !important;
+        color: var(--indigo-10) !important;
         border: 1px solid rgba(255, 255, 255, 0.00) !important;
-        background: var(--indigo4, #E6EDFE) !important;
+        background: var(--indigo-4, #E6EDFE) !important;
     }
 
     &:active {
-        color: var(--indigo9) !important;
+        color: var(--indigo-9) !important;
         box-shadow: none;
         border-radius: 6px;
         border: 1px solid rgba(255, 255, 255, 0.00) !important;
-        background: var(--indigo5, #D9E2FC) !important;
+        background: var(--indigo-5, #D9E2FC) !important;
     }
 
     &:focus-visible {
-        color: var(--indigo10) !important;
+        color: var(--indigo-10) !important;
         outline: none;
         border: 1px solid rgba(255, 255, 255, 0.00) !important;
-        background: var(--indigo3, #F0F4FF) !important;
+        background: var(--indigo-3, #F0F4FF) !important;
 
         /* Focus rings/Indigo/light */
-        box-shadow: 0px 0px 0px 4px var(--indigo6);
+        box-shadow: 0px 0px 0px 4px var(--indigo-6);
     }
 }
 
 .tj-tertiary-btn {
-    color: var(--slate12);
-    border: 1px solid var(--slate7) !important;
-    background: var(--slate1) !important;
+    color: var(--slate-12);
+    border: 1px solid var(--slate-7) !important;
+    background: var(--slate-1) !important;
 
     &:hover {
-        color: var(--slate11) !important;
-        border: 1px solid var(--slate7, #D7DBDF) !important;
-        background: var(--slate4, #ECEEF0) !important;
+        color: var(--slate-11) !important;
+        border: 1px solid var(--slate-7, #D7DBDF) !important;
+        background: var(--slate-4, #ECEEF0) !important;
     }
 
     &:active,
     &:focus,
     &.always-active-btn {
-        border: 1px solid var(--slate7, #D7DBDF) !important;
-        background: var(--slate5) !important;
-        color: var(--slate12);
-        border: 1px solid var(--slate7);
+        border: 1px solid var(--slate-7, #D7DBDF) !important;
+        background: var(--slate-5) !important;
+        color: var(--slate-12);
+        border: 1px solid var(--slate-7);
     }
 
 
     &:active {
-        background: var(--slate1);
+        background: var(--slate-1);
         box-shadow: none;
-        color: var(--slate12) !important;
+        color: var(--slate-12) !important;
     }
 
     &:focus-visible {
-        background: var(--slate1);
-        color: var(--slate11);
-        outline: 1px solid var(--slate8);
-        box-shadow: 0px 0px 0px 4px var(--slate6);
+        background: var(--slate-1);
+        color: var(--slate-11);
+        outline: 1px solid var(--slate-8);
+        box-shadow: 0px 0px 0px 4px var(--slate-6);
         outline: none;
-        border: 1px solid var(--slate8, #C1C8CD) !important;
-        background: var(--slate1, #FBFCFD) !important;
+        border: 1px solid var(--slate-8, #C1C8CD) !important;
+        background: var(--slate-1, #FBFCFD) !important;
     }
 }
 
 
 .tj-ghost-blue-btn {
-    color: var(--indigo9);
+    color: var(--indigo-9);
     border: none;
     background: transparent;
 
     &:hover {
-        color: var(--indigo10);
-        background-color: var(--indigo4);
+        color: var(--indigo-10);
+        background-color: var(--indigo-4);
     }
 
     &:active {
-        color: var(--indigo8);
+        color: var(--indigo-8);
     }
 
     &:focus-visible {
-        color: var(--indigo10);
+        color: var(--indigo-10);
         background: var(--base);
         border: none;
         outline: none;
-        box-shadow: 0px 0px 0px 4px var(--indigo6);
+        box-shadow: 0px 0px 0px 4px var(--indigo-6);
     }
 
     &:focus {
-        box-shadow: 0px 0px 0px 4px var(--indigo6);
+        box-shadow: 0px 0px 0px 4px var(--indigo-6);
     }
 
     &:focus:not(:focus-visible) {
@@ -241,36 +241,36 @@
 }
 
 .tj-ghost-black-btn {
-    color: var(--slate12);
+    color: var(--slate-12);
     border: none;
     background: transparent;
 
     &:hover {
-        background: var(--slate4, #ECEEF0) !important;
-        color: var(--slate11);
+        background: var(--slate-4, #ECEEF0) !important;
+        color: var(--slate-11);
     }
 
     &:focus-visible {
-        color: var(--slate11) !important;
-        box-shadow: 0px 0px 0px 4px var(--slate6) !important;
+        color: var(--slate-11) !important;
+        box-shadow: 0px 0px 0px 4px var(--slate-6) !important;
         outline: none;
         border: 1px solid rgba(255, 255, 255, 0.00) !important;
-        background: var(--slate1, #FBFCFD) !important;
+        background: var(--slate-1, #FBFCFD) !important;
     }
 
     &:active,
     &:focus,
     &.always-active-btn {
-        color: var(--slate12) !important;
+        color: var(--slate-12) !important;
         border: 1px solid rgba(255, 255, 255, 0.00) !important;
-        background: var(--slate5, #E6E8EB) !important;
+        background: var(--slate-5, #E6E8EB) !important;
         box-shadow: none !important;
     }
 
     &:disabled {
         background: rgba(255, 255, 255, 0.00) !important;
         border: 1px solid rgba(255, 255, 255, 0.00) !important;
-        color: var(--slate8) !important;
+        color: var(--slate-8) !important;
     }
 }
 
@@ -282,69 +282,69 @@
     color: #FFFCFC;
 
     &:hover {
-        background: var(--tomato10);
+        background: var(--tomato-10);
     }
 
     &:active {
-        background: var(--tomato11);
+        background: var(--tomato-11);
         color: #F0F4FF
     }
 
     &:focus-visible {
-        background: var(--tomato10);
+        background: var(--tomato-10);
         border: none;
-        box-shadow: 0px 0px 0px 4px var(--tomato6);
+        box-shadow: 0px 0px 0px 4px var(--tomato-6);
         outline: none;
     }
 
 }
 
 .tj-secondary-danger-btn {
-    background: var(--tomato3);
+    background: var(--tomato-3);
     border: none;
-    color: var(--tomato9);
+    color: var(--tomato-9);
 
     &:hover {
-        background: var(--tomato4);
-        color: var(--tomato10);
+        background: var(--tomato-4);
+        color: var(--tomato-10);
     }
 
     &:active {
-        background: var(--tomato5);
-        color: var(--tomato8);
+        background: var(--tomato-5);
+        color: var(--tomato-8);
     }
 
     &:focus-visible {
-        background: var(--tomato4);
+        background: var(--tomato-4);
         border: none;
-        box-shadow: 0px 0px 0px 4px var(--tomato6);
-        color: var(--tomato8);
+        box-shadow: 0px 0px 0px 4px var(--tomato-6);
+        color: var(--tomato-8);
         outline: none;
     }
 }
 
 .tj-tertiary-danger-btn {
     background: var(--base);
-    border: 1px solid var(--tomato7);
-    color: var(--tomato9);
+    border: 1px solid var(--tomato-7);
+    color: var(--tomato-9);
 
     &:hover {
         background: var(--base);
-        color: var(--tomato10);
-        border: 1px solid var(--tomato5);
+        color: var(--tomato-10);
+        border: 1px solid var(--tomato-5);
     }
 
     &:active {
         background: var(--base);
-        color: var(--tomato11);
-        border: 1px solid var(--tomato11);
+        color: var(--tomato-11);
+        border: 1px solid var(--tomato-11);
     }
 
     &:focus-visible {
         background: var(--base);
-        outline: 1px solid var(--tomato5);
-        box-shadow: 0px 0px 0px 4px var(--tomato6);
-        color: var(--tomato10);
+        outline: 1px solid var(--tomato-5);
+        box-shadow: 0px 0px 0px 4px var(--tomato-6);
+        color: var(--tomato-10);
         outline: none;
     }
 
@@ -352,28 +352,28 @@
 
 
 .tj-ghost-danger-btn {
-    color: var(--tomato9);
+    color: var(--tomato-9);
     background: transparent;
     border: none;
 
     &:hover {
-        color: var(--tomato10);
+        color: var(--tomato-10);
     }
 
     &:active {
-        color: var(--tomato8);
+        color: var(--tomato-8);
     }
 
     &:focus-visible {
         border: none;
-        box-shadow: 0px 0px 0px 4px var(--tomato6);
+        box-shadow: 0px 0px 0px 4px var(--tomato-6);
         outline: none;
     }
 }
 
 .tj-disabled-btn {
-    background: var(--slate3) !important;
-    color: var(--slate8) !important;
+    background: var(--slate-3) !important;
+    color: var(--slate-8) !important;
     border: none !important;
 }
 
@@ -384,12 +384,12 @@
         color: #FDFDFE;
 
         &:hover {
-            background: var(--indigo10);
+            background: var(--indigo-10);
             border: 1px solid #FFFFFF
         }
 
         &:focus-visible {
-            box-shadow: 0px 0px 0px 4px var(--indigo6);
+            box-shadow: 0px 0px 0px 4px var(--indigo-6);
             border: 1px solid #FFFFFF;
             outline: none;
         }
@@ -406,24 +406,24 @@
     /* // Danger-variants--- */
 
     .tj-primary-danger-btn {
-        background: var(--tomato9);
+        background: var(--tomato-9);
         border: none;
         color: #FFFCFC;
 
         &:hover {
-            background: var(--tomato10);
+            background: var(--tomato-10);
             color: #FFFCFC;
         }
 
         &:active {
-            background: var(--tomato11);
+            background: var(--tomato-11);
             color: #F0F4FF;
         }
 
         &:focus-visible {
-            background: var(--tomato10);
+            background: var(--tomato-10);
             border: none;
-            box-shadow: 0px 0px 0px 4px var(--tomato6);
+            box-shadow: 0px 0px 0px 4px var(--tomato-6);
             outline: none;
             color: #FFFCFC;
         }

@@ -105,7 +105,7 @@ function Logs({ logProps, idx }) {
               </div>
               {logProps?.type === 'Custom Log' && (
                 <div className="error-target-custom-log cursor-pointer">
-                  <SolidIcon name="code" fill={`var(--purple11)`} width="15" /> Custom Log
+                  <SolidIcon name="code" fill={`var(--purple-11)`} width="15" /> Custom Log
                 </div>
               )}
               <div

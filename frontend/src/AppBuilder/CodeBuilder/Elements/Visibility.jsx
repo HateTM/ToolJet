@@ -15,7 +15,7 @@ export const Visibility = ({ onVisibilityChange, styleDefinition, iconVisibility
         onVisibilityChange(`{{${!iconVisibility}}}`);
       }}
     >
-      <SolidIcon name={iconVisibility ? 'eye1' : 'eyedisable'} width="20" fill={'var(--slate8)'} />
+      <SolidIcon name={iconVisibility ? 'eye1' : 'eyedisable'} width="20" fill={'var(--slate-8)'} />
     </div>
   );
 };

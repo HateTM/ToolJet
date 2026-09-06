@@ -42,7 +42,7 @@ const selectCustomStyles = (width) => {
         ...base,
         border: state.isFocused ? '1px solid #3E63DD' : '1px solid #cccccc',
         boxShadow: state.isFocused ? '0px 0px 6px #3E63DD' : 'none',
-        backgroundColor: state.isFocused ? 'var(--indigo2)' : 'var(--base)',
+        backgroundColor: state.isFocused ? 'var(--indigo-2)' : 'var(--base)',
         '&:hover': {
           border: '1px solid #3E63DD !important',
           boxShadow: '0px 0px 6px #3E63DD',
@@ -50,7 +50,7 @@ const selectCustomStyles = (width) => {
         borderRadius: '6px',
         width: width,
         minHeight: '32px',
-        color: 'var(--slate12)',
+        color: 'var(--slate-12)',
       };
     },
 
@@ -73,7 +73,7 @@ const selectCustomStyles = (width) => {
     singleValue: (provided) => ({
       ...provided,
       paddingLeft: '0px',
-      color: 'var(--slate12)',
+      color: 'var(--slate-12)',
     }),
   };
 };

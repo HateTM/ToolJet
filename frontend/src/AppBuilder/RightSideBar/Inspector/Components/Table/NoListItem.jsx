@@ -9,12 +9,12 @@ const NoListItem = ({ text, dataCy = '' }) => {
       style={{
         padding: '6px 32px',
         borderRadius: '6px',
-        border: '1px dashed var(--slate5)',
-        color: 'var(--slate8)',
+        border: '1px dashed var(--slate-5)',
+        color: 'var(--slate-8)',
       }}
     >
       <span className="d-flex align-items-center" style={{ marginRight: '2px' }}>
-        <SolidIcon name="information" width="14" fill={`var(--slate8)`} />
+        <SolidIcon name="information" width="14" fill={`var(--slate-8)`} />
       </span>
       {text}
     </div>

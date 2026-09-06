@@ -28,7 +28,7 @@ const ManageEventButton = ({
         {eventsDeletedLoader ? (
           <div className="d-flex justify-content-center p-2">
             {' '}
-            <Spinner style={{ width: '16px', height: '16px', color: 'var(--indigo9)' }} />
+            <Spinner style={{ width: '16px', height: '16px', color: 'var(--indigo-9)' }} />
           </div>
         ) : (
           <div data-cy="event-handler-card" className="d-flex">
@@ -49,7 +49,7 @@ const ManageEventButton = ({
                   {!eventsUpdatedLoader ? (
                     eventName
                   ) : (
-                    <Spinner style={{ width: '16px', height: '16px', color: 'var(--indigo9)' }} />
+                    <Spinner style={{ width: '16px', height: '16px', color: 'var(--indigo-9)' }} />
                   )}
                 </div>
                 {isHovered && (
@@ -92,7 +92,7 @@ const ManageEventButton = ({
                   </div>
                 </div>
               ) : (
-                <Spinner style={{ width: '16px', height: '16px', color: 'var(--indigo9)' }} />
+                <Spinner style={{ width: '16px', height: '16px', color: 'var(--indigo-9)' }} />
               )}
             </div>
           </div>

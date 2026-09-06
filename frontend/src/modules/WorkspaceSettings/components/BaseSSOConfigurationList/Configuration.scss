@@ -117,11 +117,11 @@
 }
 
 input:checked+.slider {
-  background-color: var(--indigo9) !important;
+  background-color: var(--indigo-9) !important;
 }
 
 input:focus+.slider {
-  box-shadow: 0 0 1px var(--indigo9);
+  box-shadow: 0 0 1px var(--indigo-9);
 }
 
 input:checked+.slider:before {
@@ -155,7 +155,7 @@ input:checked+.slider:before {
 
 .dropdown-menu {
   border-radius: 0.25rem;
-  border: 1px solid var(--slate6);
+  border: 1px solid var(--slate-6);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   width: 270px !important;
 }
@@ -200,7 +200,7 @@ input:checked+.slider:before {
     background: unset;
 
     .sso-option-label {
-      color: var(--slate12);
+      color: var(--slate-12);
     }
 
     &.clicked {
@@ -226,7 +226,7 @@ input:checked+.slider:before {
 
   .dropdown-item {
     background: unset;
-    color: var(--slate12);
+    color: var(--slate-12);
   }
 }
 
@@ -284,7 +284,7 @@ input:checked+.slider:before {
       font-size: 12px;
       font-weight: 500px;
       margin-bottom: 4px !important;
-      color: var(--slate12);
+      color: var(--slate-12);
     }
 
     .card-footer {
@@ -309,7 +309,7 @@ input:checked+.slider:before {
         .tj-app-input {
           .form-control {
             &:disabled {
-              background: var(--slate3) !important;
+              background: var(--slate-3) !important;
             }
           }
         }

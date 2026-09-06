@@ -9,7 +9,7 @@
 
   .main-title {
     font-size: 12px;
-    color: var(--slate11);
+    color: var(--slate-11);
     font-weight: 500;
   }
 
@@ -21,19 +21,19 @@
   gap: 10px;
   width: 77px;
   height: 28px;
-  background: var(--grass3);
+  background: var(--grass-3);
   border-radius: 100px;
-  color: var(--grass9);
+  color: var(--grass-9);
   font-weight: 500;
 }
 
 .disabled-tag {
   padding: 4px 16px;
   gap: 10px;
-  color: var(--tomato9);
+  color: var(--tomato-9);
   width: 81px;
   height: 28px;
-  background: var(--tomato3);
+  background: var(--tomato-3);
   border-radius: 100px;
   font-weight: 500;
 }
@@ -61,14 +61,14 @@
       font-weight: 400;
       line-height: 20px;
       text-align: left;
-      color: var(--slate11);
+      color: var(--slate-11);
 
     }
   }
 }
 
 .open-id-group-sync-container {
-  border-top: 1px solid var(--slate5) !important;
+  border-top: 1px solid var(--slate-5) !important;
   margin-top: 12px !important;
 
   .custom-card-body {

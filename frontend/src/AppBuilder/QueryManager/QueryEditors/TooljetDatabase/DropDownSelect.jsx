@@ -304,7 +304,7 @@ const DropDownSelect = ({
             style={{
               color: darkMode ? '#fff' : '',
               width: (selected.label === null || selected.label === undefined) && '40px',
-              background: (selected.label === null || selected.label === undefined) && 'var(--slate3)',
+              background: (selected.label === null || selected.label === undefined) && 'var(--slate-3)',
             }}
           >
             {selected?.label ?? 'Null'}
@@ -387,7 +387,7 @@ const DropDownSelect = ({
                           e.stopPropagation();
                         }}
                       >
-                        <Remove fill="var(--slate12)" width="12px" />
+                        <Remove fill="var(--slate-12)" width="12px" />
                       </span>
                     </Badge>
                   )}
@@ -420,7 +420,7 @@ function MultiSelectValueBadge({ options, selected, setSelected, onChange }) {
             e.preventDefault();
           }}
         >
-          <Remove fill="var(--slate12)" />
+          <Remove fill="var(--slate-12)" />
         </span>
       </Badge>
     );
@@ -440,7 +440,7 @@ function MultiSelectValueBadge({ options, selected, setSelected, onChange }) {
           e.stopPropagation();
         }}
       >
-        <Remove fill="var(--slate12)" />
+        <Remove fill="var(--slate-12)" />
       </span>
     </Badge>
   ));

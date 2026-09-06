@@ -1524,13 +1524,13 @@
 }
 
 .onbaording-disabled-field {
-    color: var(--slate9);
-    background-color: var(--slate3);
-    border-color: var(--slate7);
+    color: var(--slate-9);
+    background-color: var(--slate-3);
+    border-color: var(--slate-7);
 
 
     &:active {
-        border-color: var(--slate7);
+        border-color: var(--slate-7);
         box-shadow: none;
     }
 }
@@ -1584,10 +1584,10 @@
             margin: auto;
             box-shadow: 0px 8px 8px -4px rgba(16, 24, 40, 0.03), 0px 20px 24px -4px rgba(16, 24, 40, 0.08);
             border-radius: 6px;
-            border: 1px solid var(--slate5);
+            border: 1px solid var(--slate-5);
 
             .header-wrapper {
-                border-bottom: 1px solid var(--slate5);
+                border-bottom: 1px solid var(--slate-5);
 
                 .header {
                     display: grid;
@@ -1622,11 +1622,11 @@
                             appearance: none;
                             display: grid;
                             place-content: center;
-                            border: 1px solid var(--indigo9) !important;
+                            border: 1px solid var(--indigo-9) !important;
                             background-color: #fff;
                             margin: 0;
                             font: inherit;
-                            color: var(--indigo9);
+                            color: var(--indigo-9);
                             width: 1.4em;
                             height: 1.4em;
                             border-radius: 50%;
@@ -1639,7 +1639,7 @@
                                 border-radius: 50%;
                                 transform: scale(0);
                                 transition: 120ms transform ease-in-out;
-                                background: var(--indigo9)
+                                background: var(--indigo-9)
                             }
 
                             &:checked::before {
@@ -1650,22 +1650,22 @@
 
                     .free-radio {
                         input {
-                            border: 1px solid var(--indigo9) !important;
-                            color: var(--indigo9);
+                            border: 1px solid var(--indigo-9) !important;
+                            color: var(--indigo-9);
 
                             &::before {
-                                background: var(--indigo9)
+                                background: var(--indigo-9)
                             }
                         }
                     }
 
                     .paid-radio {
                         input {
-                            border: 1px solid var(--amber9) !important;
-                            color: var(--amber9);
+                            border: 1px solid var(--amber-9) !important;
+                            color: var(--amber-9);
 
                             &::before {
-                                background: var(--amber9)
+                                background: var(--amber-9)
                             }
                         }
                     }

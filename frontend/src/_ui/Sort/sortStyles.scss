@@ -5,10 +5,10 @@
   .input-control {
     gap: 16px !important;
     background: var(--base) !important;
-    border: 1px solid var(--slate7) !important;
+    border: 1px solid var(--slate-7) !important;
     border-radius: 6px;
     margin-bottom: 4px !important;
-    color: var(--slate12) !important;
+    color: var(--slate-12) !important;
     transition: none;
     height: 35px;
     padding-left: 0.4375rem;
@@ -20,16 +20,16 @@
 
 
     &:hover {
-      background: var(--slate1) !important;
-      border: 1px solid var(--slate8) !important;
+      background: var(--slate-1) !important;
+      border: 1px solid var(--slate-8) !important;
       -webkit-box-shadow: none !important;
       box-shadow: none !important;
       outline: none;
     }
 
     &:focus-visible {
-      background: var(--indigo2) !important;
-      border: 1px solid var(--indigo9) !important;
+      background: var(--indigo-2) !important;
+      border: 1px solid var(--indigo-9) !important;
       box-shadow: none !important;
     }
 
@@ -39,16 +39,16 @@
 
     &:-webkit-autofill {
       box-shadow: 0 0 0 1000px var(--base) inset !important;
-      -webkit-text-fill-color: var(--slate12) !important;
+      -webkit-text-fill-color: var(--slate-12) !important;
 
       &:hover {
-        box-shadow: 0 0 0 1000px var(--slate1) inset !important;
-        -webkit-text-fill-color: var(--slate12) !important;
+        box-shadow: 0 0 0 1000px var(--slate-1) inset !important;
+        -webkit-text-fill-color: var(--slate-12) !important;
       }
 
       &:focus-visible {
-        box-shadow: 0 0 0 1000px var(--indigo2) inset !important;
-        -webkit-text-fill-color: var(--slate12) !important;
+        box-shadow: 0 0 0 1000px var(--indigo-2) inset !important;
+        -webkit-text-fill-color: var(--slate-12) !important;
       }
     }
 

@@ -34,7 +34,7 @@ const usePageSettings = ({ darkMode, isSelected, isHovered, page, editingPage })
         pill: {
           background: styles.pillSelectedBackgroundColor.value,
           ...(page?.id === editingPage?.id && {
-            backgroundColor: 'var(--slate4)',
+            backgroundColor: 'var(--slate-4)',
           }),
           ...baseStyles.pill,
         },

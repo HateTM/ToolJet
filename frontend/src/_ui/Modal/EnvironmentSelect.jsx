@@ -115,10 +115,10 @@ export function EnvironmentSelect(rawProps) {
       ...base,
       borderRadius: '6px',
       backgroundColor: 'var(--interactive-default) !important',
-      color: state?.data?.isAllField ? 'var(--text-default) !important' : 'var(--slate12)',
+      color: state?.data?.isAllField ? 'var(--text-default) !important' : 'var(--slate-12)',
       '.selected-value': {
         padding: '0px 6px 1px 3px',
-        color: state?.data?.isAllField ? 'var(--text-default) !important' : 'var(--slate12)',
+        color: state?.data?.isAllField ? 'var(--text-default) !important' : 'var(--slate-12)',
         fontSize: '12px',
         fontWeight: 500,
       },
@@ -127,8 +127,8 @@ export function EnvironmentSelect(rawProps) {
       ...base,
       color: 'var(--icon-strong)',
       '&:hover': {
-        backgroundColor: 'var(--tomato3)',
-        color: 'var(--tomato9)',
+        backgroundColor: 'var(--tomato-3)',
+        color: 'var(--tomato-9)',
       },
       paddingLeft: '0px',
       ...((state.data.isFixed || state.selectProps.isDisabled) && { display: 'none' }),
@@ -137,19 +137,19 @@ export function EnvironmentSelect(rawProps) {
       ...base,
       input: {
         height: '25px !important',
-        color: 'var(--slate11) !important',
+        color: 'var(--slate-11) !important',
       },
     }),
     control: (base, state) => ({
       ...base,
       outline: 'none',
-      border: '1px solid var(--slate7)',
+      border: '1px solid var(--slate-7)',
       boxShadow: 'none',
       borderRadius: '6px',
       background: 'unset',
       minHeight: '32px',
       '&:hover': {
-        border: '1px solid var(--slate8)',
+        border: '1px solid var(--slate-8)',
       },
       ...(state.isDisabled && {
         // opacity: 0.3,
@@ -157,7 +157,7 @@ export function EnvironmentSelect(rawProps) {
         pointerEvents: 'all',
         /* Keep the disabled input background as the switch/tag control variable. */
         backgroundColor: 'var(--Controls-switch-tag, #CCD1D54D) !important',
-        border: '1px solid var(--slate6)',
+        border: '1px solid var(--slate-6)',
       }),
     }),
     menuList: (base) => ({
@@ -166,7 +166,7 @@ export function EnvironmentSelect(rawProps) {
     }),
     menu: (base) => ({
       ...base,
-      background: 'var(--slate1)',
+      background: 'var(--slate-1)',
     }),
   };
 

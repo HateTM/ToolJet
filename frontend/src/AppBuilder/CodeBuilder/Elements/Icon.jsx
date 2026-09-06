@@ -115,7 +115,7 @@ export const Icon = ({
                     className="text-truncate tj-text-xsm"
                     style={{
                       width: '80px',
-                      color: 'var(--slate12)',
+                      color: 'var(--slate-12)',
                     }}
                   >
                     {String(value)}

@@ -92,8 +92,8 @@ export const Header = memo(
                   cx="8.3606"
                   cy="8.08325"
                   r="6.08325"
-                  stroke="var(--slate1)"
-                  fill="var(--indigo9)"
+                  stroke="var(--slate-1)"
+                  fill="var(--indigo-9)"
                   stroke-width="4"
                 />
               </svg>

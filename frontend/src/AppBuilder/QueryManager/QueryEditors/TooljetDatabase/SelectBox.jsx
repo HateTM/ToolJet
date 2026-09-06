@@ -68,7 +68,7 @@ function CustomMenuList({ ...props }) {
       />
       {tjdbMenuListProps.foreignKeyAccess && tjdbMenuListProps.showDescription && tjdbMenuListProps.actions && (
         <>
-          <div style={{ borderTop: '1px solid var(--slate5)' }}></div>
+          <div style={{ borderTop: '1px solid var(--slate-5)' }}></div>
           <div
             style={{
               height: 'fit-content',
@@ -78,7 +78,7 @@ function CustomMenuList({ ...props }) {
             <div className="tj-header-h8 tj-text">
               {!isEmpty(focusedOption) ? focusedOption?.label : selectedOption?.label}
             </div>
-            <span className="tj-text-xsm" style={{ color: 'var(--slate9)' }}>
+            <span className="tj-text-xsm" style={{ color: 'var(--slate-9)' }}>
               {
                 <GenerateActionsDescription
                   targetTable={
@@ -98,7 +98,7 @@ function CustomMenuList({ ...props }) {
       {/* Below part is hack for now to show description for aggregate function dropdown */}
       {!tjdbMenuListProps.foreignKeyAccess && !tjdbMenuListProps.actions && tjdbMenuListProps.showDescription && (
         <>
-          <div style={{ borderTop: '1px solid var(--slate5)' }}></div>
+          <div style={{ borderTop: '1px solid var(--slate-5)' }}></div>
           <div
             style={{
               height: 'fit-content',
@@ -109,7 +109,7 @@ function CustomMenuList({ ...props }) {
             <div className="tj-header-h8 tj-text">
               {!isEmpty(focusedOption) ? focusedOption?.label : selectedOption?.label || ''}
             </div>
-            <span className="tj-text-xsm" style={{ color: 'var(--slate9)' }}>
+            <span className="tj-text-xsm" style={{ color: 'var(--slate-9)' }}>
               {!isEmpty(focusedOption)
                 ? focusedOption?.description
                 : selectedOption?.description || 'Select an option to view its description'}
@@ -537,7 +537,7 @@ function DataSourceSelect({
                       style={{ visibility: !isMulti && props.isSelected && highlightSelected ? 'visible' : 'hidden' }}
                     >
                       <SolidIcon
-                        fill="var(--indigo9)"
+                        fill="var(--indigo-9)"
                         name="tick"
                         style={{ height: 16, width: 16, marginTop: '-4px' }}
                         viewBox="0 0 20 20"
@@ -584,13 +584,13 @@ function DataSourceSelect({
           control: (style) => ({
             ...style,
             background: 'var(--base)',
-            color: 'var(--slate9)',
+            color: 'var(--slate-9)',
             borderWidth: '0',
             boxShadow: 'none',
             borderRadius: '4px 4px 0 0',
             borderBottom: '1px solid var(--slate-05, #E6E8EB)',
             ':hover': {
-              borderColor: 'var(--slate7)',
+              borderColor: 'var(--slate-7)',
             },
             flexDirection: 'row-reverse',
           }),
@@ -598,7 +598,7 @@ function DataSourceSelect({
             ...style,
             position: 'static',
             backgroundColor: 'var(--base)',
-            color: 'var(--slate12)',
+            color: 'var(--slate-12)',
             boxShadow: 'none',
             border: '0',
             marginTop: 0,
@@ -610,10 +610,10 @@ function DataSourceSelect({
           // indicatorSeparator: () => ({ display: 'none' }),
           input: (style) => ({
             ...style,
-            color: 'var(--slate12)',
-            'caret-color': 'var(--slate9)',
+            color: 'var(--slate-12)',
+            'caret-color': 'var(--slate-9)',
             border: 0,
-            ':placeholder': { color: 'var(--slate9)' },
+            ':placeholder': { color: 'var(--slate-9)' },
           }),
           groupHeading: (style) => ({
             ...style,
@@ -626,29 +626,29 @@ function DataSourceSelect({
           option: (style, { data: { isNested }, isFocused, isDisabled, isSelected }) => ({
             ...style,
             cursor: isDisabled ? 'not-allowed' : 'pointer',
-            color: isDisabled ? 'var(--slate8, #c1c8cd)' : 'inherit',
+            color: isDisabled ? 'var(--slate-8, #c1c8cd)' : 'inherit',
             minHeight: '33.5px',
             backgroundColor:
               isSelected && highlightSelected
-                ? 'var(--indigo3, #F0F4FF)'
+                ? 'var(--indigo-3, #F0F4FF)'
                 : isFocused && !isNested
-                ? 'var(--slate4)'
+                ? 'var(--slate-4)'
                 : isDisabled
                 ? 'transparent'
                 : isDisabled && isFocused
-                ? 'var(--slate3, #f1f3f5)'
+                ? 'var(--slate-3, #f1f3f5)'
                 : 'transparent',
             ...(isNested
-              ? { padding: '0 8px', marginLeft: '19px', borderLeft: '1px solid var(--slate5)', width: 'auto' }
+              ? { padding: '0 8px', marginLeft: '19px', borderLeft: '1px solid var(--slate-5)', width: 'auto' }
               : {}),
             ...(!isNested && { borderRadius: '4px' }),
             ':hover': {
-              backgroundColor: isNested ? 'transparent' : 'var(--slate4)',
-              '.option-nested-datasource-selector': { backgroundColor: 'var(--slate4)' },
+              backgroundColor: isNested ? 'transparent' : 'var(--slate-4)',
+              '.option-nested-datasource-selector': { backgroundColor: 'var(--slate-4)' },
             },
             ...(isFocused &&
               isNested && {
-                '.option-nested-datasource-selector': { backgroundColor: 'var(--slate4)' },
+                '.option-nested-datasource-selector': { backgroundColor: 'var(--slate-4)' },
               }),
           }),
           group: (style) => ({

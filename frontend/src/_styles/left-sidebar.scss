@@ -21,7 +21,7 @@
   background-color: var(--background-surface-layer-01);
 
   .accordion-item {
-    border: solid var(--slate5);
+    border: solid var(--slate-5);
     border-width: 1px 0px 1px 0px;
     overflow: visible;
   }
@@ -71,7 +71,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background-color: var(--indigo4);
+    background-color: var(--indigo-4);
 
     &.tooljetai-icon {
       border-radius: 6px;
@@ -299,17 +299,17 @@
   align-items: center;
 
   &:hover {
-    background: var(--slate4);
+    background: var(--slate-4);
   }
 
   &:focus-visible {
     box-shadow: 0px 0px 0px 4px #dfe3e6;
-    background: var(--slate4);
+    background: var(--slate-4);
     outline: none;
   }
 
   &:active {
-    background: var(--indigo4);
+    background: var(--indigo-4);
     box-shadow: none;
   }
 }
@@ -395,18 +395,18 @@
   }
 
   .text-slate-12 {
-    color: var(--slate12);
+    color: var(--slate-12);
     font-weight: 500;
     line-height: 20px;
   }
 
   .text-tomato-9 {
-    color: var(--tomato9);
+    color: var(--tomato-9);
     font-weight: 500;
   }
 
   .text-slate-10 {
-    color: var(--slate10);
+    color: var(--slate-10);
   }
 
   .nav-tabs {
@@ -415,13 +415,13 @@
 
   .nav-item .nav-link {
     background-color: var(--base) !important;
-    color: var(--slate11) !important;
+    color: var(--slate-11) !important;
   }
 
   .nav-tabs .nav-link.active {
     border-radius: 0 !important;
     border-width: 2px !important;
-    color: var(--indigo9) !important;
+    color: var(--indigo-9) !important;
   }
 
   .panel-header-container {
@@ -432,8 +432,8 @@
 .expired-gradient-border {
   border: none !important;
   position: relative;
-  background-color: var(--slate3) !important;
-  color: var(--indigo9) !important;
+  background-color: var(--slate-3) !important;
+  color: var(--indigo-9) !important;
 }
 
 .expired-gradient-border::before {
@@ -465,15 +465,15 @@
     background-color: var(--interactive-overlays-fill-hover) !important;
     padding: 4px 7px;
     border-radius: 7px;
-    color: var(--slate10);
+    color: var(--slate-10);
   }
 
   .error-target-custom-log {
     display: flex;
     align-items: center;
     margin-top: 5px;
-    background: var(--purple5) !important;
-    color: var(--purple11);
+    background: var(--purple-5) !important;
+    color: var(--purple-11);
     width: fit-content;
 
     svg {
@@ -598,8 +598,8 @@
 .datasource-footer-info {
   box-sizing: border-box;
   height: 88px;
-  background: var(--slate2);
-  border: 1px solid var(--slate3);
+  background: var(--slate-2);
+  border: 1px solid var(--slate-3);
   border-radius: 6px;
 
   .copied {
@@ -636,20 +636,20 @@
     }
 
     &:hover {
-      background: var(--slate4) !important;
+      background: var(--slate-4) !important;
       border-radius: 6px;
     }
 
     &:active {
-      background: var(--indigo4) !important;
+      background: var(--indigo-4) !important;
       box-shadow: none;
     }
   }
 
   .list-group-item.active {
     border-radius: 4px !important;
-    background-color: var(--indigo4) !important;
-    color: var(--slate12);
+    background-color: var(--indigo-4) !important;
+    color: var(--slate-12);
   }
 
   .list-group-item+.list-group-item.active {
@@ -721,7 +721,7 @@
 .modal-body-content.dark {
   .selected-datasource-list-content {
     .card:hover {
-      background-color: var(--slate2) !important;
+      background-color: var(--slate-2) !important;
     }
   }
 }
@@ -774,7 +774,7 @@
     background: var(--base);
     border-left: none;
     border-bottom: none;
-    border-color: var(--slate5) !important;
+    border-color: var(--slate-5) !important;
   }
 }
 
@@ -797,7 +797,7 @@
 
 .modal-body {
   .datasource-modal-sidebar-footer {
-    border: 1px solid var(--slate5);
+    border: 1px solid var(--slate-5);
     width: 242px !important;
     height: 71px;
     background-color: var(--base);
@@ -861,7 +861,7 @@
   margin-left: 5rem !important;
 
   input {
-    color: var(--slate12);
+    color: var(--slate-12);
     background-color: var(--base);
   }
 
@@ -1107,18 +1107,18 @@
 
 
   &:hover {
-    background: var(--slate4);
+    background: var(--slate-4);
   }
 
   &:focus-visible {
     box-shadow: 0px 0px 0px 4px #DFE3E6;
-    background: var(--slate4);
+    background: var(--slate-4);
     outline: none;
   }
 
 
   &:active {
-    background: var(--indigo4);
+    background: var(--indigo-4);
     box-shadow: none;
   }
 }

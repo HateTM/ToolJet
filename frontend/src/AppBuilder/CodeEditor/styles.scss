@@ -20,7 +20,7 @@
         .codehinter-vertical-line {
             position: relative;
             width: 0;
-            border-left: 1px solid var(--slate5);
+            border-left: 1px solid var(--slate-5);
             content: '';
             margin-right: 1rem;
         }
@@ -51,7 +51,7 @@
 .cm-base-autocomplete, .cm-tooltip-autocomplete {
     // height: 300px !important;
     color: var(--text-default, #1B1F24);
-    background: var(--slate1) !important;
+    background: var(--slate-1) !important;
     border: 1px solid var(--borders-disabled-on-white, #E4E7EB) !important;
     border-radius: 6px !important;
     box-shadow: 0px 4px 8px 0px rgba(48, 49, 51, 0.10), 0px 0px 1px 0px rgba(48, 49, 51, 0.05);
@@ -260,7 +260,7 @@
     display: block;
     // width: 100%;
     font-weight: 400;
-    color: var(--slate9);
+    color: var(--slate-9);
     background-clip: padding-box;
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -361,11 +361,11 @@
 
 .cm-codehinter-dark-themed {
     .cm-tooltip-autocomplete {
-        border-color: var(--slate5) !important;
+        border-color: var(--slate-5) !important;
     }
 
     .cm-tooltip-autocomplete>ul>completion-section {
-        background: var(--slate5);
+        background: var(--slate-5);
         color: #c9cbcf !important;
     }
 
@@ -386,7 +386,7 @@
 }
 
 .cm-editor {
-    border: 1px solid var(--slate7);
+    border: 1px solid var(--slate-7);
     border-radius: 4px;
     transition: box-shadow 0.15s ease-in-out;
 }
@@ -637,7 +637,7 @@
     .codehinter-error-container{
         background: transparent;
         font-size: 12px;
-        color: var(--tomato9);
+        color: var(--tomato-9);
     }
 }
 .portal-container:has(.tjdb-hinter-error){

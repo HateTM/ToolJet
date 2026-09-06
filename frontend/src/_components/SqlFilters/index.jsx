@@ -196,7 +196,7 @@ const SqlFilterRow = React.memo(function SqlFilterRow({
           className="px-1 rounded-0 border rounded-end sql-filter-delete-button"
           onClick={handleRemove}
         >
-          <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+          <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
         </ButtonSolid>
       </div>
     </div>

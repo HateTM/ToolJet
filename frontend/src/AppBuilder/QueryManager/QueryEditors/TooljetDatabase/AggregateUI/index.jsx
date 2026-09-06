@@ -415,7 +415,7 @@ export const AggregateFilter = ({ darkMode, operation = '' }) => {
                     onClick={() => handleDeleteAggregate(aggregateKey)}
                     data-cy="tooljetdb-aggregate-delete-button"
                   >
-                    <SolidIcon name="trash" width="16" fill="var(--slate9)" />
+                    <SolidIcon name="trash" width="16" fill="var(--slate-9)" />
                   </div>
                   <Confirm
                     show={showDeleteConfirmation}

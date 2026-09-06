@@ -48,16 +48,17 @@ export default function FolderFilter({ disabled, options, onChange, value }) {
           const isSelectedOption = currentOption.label === 'All apps';
           return {
             ...base,
-            ...(state.isFocused && !isSelectedOption && { backgroundColor: 'var(--slate0)', color: 'var(--slate12)' }),
+            ...(state.isFocused &&
+              !isSelectedOption && { backgroundColor: 'var(--slate-1)', color: 'var(--slate-12)' }),
           };
         },
         singleValue: (base) => ({
           ...base,
-          color: 'var(--slate12)',
+          color: 'var(--slate-12)',
         }),
         menu: (base) => ({
           ...base,
-          background: 'var(--slate2)',
+          background: 'var(--slate-2)',
         }),
         dropdownIndicator: (base) => ({
           ...base,
@@ -69,12 +70,12 @@ export default function FolderFilter({ disabled, options, onChange, value }) {
         }),
         container: (base) => ({
           ...base,
-          backgroundColor: 'var(--slate6)',
+          backgroundColor: 'var(--slate-6)',
           borderRadius: '20px',
         }),
         control: (base) => ({
           ...base,
-          backgroundColor: 'var(--slate6)',
+          backgroundColor: 'var(--slate-6)',
           border: '0',
           boxShadow: 'none',
           height: '32px',
@@ -82,7 +83,7 @@ export default function FolderFilter({ disabled, options, onChange, value }) {
           minWidth: '110px',
           borderRadius: '20px',
           '&:hover': {
-            border: '1px solid var(--slate8)',
+            border: '1px solid var(--slate-8)',
           },
         }),
       }}

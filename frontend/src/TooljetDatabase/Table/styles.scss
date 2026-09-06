@@ -199,7 +199,7 @@
           overflow: hidden;
           text-overflow: ellipsis;
           width: 85%;
-          color: var(--slate11) !important;
+          color: var(--slate-11) !important;
           cursor: default;
           border-radius: 6px;
           // height: 20px;
@@ -219,7 +219,7 @@
           overflow: hidden;
           text-overflow: ellipsis;
           width: 85%;
-          color: var(--slate11) !important;
+          color: var(--slate-11) !important;
           cursor: default;
           border-radius: 6px;
           // height: 20px;
@@ -240,7 +240,7 @@
 
   .tjdb-loader {
     width: 180px !important;
-    background: var(--slate7) !important;
+    background: var(--slate-7) !important;
     display: flex !important;
   }
 }
@@ -251,7 +251,7 @@
 
   .tjdb-icon-loader {
     width: 20px !important;
-    background: var(--slate7) !important;
+    background: var(--slate-7) !important;
     display: flex !important;
   }
 }
@@ -299,7 +299,7 @@
     .rightNav-parent-container,
     .editEnter-parent-container {
       border-radius: 6px;
-      border: 1px solid var(--slate7);
+      border: 1px solid var(--slate-7);
       width: 24px;
       text-align: center;
     }
@@ -307,8 +307,8 @@
 }
 
 .cell-text-null {
-  background-color: var(--slate3) !important;
-  color: var(--slate11) !important;
+  background-color: var(--slate-3) !important;
+  color: var(--slate-11) !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -326,8 +326,8 @@
   // height: 100% !important;
 
   .cell-text-null-input {
-    background-color: var(--slate3) !important;
-    color: var(--slate11) !important;
+    background-color: var(--slate-3) !important;
+    color: var(--slate-11) !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -371,11 +371,11 @@
   }
 
   .table-row-selected {
-    background-color: var(--indigo4);
+    background-color: var(--indigo-4);
 
     td:nth-child(1),
     td:nth-child(2) {
-      background: var(--indigo4);
+      background: var(--indigo-4);
     }
   }
 
@@ -441,14 +441,14 @@
       gap: 8px;
 
       .unique-constraint-info {
-        background-color: var(--slate2);
-        border: 1px solid var(--slate5) !important;
+        background-color: var(--slate-2);
+        border: 1px solid var(--slate-5) !important;
         gap: 4px;
         padding: 8px;
         border-radius: 6px;
         opacity: 0px;
         display: flex;
-        color: var(--slate11);
+        color: var(--slate-11);
 
         svg {
           width: 20%;
@@ -475,12 +475,12 @@
     }
 
     .unique-tag {
-      color: var(--slate12) !important;
+      color: var(--slate-12) !important;
       font-weight: 500 !important;
     }
 
     .unique-helper-text {
-      color: var(--slate11) !important;
+      color: var(--slate-11) !important;
       font-weight: 400 !important;
     }
 

@@ -58,7 +58,7 @@
           left: 0;
           right: 0;
           height: 2px;
-          background-color: var(--indigo9, #3D63DC);
+          background-color: var(--indigo-9, #3D63DC);
         }
       }
   
@@ -135,7 +135,7 @@
     transition: background-color 0.15s ease;
   
     &.highlight {
-      border: 2px solid var(--indigo9, #3D63DC);
+      border: 2px solid var(--indigo-9, #3D63DC);
     }
   
     &.is-selected {

@@ -58,7 +58,7 @@ function AddResourcePermissionsMenu({
                 key={index}
                 variant="tertiary"
                 iconWidth="17"
-                fill="var(--slate9)"
+                fill="var(--slate-9)"
                 className="apps-remove-btn permission-type remove-decoration tj-text-xsm font-weight-600 remove-disabled-bg"
                 leftIcon={selectResourceIcon(resource)}
                 onClick={() => {
@@ -98,7 +98,7 @@ function AddResourcePermissionsMenu({
         <ButtonSolid
           variant="tertiary"
           iconWidth="17"
-          fill="var(--slate9)"
+          fill="var(--slate-9)"
           className="add-icon tj-text-xsm font-weight-600 remove-disabled-bg"
           leftIcon="plus"
           disabled={currentGroupPermission.name === 'admin' || !isEditable}
@@ -113,7 +113,7 @@ function AddResourcePermissionsMenu({
       <ButtonSolid
         variant="tertiary"
         iconWidth="17"
-        fill="var(--slate9)"
+        fill="var(--slate-9)"
         className="add-icon tj-text-xsm font-weight-600 remove-disabled-bg"
         leftIcon="plus"
         disabled={currentGroupPermission.name === 'admin' || !isEditable}

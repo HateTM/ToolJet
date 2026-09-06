@@ -28,8 +28,8 @@ export const Color = ({
     paddingLeft: '4px',
     alignItems: 'center',
     gap: '4px',
-    background: showPicker && 'var(--indigo2)',
-    outline: showPicker && '1px solid var(--indigo9)',
+    background: showPicker && 'var(--indigo-2)',
+    outline: showPicker && '1px solid var(--indigo-9)',
     boxShadow: showPicker && '0px 0px 0px 1px #C6D4F9',
   };
 
@@ -76,7 +76,7 @@ export const Color = ({
             height: '24px',
             backgroundColor: definition.value,
             borderRadius: ' 6px',
-            border: `1px solid var(--slate7, #D7DBDF)`,
+            border: `1px solid var(--slate-7, #D7DBDF)`,
             boxShadow: `0px 1px 2px 0px rgba(16, 24, 40, 0.05)`,
           }}
         ></div>

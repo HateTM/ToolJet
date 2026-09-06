@@ -686,7 +686,7 @@ class BaseManageGranularAccess extends React.Component {
           style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
           data-cy="helper-text-admin-app-access"
         >
-          <SolidIcon name="informationcircle" fill="var(--slate8)" /> {text}
+          <SolidIcon name="informationcircle" fill="var(--slate-8)" /> {text}
           <a
             style={{ margin: '0', padding: '0', textDecoration: 'underline', color: '#3E63DD' }}
             href="https://docs.tooljet.com/docs/tutorial/manage-users-groups/"
@@ -934,7 +934,7 @@ class BaseManageGranularAccess extends React.Component {
                         ? 'workflows'
                         : 'datasource'
                     }
-                    fill="var(--slate8)"
+                    fill="var(--slate-8)"
                   />
                 </span>
                 <div className="tj-text-md font-weight-500 modal-name" data-cy="modal-title">

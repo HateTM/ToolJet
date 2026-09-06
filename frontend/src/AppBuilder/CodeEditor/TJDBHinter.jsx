@@ -200,7 +200,7 @@ const TJDBCodeEditor = (props) => {
             >
               <span className="mx-2">
                 {' '}
-                <SolidIcon name="warning" width="16px" fill={'var(--tomato9)'} />
+                <SolidIcon name="warning" width="16px" fill={'var(--tomato-9)'} />
               </span>
               <span>{error}</span>
             </div>

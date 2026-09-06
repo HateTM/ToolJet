@@ -171,7 +171,7 @@ function BaseSettingsMenu({
     <OverlayTrigger onToggle={setShowOverlay} rootClose={true} trigger="click" placement="top" overlay={getOverlay()}>
       <div className={cx('settings-nav-item cursor-pointer', { active: showOverlay })} data-cy="settings-icon">
         <div className="d-xl-block">
-          <SolidIcon name="settings" fill={showOverlay ? '#3E63DD' : 'var(--slate8)'} width={28} />
+          <SolidIcon name="settings" fill={showOverlay ? '#3E63DD' : 'var(--slate-8)'} width={28} />
         </div>
       </div>
     </OverlayTrigger>

@@ -26,7 +26,7 @@
     --select-search-text: var(--text-default);
     --select-search-subtle-text: #6c6f85;
     --select-search-inverted-text: var(--select-search-background);
-    --select-search-highlight: var(--indigo3);
+    --select-search-highlight: var(--indigo-3);
     --select-search-font: "Roboto", sans-serif;
     width: 100%;
     position: relative;
@@ -110,11 +110,11 @@
 
 .select-search-container:not(.select-search-is-disabled).select-search-has-focus .select-search-input,
 .select-search-container:not(.select-search-is-disabled) .select-search-input:hover {
-    border-color: var(--slate8);
+    border-color: var(--slate-8);
 }
 
 .select-search-select {
-    border: 1px solid var(--slate3) !important;
+    border: 1px solid var(--slate-3) !important;
     box-shadow: 0 0 0 1px #0000001a, 0 4px 11px #0000001a;
     overflow: auto;
     max-height: 360px;

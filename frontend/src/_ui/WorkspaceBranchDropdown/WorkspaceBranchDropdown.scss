@@ -6,7 +6,7 @@
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
-    border: 1px solid var(--slate5);
+    border: 1px solid var(--slate-5);
     border-radius: 6px;
     background: var(--base);
     cursor: pointer;
@@ -15,7 +15,7 @@
     transition: border-color 0.15s;
 
     &:hover {
-      border-color: var(--slate7);
+      border-color: var(--slate-7);
     }
 
     .branch-name {
@@ -37,7 +37,7 @@
       align-items: center;
       justify-content: space-between;
       padding: 4px 12px 8px;
-      border-bottom: 1px solid var(--slate5);
+      border-bottom: 1px solid var(--slate-5);
       margin-bottom: 4px;
 
       .popover-title {
@@ -57,12 +57,12 @@
       color: var(--text-primary);
 
       &:hover {
-        background: var(--slate3);
+        background: var(--slate-3);
       }
 
       &.active {
-        background: var(--indigo3);
-        color: var(--indigo11);
+        background: var(--indigo-3);
+        color: var(--indigo-11);
         font-weight: 500;
       }
 
@@ -90,12 +90,12 @@
           padding: 2px;
           border: none;
           background: none;
-          color: var(--tomato9);
+          color: var(--tomato-9);
           cursor: pointer;
           border-radius: 4px;
 
           &:hover {
-            background: var(--tomato3);
+            background: var(--tomato-3);
           }
         }
       }
@@ -111,10 +111,10 @@
       gap: 6px;
       padding: 8px 12px;
       margin-top: 4px;
-      border-top: 1px solid var(--slate5);
+      border-top: 1px solid var(--slate-5);
       cursor: pointer;
       font-size: 12px;
-      color: var(--indigo11);
+      color: var(--indigo-11);
       width: 100%;
       background: none;
       border-left: none;
@@ -122,7 +122,7 @@
       border-bottom: none;
 
       &:hover {
-        background: var(--slate3);
+        background: var(--slate-3);
       }
     }
   }

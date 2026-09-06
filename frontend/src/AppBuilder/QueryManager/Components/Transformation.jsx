@@ -131,7 +131,7 @@ export const Transformation = ({ changeOption, options, darkMode, queryId, rende
             container={document.getElementsByClassName('query-details')[0]}
           >
             <span
-              style={{ textDecoration: 'underline 2px dotted', textDecorationColor: 'var(--slate8)' }}
+              style={{ textDecoration: 'underline 2px dotted', textDecorationColor: 'var(--slate-8)' }}
               className="text-default"
               data-cy="transformation-label"
             >

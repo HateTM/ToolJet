@@ -133,7 +133,7 @@ const ColumnSelect = React.memo(function ColumnSelect({
                 ...provided,
                 minHeight: 28,
                 backgroundColor: '#2b3547',
-                border: '1px solid var(--slate7)',
+                border: '1px solid var(--slate-7)',
                 boxShadow: 'none',
               }),
               menu: (provided) => ({ ...provided, backgroundColor: 'rgb(31,40,55)' }),

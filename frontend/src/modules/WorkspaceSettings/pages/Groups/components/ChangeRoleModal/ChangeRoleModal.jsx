@@ -22,10 +22,10 @@ function ChangeRoleModal({
         <div className="role-change-modal-content">
           <div className="d-flex align-items-start justify-content-between">
             <div className="modal-icon-container" data-cy="modal-icon">
-              <SolidIcon fill="var(--tomato9)" name="lock" width="40" />
+              <SolidIcon fill="var(--tomato-9)" name="lock" width="40" />
             </div>
             <div onClick={handleAutoRoleChangeModalClose} className="icon-btn" data-cy="modal-close-button">
-              <SolidIcon fill="var(--slate9)" name="remove" width="16" />
+              <SolidIcon fill="var(--slate-9)" name="remove" width="16" />
             </div>
           </div>
           <div style={{ width: '100%' }}>
@@ -64,10 +64,10 @@ function ChangeRoleModal({
         <div className="role-change-modal-content">
           <div className="d-flex align-items-start justify-content-between">
             <div className="modal-icon-container">
-              <SolidIcon fill="var(--tomato9)" name="usergear" width="40" />
+              <SolidIcon fill="var(--tomato-9)" name="usergear" width="40" />
             </div>
             <div onClick={handleAutoRoleChangeModalClose} className="icon-btn">
-              <SolidIcon fill="var(--slate9)" name="remove" width="16" />
+              <SolidIcon fill="var(--slate-9)" name="remove" width="16" />
             </div>
           </div>
           <h3 className="modal-title">Cannot add an end-user to this group</h3>
@@ -104,10 +104,10 @@ function ChangeRoleModal({
       <div className="role-change-modal-content">
         <div className="d-flex align-items-start justify-content-between">
           <div className="modal-icon-container" data-cy="modal-icon">
-            <SolidIcon fill="var(--tomato9)" name="lock" width="40" />
+            <SolidIcon fill="var(--tomato-9)" name="lock" width="40" />
           </div>
           <div onClick={handleAutoRoleChangeModalClose} className="icon-btn" data-cy="modal-close-button">
-            <SolidIcon fill="var(--slate9)" name="remove" width="16" />
+            <SolidIcon fill="var(--slate-9)" name="remove" width="16" />
           </div>
         </div>
         <div style={{ width: '100%' }}>

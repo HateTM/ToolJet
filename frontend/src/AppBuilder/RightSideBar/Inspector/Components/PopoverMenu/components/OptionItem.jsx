@@ -64,7 +64,7 @@ const OptionItem = ({
                 <ListGroup.Item
                   style={{
                     marginBottom: '8px',
-                    backgroundColor: 'var(--slate3)',
+                    backgroundColor: 'var(--slate-3)',
                   }}
                   onMouseEnter={() => onMouseEnter(index)}
                   onMouseLeave={() => onMouseLeave()}
@@ -94,7 +94,7 @@ const OptionItem = ({
                           }}
                         >
                           <span className="d-flex">
-                            <Trash fill={'var(--tomato9)'} width={12} />
+                            <Trash fill={'var(--tomato-9)'} width={12} />
                           </span>
                         </ButtonSolid>
                       )}

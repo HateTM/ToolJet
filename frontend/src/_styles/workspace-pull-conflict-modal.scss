@@ -14,7 +14,7 @@
 .pull-conflict-modal {
   width: 440px;
   max-height: 90vh;
-  background-color: var(--slate1);
+  background-color: var(--slate-1);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   display: flex;
@@ -48,7 +48,7 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background-color: var(--orange3);
+    background-color: var(--orange-3);
   }
 }
 
@@ -63,13 +63,13 @@
   .conflict-title {
     font-size: 16px;
     font-weight: 600;
-    color: var(--slate12);
+    color: var(--slate-12);
     margin: 0 0 8px;
   }
 
   .conflict-description {
     font-size: 13px;
-    color: var(--slate11);
+    color: var(--slate-11);
     line-height: 1.5;
     margin: 0 0 16px;
   }
@@ -81,7 +81,7 @@
   }
 
   .conflict-section {
-    border: 1px solid var(--slate6);
+    border: 1px solid var(--slate-6);
     border-radius: 8px;
     overflow: hidden;
     margin-bottom: 16px;
@@ -98,16 +98,16 @@
     cursor: pointer;
     font-size: 13px;
     font-weight: 500;
-    color: var(--slate12);
-    background-color: var(--slate2);
+    color: var(--slate-12);
+    background-color: var(--slate-2);
 
     &:hover {
-      background-color: var(--slate3);
+      background-color: var(--slate-3);
     }
   }
 
   .conflict-section-body {
-    border-top: 1px solid var(--slate6);
+    border-top: 1px solid var(--slate-6);
   }
 
   .conflict-item {
@@ -116,8 +116,8 @@
     gap: 8px;
     padding: 10px 14px;
     font-size: 13px;
-    color: var(--slate12);
-    border-bottom: 1px solid var(--slate5);
+    color: var(--slate-12);
+    border-bottom: 1px solid var(--slate-5);
 
     &:last-child {
       border-bottom: none;
@@ -126,7 +126,7 @@
     .conflict-item-name {
       flex: 1;
       font-size: 13px;
-      color: var(--slate12);
+      color: var(--slate-12);
     }
   }
 
@@ -140,30 +140,30 @@
     white-space: nowrap;
 
     &--incoming {
-      background-color: var(--orange3);
-      color: var(--orange11);
+      background-color: var(--orange-3);
+      color: var(--orange-11);
     }
 
     &--existing {
-      background-color: var(--slate3);
-      color: var(--slate11);
+      background-color: var(--slate-3);
+      color: var(--slate-11);
     }
 
     &--local {
-      background-color: var(--orange3);
-      color: var(--orange11);
+      background-color: var(--orange-3);
+      color: var(--orange-11);
     }
 
     &--remote {
-      background-color: var(--slate3);
-      color: var(--slate11);
+      background-color: var(--slate-3);
+      color: var(--slate-11);
     }
 
     .theme-dark & {
       &--existing,
       &--remote {
-        background-color: var(--slate5);
-        color: var(--slate11);
+        background-color: var(--slate-5);
+        color: var(--slate-11);
       }
     }
 
@@ -176,7 +176,7 @@
 
   .conflict-footer-text {
     font-size: 13px;
-    color: var(--slate11);
+    color: var(--slate-11);
     line-height: 1.5;
     margin: 0;
   }
@@ -196,7 +196,7 @@
 
 .conflict-group-title {
   font-size: 14px;
-  color: var(--slate10);
+  color: var(--slate-10);
   margin: 16px 0 8px;
   text-transform: lowercase;
 }

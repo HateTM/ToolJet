@@ -215,7 +215,7 @@ const Preview = ({ darkMode, calculatePreviewHeight }) => {
               style={{
                 overflowWrap: 'anywhere',
                 padding: 0,
-                border: '1px solid var(--slate5)',
+                border: '1px solid var(--slate-5)',
                 height: '100%',
               }}
               data-cy="preview-tab-content"

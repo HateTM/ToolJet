@@ -559,7 +559,7 @@ const RowForm = ({
                   position: 'relative',
                   backgroundColor: 'transparent',
                   width: '100%',
-                  border: '1px solid var(--slate7)',
+                  border: '1px solid var(--slate-7)',
                   padding: '5px 5px',
                   borderRadius: '6px',
                 }}
@@ -584,7 +584,7 @@ const RowForm = ({
                   position: 'relative',
                   backgroundColor: 'transparent',
                   width: '100%',
-                  border: '1px solid var(--slate7)',
+                  border: '1px solid var(--slate-7)',
                   padding: '5px 5px',
                   borderRadius: '6px',
                   overflow: 'hidden',

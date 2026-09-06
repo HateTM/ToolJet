@@ -17,7 +17,7 @@
     font-style: normal;
     margin: 0;
     padding: 0;
-    color: var(--slate12);
+    color: var(--slate-12);
   }
 
   .button-group {
@@ -45,7 +45,7 @@
 
       .action-button {
         &:hover {
-          background-color: var(--slate3);
+          background-color: var(--slate-3);
         }
       }
     }
@@ -96,7 +96,7 @@
       overflow-y: auto;
       // Firefox scrollbar styles
       scrollbar-width: thin;
-      scrollbar-color: var(--slate7) transparent;
+      scrollbar-color: var(--slate-7) transparent;
 
       // Always show scrollbar when scrollable
       &::-webkit-scrollbar {
@@ -106,7 +106,7 @@
       }
 
       &::-webkit-scrollbar-thumb {
-        background-color: var(--slate7);
+        background-color: var(--slate-7);
         border-radius: 2px;
       }
 
@@ -261,14 +261,14 @@
         // Firefox scrollbar styles
         scrollbar-width: thin;
 
-        scrollbar-color: var(--slate7) transparent;
+        scrollbar-color: var(--slate-7) transparent;
 
         &::-webkit-scrollbar {
           height: 4px;
         }
 
         &::-webkit-scrollbar-thumb {
-          background-color: var(--slate7);
+          background-color: var(--slate-7);
           border-radius: 2px;
         }
 
@@ -324,7 +324,7 @@
 
         // Firefox scrollbar styles
         scrollbar-width: thin;
-        scrollbar-color: var(--slate7) transparent;
+        scrollbar-color: var(--slate-7) transparent;
 
 
         &::-webkit-scrollbar {
@@ -332,7 +332,7 @@
         }
 
         &::-webkit-scrollbar-thumb {
-          background-color: var(--slate7);
+          background-color: var(--slate-7);
           border-radius: 2px;
         }
 
@@ -387,7 +387,7 @@
   &.dark-theme {
     .form-control {
       background-color: var(--surfaces-surface-01);
-      border-color: var(--slate7);
+      border-color: var(--slate-7);
 
       // &:focus {
       //   border-color: var(--primary-accent-strong);

@@ -234,7 +234,7 @@ const ColumnForm = ({
   };
 
   const footerStyle = {
-    borderTop: '1px solid var(--slate5)',
+    borderTop: '1px solid var(--slate-5)',
     paddingTop: '12px',
     marginTop: '0px',
   };

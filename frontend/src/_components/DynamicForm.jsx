@@ -773,7 +773,7 @@ const DynamicForm = ({
           }
           style={{
             textDecoration: tooltip ? 'underline 2px dashed' : 'none',
-            textDecorationColor: 'var(--slate8)',
+            textDecorationColor: 'var(--slate-8)',
             marginBottom: '2px',
           }}
         >

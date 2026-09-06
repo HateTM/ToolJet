@@ -461,7 +461,7 @@ const PreviewContainer = ({
     >
       <Popover.Body
         style={{
-          border: '1px solid var(--slate6)',
+          border: '1px solid var(--slate-6)',
           padding: 0,
           boxShadow: ' 0px 4px 8px 0px #3032331A, 0px 0px 1px 0px #3032330D',
         }}
@@ -490,7 +490,7 @@ const PreviewContainer = ({
     >
       <Popover.Body
         style={{
-          border: !isEmpty(validationSchema) && '1px solid var(--slate6)',
+          border: !isEmpty(validationSchema) && '1px solid var(--slate-6)',
           padding: isEmpty(validationSchema) && !validationFn && '0px',
           boxShadow: ' 0px 4px 8px 0px #3032331A, 0px 0px 1px 0px #3032330D',
           ...(wrapperWidth
@@ -603,7 +603,7 @@ const PreviewContainer = ({
               'query-manager-input-preview-popover-card': isInsideQueryManager,
             })}
             style={{
-              borderColor: errorStateActive ? 'var(--tomato8)' : 'var(--slate6)',
+              borderColor: errorStateActive ? 'var(--tomato-8)' : 'var(--slate-6)',
             }}
           >
             <Card.Body

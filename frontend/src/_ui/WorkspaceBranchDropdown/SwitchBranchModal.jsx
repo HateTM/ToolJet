@@ -234,7 +234,7 @@ export function WorkspaceSwitchBranchModal({ show, onClose, onBranchSwitch }) {
           <div className="search-section">
             <label className="section-label">RECENT BRANCHES</label>
             <div className="search-input-wrapper">
-              <SolidIcon name="search" width="16" fill="var(--slate11)" />
+              <SolidIcon name="search" width="16" fill="var(--slate-11)" />
               <input
                 type="text"
                 className="search-input"
@@ -270,7 +270,7 @@ export function WorkspaceSwitchBranchModal({ show, onClose, onBranchSwitch }) {
                       data-cy={`workspace-branch-list-item-${branch.name}`}
                     >
                       <div className="branch-checkbox">
-                        {isCurrentBranch && <SolidIcon name="check2" width="16" fill="var(--indigo9)" />}
+                        {isCurrentBranch && <SolidIcon name="check2" width="16" fill="var(--indigo-9)" />}
                       </div>
                       <div className="branch-list-content">
                         <div className="branch-list-name">
@@ -299,11 +299,11 @@ export function WorkspaceSwitchBranchModal({ show, onClose, onBranchSwitch }) {
                             data-tooltip-id="delete-branch-tooltip"
                             data-tooltip-content="Cannot delete default branch"
                           >
-                            <TablerIcon iconName="IconTrash" size={18} color="var(--slate8)" stroke={1.5} />
+                            <TablerIcon iconName="IconTrash" size={18} color="var(--slate-8)" stroke={1.5} />
                           </span>
                         ) : (
                           <span className="branch-delete-icon">
-                            <TablerIcon iconName="IconTrash" size={18} color="var(--tomato9)" stroke={1.5} />
+                            <TablerIcon iconName="IconTrash" size={18} color="var(--tomato-9)" stroke={1.5} />
                           </span>
                         )}
                       </div>
@@ -341,7 +341,7 @@ export function WorkspaceSwitchBranchModal({ show, onClose, onBranchSwitch }) {
               }}
               data-cy="workspace-create-branch-from-modal-btn"
             >
-              <SolidIcon name="plusicon" width="14" fill="var(--indigo9)" />
+              <SolidIcon name="plusicon" width="14" fill="var(--indigo-9)" />
               <span>Create new branch</span>
             </button>
           </div>

@@ -3,8 +3,8 @@
 .tooljet-range-picker {
 
     .react-daterange-picker__wrapper, .react-datetimerange-picker__wrapper {
-      border: thin solid var(--slate4);
-      color: var(--slate11);
+      border: thin solid var(--slate-4);
+      color: var(--slate-11);
       background: var(--base);
       padding: 6px 10px;
       gap: 12px;
@@ -17,22 +17,22 @@
     .react-calendar {
       z-index: 9;
       width: 329px;
-      border: thin solid var(--slate4);
+      border: thin solid var(--slate-4);
       border-radius: 6px;
       background: var(--base);
-      color: var(--slate11);
+      color: var(--slate-11);
       position: relative;
 
       .react-calendar__navigation {
         input, button {
-          color: var(--slate11);
+          color: var(--slate-11);
           border-radius: 0;
           background-color: transparent;
         }
       }
 
       .react-calendar__tile--active {
-        background: var(--indigo3) !important;
+        background: var(--indigo-3) !important;
         color: var(--slateDark1);
         border-radius: 2px;
       }
@@ -40,11 +40,11 @@
       .react-calendar__month-view__days__day {
         border-radius: 0px;
         background: transparent;
-        color: var(--slate11);
+        color: var(--slate-11);
       }
 
       .react-calendar__tile--now {
-        background: var(--indigo8);
+        background: var(--indigo-8);
       }
 
       .react-calendar__tile.react-calendar__month-view__days__day{
@@ -52,13 +52,13 @@
       }
 
       .react-calendar__tile:enabled:hover{
-        background: var(--indigo6);
+        background: var(--indigo-6);
         color: var(--slateDark1);
       }
 
       .react-calendar__tile:disabled{
         background: transparent;
-        color: var(--slate8);
+        color: var(--slate-8);
       }
 
       .react-calendar__tile:enabled {

@@ -28,11 +28,11 @@
 }
 
 .radio-item input[type="radio"]:checked+label {
-  color: var(--indigo9);
+  color: var(--indigo-9);
 }
 
 .radio-item input[type="radio"]:checked {
-  accent-color: var(--indigo9);
+  accent-color: var(--indigo-9);
 }
 
 .radio-item small {
@@ -299,11 +299,11 @@
 }
 
 .enabled-tag {
-  color: var(--grass9);
+  color: var(--grass-9);
 }
 
 .disabled-tag {
-  color: var(--tomato9);
+  color: var(--tomato-9);
 }
 
 .dark-theme .tj-input-element {

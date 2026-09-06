@@ -58,7 +58,7 @@ const RenderColumnUI = ({
               onClick={() => removeColumnOptionsPair(id)}
               data-cy="tooljetdb-column-delete-button"
             >
-              <Trash fill="var(--slate9)" style={{ height: '16px' }} />
+              <Trash fill="var(--slate-9)" style={{ height: '16px' }} />
             </ButtonSolid>
           </Col>
         </Row>

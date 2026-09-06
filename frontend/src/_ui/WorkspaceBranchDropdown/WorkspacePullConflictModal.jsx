@@ -67,7 +67,7 @@ export function PullConflictModal({ show, onClose, conflictGroups = [], context 
         {/* HEADER */}
         <div className="pull-conflict-modal-header">
           <div className="conflict-warning-icon">
-            <SolidIcon name="warning" width="24" fill="var(--orange9)" />
+            <SolidIcon name="warning" width="24" fill="var(--orange-9)" />
           </div>
         </div>
 
@@ -102,7 +102,7 @@ export function PullConflictModal({ show, onClose, conflictGroups = [], context 
                   <div className="conflict-section-body">
                     {group.conflicts.map((item, itemIdx) => (
                       <div key={itemIdx} className="conflict-item">
-                        <SolidIcon name={TYPE_ICON_MAP[group.type] || 'apps'} width="16" fill="var(--slate9)" />
+                        <SolidIcon name={TYPE_ICON_MAP[group.type] || 'apps'} width="16" fill="var(--slate-9)" />
 
                         <span className="conflict-item-name">
                           {group.conflictField === 'slug'

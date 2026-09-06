@@ -105,7 +105,7 @@ export const PageMenuItem = withRouter(
             pill: {
               background: !styles.pillSelectedBackgroundColor.isDefault && styles.pillSelectedBackgroundColor.value,
               ...(page.id === editingPage?.id && {
-                backgroundColor: 'var(--slate1)',
+                backgroundColor: 'var(--slate-1)',
               }),
               ...baseStyles.pill,
             },

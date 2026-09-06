@@ -16,7 +16,7 @@ const VersionItemSkeleton = () => {
             width: '16px',
             height: '16px',
             flexShrink: 0,
-            backgroundColor: 'var(--slate3)',
+            backgroundColor: 'var(--slate-3)',
             borderRadius: '50%',
           }}
         />
@@ -30,7 +30,7 @@ const VersionItemSkeleton = () => {
               style={{
                 width: '80px',
                 height: '16px',
-                backgroundColor: 'var(--slate3)',
+                backgroundColor: 'var(--slate-3)',
                 borderRadius: '4px',
               }}
             />
@@ -39,7 +39,7 @@ const VersionItemSkeleton = () => {
               style={{
                 width: '40px',
                 height: '18px',
-                backgroundColor: 'var(--slate3)',
+                backgroundColor: 'var(--slate-3)',
                 borderRadius: '4px',
               }}
             />
@@ -50,7 +50,7 @@ const VersionItemSkeleton = () => {
             style={{
               width: '120px',
               height: '12px',
-              backgroundColor: 'var(--slate3)',
+              backgroundColor: 'var(--slate-3)',
               borderRadius: '4px',
               marginBottom: '4px',
             }}
@@ -61,7 +61,7 @@ const VersionItemSkeleton = () => {
             style={{
               width: '90px',
               height: '12px',
-              backgroundColor: 'var(--slate3)',
+              backgroundColor: 'var(--slate-3)',
               borderRadius: '4px',
             }}
           />

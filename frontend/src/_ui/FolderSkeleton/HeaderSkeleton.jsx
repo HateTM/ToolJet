@@ -5,7 +5,7 @@ export default function HeaderSkeleton() {
   return (
     <div
       className="d-flex justify-content-between w-100"
-      style={{ marginTop: '2rem', borderBottom: '1px solid var(--slate5)' }}
+      style={{ marginTop: '2rem', borderBottom: '1px solid var(--slate-5)' }}
     >
       <div className="justify-content-start">
         <Skeleton count={1} height={20} width={60} className="mb-3" />

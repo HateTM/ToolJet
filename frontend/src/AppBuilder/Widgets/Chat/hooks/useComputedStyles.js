@@ -93,7 +93,7 @@ export const useComputedStyles = (styles) => {
     }
 
     if (styles.textColorField && ['#11181C', '#11181c', '#11181cff', '#11181CFF'].includes(styles.textColorField)) {
-      computedStyles.chatInput.textColor = 'var(--slate12)';
+      computedStyles.chatInput.textColor = 'var(--slate-12)';
     } else {
       computedStyles.chatInput.textColor = styles.textColorField;
     }
